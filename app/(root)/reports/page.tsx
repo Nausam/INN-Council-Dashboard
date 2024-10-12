@@ -112,20 +112,6 @@ const ReportsPage = () => {
     generateReport(selectedMonth);
   }, [selectedMonth]);
 
-  const downloadPDF = () => {
-    const element = document.getElementById("report");
-
-    const opt = {
-      margin: 0.5,
-      filename: "Monthly_Attendance_Report.pdf",
-      image: { type: "jpeg", quality: 1 },
-      html2canvas: { scale: 1, useCORS: true },
-      jsPDF: { unit: "pt", format: "a4", orientation: "landscape" },
-    };
-
-    html2pdf().set(opt).from(element).save();
-  };
-
   return (
     <div className="max-w-7xl mx-auto p-8">
       <h1 className="text-3xl font-bold mb-4">Monthly Attendance Report</h1>
