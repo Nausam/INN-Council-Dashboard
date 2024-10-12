@@ -1,26 +1,44 @@
 "use client";
 import React, { useState } from "react";
-import { createEmployeeRecord } from "@/lib/appwrite";
+import { createEmployeeRecord, updateEmployeeRecord } from "@/lib/appwrite";
 
-const AddEmployeeForm = () => {
+import { useParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { toast } from "@/hooks/use-toast";
+
+interface EmployeeFormProps {
+  initialData?: any;
+  onSubmit: (formData: any) => Promise<void>;
+  isLoading: boolean;
+}
+
+const EmployeeForm = ({
+  initialData,
+  onSubmit,
+  isLoading,
+}: EmployeeFormProps) => {
   const [formData, setFormData] = useState({
-    name: "",
-    designation: "",
-    joinedDate: "",
-    address: "",
-    section: "",
-    recordCardNumber: "",
-    sickLeave: 0,
-    certificateSickLeave: 0,
-    annualLeave: 0,
-    familyRelatedLeave: 0,
-    maternityLeave: 0,
-    paternityLeave: 0,
-    officialLeave: 0,
-    noPayLeave: 0,
+    name: initialData?.name || "",
+    designation: initialData?.designation || "",
+    joinedDate: initialData?.joinedDate || "",
+    address: initialData?.address || "",
+    section: initialData?.section || "",
+    recordCardNumber: initialData?.recordCardNumber || "",
+    sickLeave: initialData?.sickLeave || 0,
+    certificateSickLeave: initialData?.certificateSickLeave || 0,
+    annualLeave: initialData?.annualLeave || 0,
+    familyRelatedLeave: initialData?.familyRelatedLeave || 0,
+    maternityLeave: initialData?.maternityLeave || 0,
+    paternityLeave: initialData?.paternityLeave || 0,
+    officialLeave: initialData?.officialLeave || 0,
+    noPayLeave: initialData?.noPayLeave || 0,
   });
 
   const [loading, setLoading] = useState(false);
+
+  const { id } = useParams();
+  const employeeId = Array.isArray(id) ? id[0] : id;
+  const router = useRouter();
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -50,8 +68,25 @@ const AddEmployeeForm = () => {
     setLoading(true);
 
     try {
-      await createEmployeeRecord(formData);
-      alert("Employee added successfully!");
+      if (employeeId) {
+        await updateEmployeeRecord(employeeId, formData);
+
+        toast({
+          title: "Success",
+          description: `${formData.name} updated successfully`,
+          variant: "default",
+        });
+
+        router.push("/employees");
+      } else {
+        await createEmployeeRecord(formData);
+        toast({
+          title: "Success",
+          description: `${formData.name} added successfully`,
+          variant: "default",
+        });
+        router.push("/employees");
+      }
       setFormData({
         name: "",
         designation: "",
@@ -69,15 +104,20 @@ const AddEmployeeForm = () => {
         noPayLeave: 0,
       });
     } catch (error) {
-      console.error("Error adding employee:", error);
-      alert("Failed to add employee. Please try again.");
+      toast({
+        title: "Error",
+        description: `Failed to add employee ${formData.name}`,
+        variant: "destructive",
+      });
     }
     setLoading(false);
   };
 
   return (
     <div className="max-w-6xl mx-auto p-8">
-      <h1 className="text-3xl font-bold mb-6">Add Employee</h1>
+      <h1 className="text-3xl font-bold mb-6">
+        {initialData ? "Edit Employee" : "Add Employee"}
+      </h1>
       <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-6">
         <div className="flex gap-2">
           {/* Name */}
@@ -351,11 +391,17 @@ const AddEmployeeForm = () => {
           className="bg-blue-500 text-white px-4 py-2 rounded"
           disabled={loading}
         >
-          {loading ? "Adding Employee..." : "Add Employee"}
+          {isLoading
+            ? initialData
+              ? "Updating Employee..."
+              : "Adding Employee..."
+            : initialData
+            ? "Update Employee"
+            : "Add Employee"}
         </button>
       </form>
     </div>
   );
 };
 
-export default AddEmployeeForm;
+export default EmployeeForm;

@@ -1,6 +1,11 @@
 "use client";
 import React, { useState } from "react";
-import { deductLeave, updateAttendanceRecord } from "@/lib/appwrite";
+import {
+  deductLeave,
+  deleteAttendancesByDate,
+  fetchEmployeeById,
+  updateAttendanceRecord,
+} from "@/lib/appwrite";
 import {
   Table,
   TableBody,
@@ -9,22 +14,22 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Toast } from "./ui/toast";
+import { useToast } from "@/hooks/use-toast";
 
 interface AttendanceRecord {
   $id: string;
-  employeeId: { name: string; $id: string };
+  employeeId: { name: string; $id: string; section: string };
   signInTime: string | null;
   leaveType: string | null;
   minutesLate: number | null;
   previousLeaveType: string | null;
   leaveDeducted: boolean;
 }
-
 interface AttendanceTableProps {
   date: string;
   data: AttendanceRecord[];
 }
-
 // Map for human-readable leave types to backend values
 const leaveTypes = [
   "Sick Leave",
@@ -46,12 +51,10 @@ const leaveTypeMapping = {
   "No Pay Leave": "noPayLeave",
   "Official Leave": "officialLeave",
 };
-
 // Reverse mapping to display the correct label for the backend value
 const reverseLeaveTypeMapping = Object.fromEntries(
   Object.entries(leaveTypeMapping).map(([label, value]) => [value, label])
 );
-
 // Format the time to display in the input field
 const formatTimeForInput = (dateTime: string | null) => {
   if (!dateTime) return "";
@@ -60,7 +63,6 @@ const formatTimeForInput = (dateTime: string | null) => {
   const minutes = String(date.getUTCMinutes()).padStart(2, "0");
   return `${hours}:${minutes}`;
 };
-
 // Convert the input time back to ISO for saving
 const convertTimeToDateTime = (time: string, date: string) => {
   const [hours, minutes] = time.split(":");
@@ -69,9 +71,12 @@ const convertTimeToDateTime = (time: string, date: string) => {
   return dateTime.toISOString();
 };
 
-const AttendanceTable: React.FC<AttendanceTableProps> = ({ date, data }) => {
+const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
   const [attendanceUpdates, setAttendanceUpdates] =
     useState<AttendanceRecord[]>(data);
+  const [submitting, setSubmitting] = useState(false);
+
+  const { toast } = useToast();
 
   // Handle sign-in time change
   const handleSignInChange = (attendanceId: string, newSignInTime: string) => {
@@ -112,9 +117,23 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ date, data }) => {
 
   // Submit the updated attendance
   const handleSubmitAttendance = async () => {
+    setSubmitting(true);
+    toast({
+      title: "Submitting",
+      description: "Updating attendance...",
+      variant: "default",
+    });
+
     const updatedAttendanceWithLateness = attendanceUpdates.map((record) => {
       if (record.signInTime) {
-        const requiredSignInTime = "08:00"; // Assuming default 08:00
+        // Default sign in time
+        let requiredSignInTime = "08:00";
+
+        // Check if the employee's section is "Councillor", then set required sign-in time to 08:30
+        if (record.employeeId.section === "Councillor") {
+          requiredSignInTime = "08:30";
+        }
+
         const requiredTime = new Date(date + "T" + requiredSignInTime + "Z");
         const actualSignIn = new Date(record.signInTime);
 
@@ -131,7 +150,23 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ date, data }) => {
 
     for (const record of updatedAttendanceWithLateness) {
       try {
-        // Restore previous leave type if it differs from the new leaveType
+        // Fetch the complete employee data to get leave balances
+        const employeeData = await fetchEmployeeById(record.employeeId.$id);
+
+        // Access the leave balance using the leaveType field
+        const leaveType = record.leaveType || "";
+        const availableLeaveCount = employeeData[leaveType] ?? 0;
+
+        if (record.leaveType && availableLeaveCount <= 0) {
+          toast({
+            title: "Error",
+            description: `${employeeData.name} does not have any ${record.leaveType} left.`,
+            variant: "destructive",
+          });
+          setSubmitting(false);
+          return;
+        }
+
         if (
           record.previousLeaveType &&
           record.previousLeaveType !== record.leaveType
@@ -143,7 +178,6 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ date, data }) => {
           );
         }
 
-        // Deduct the new leave type
         if (
           record.leaveType &&
           (!record.leaveDeducted ||
@@ -152,7 +186,6 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ date, data }) => {
           await deductLeave(record.employeeId.$id, record.leaveType);
         }
 
-        // Update attendance record with new leave and lateness
         await updateAttendanceRecord(record.$id, {
           signInTime: record.signInTime,
           leaveType: record.leaveType || null,
@@ -161,15 +194,47 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ date, data }) => {
           leaveDeducted: !!record.leaveType,
         });
       } catch (error) {
-        console.error(
-          `Error updating attendance for employee ${record.employeeId.$id}:`,
-          error
-        );
+        toast({
+          title: "Error",
+          description: `Error updating attendance for employee ${record.employeeId.$id}`,
+          variant: "destructive",
+        });
+      } finally {
+        setSubmitting(false);
       }
     }
+    toast({
+      title: "Success",
+      description: "Attendance updated successfully",
+      variant: "default",
+    });
+  };
 
-    alert("Attendance updated successfully");
-    console.log("UPDATED ATTENDANCE:", updatedAttendanceWithLateness);
+  // Delete attendances for selected date
+  const handleDeleteAllAttendances = async () => {
+    setSubmitting(true);
+    toast({
+      title: "Deleting",
+      description: "Deleting all attendances for the selected date...",
+      variant: "destructive",
+    });
+
+    try {
+      await deleteAttendancesByDate(date);
+      toast({
+        title: "Success",
+        description: "All attendances deleted successfully.",
+        variant: "default",
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete attendances. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -179,8 +244,8 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ date, data }) => {
           <TableRow>
             <TableHead className="py-2 px-4">#</TableHead>
             <TableHead className="py-2 px-4">Employee Name</TableHead>
+            <TableHead className="py-2 px-4">Sign in Time</TableHead>
             <TableHead className="py-2 px-4">Attendance</TableHead>
-            <TableHead className="py-2 px-4">On Leave?</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -237,12 +302,25 @@ const AttendanceTable: React.FC<AttendanceTableProps> = ({ date, data }) => {
         </TableBody>
       </Table>
 
-      <button
-        className="mt-4 bg-blue-500 text-white px-4 py-2 rounded"
-        onClick={handleSubmitAttendance}
-      >
-        Submit Attendance
-      </button>
+      <div className="flex justify-between mt-10">
+        <button
+          className="mt-4 bg-blue-500 text-white px-4 py-2 rounded"
+          onClick={handleSubmitAttendance}
+          disabled={submitting}
+        >
+          Submit Attendance
+        </button>
+
+        <button
+          className={`bg-red-500 text-white px-4 py-2 rounded ${
+            submitting ? "opacity-50 cursor-not-allowed" : ""
+          }`}
+          onClick={handleDeleteAllAttendances}
+          disabled={submitting}
+        >
+          Delete Today's Attendance
+        </button>
+      </div>
     </div>
   );
 };

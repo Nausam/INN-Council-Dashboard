@@ -15,12 +15,12 @@ const SkeletonAttendanceTable = () => {
         <TableRow>
           <TableHead className="py-2 px-2">#</TableHead>
           <TableHead className="py-2 px-2 pl-10">Employee Name</TableHead>
-          <TableHead className="py-2 pl-16">Attendance</TableHead>
-          <TableHead className="py-2 pl-24">On Leave?</TableHead>
+          <TableHead className="py-2 pl-16">Sign in Time</TableHead>
+          <TableHead className="py-2 pl-24">Attendance</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {[...Array(4)].map((_, index) => (
+        {[...Array(15)].map((_, index) => (
           <TableRow key={index}>
             <TableCell className="py-2 px-2">
               <div className="h-4 w-4 bg-gray-300 animate-pulse rounded-full"></div>

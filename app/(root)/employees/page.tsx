@@ -123,6 +123,7 @@ const EmployeesPage = () => {
               key={employee.$id}
               name={employee.name}
               designation={employee.designation}
+              employeeId={employee.$id}
               onClick={() => handleCardClick(employee.$id)}
             />
           ))}

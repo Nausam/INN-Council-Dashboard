@@ -7,6 +7,7 @@ import {
   fetchAttendanceForDate,
 } from "@/lib/appwrite";
 import SkeletonAttendanceTable from "@/components/skeletons/SkeletonAttendanceTable";
+import { toast } from "@/hooks/use-toast";
 
 const AttendancePage = () => {
   const [selectedDate, setSelectedDate] = useState<string>(
@@ -49,7 +50,12 @@ const AttendancePage = () => {
       const attendance = await fetchAttendanceForDate(selectedDate);
 
       if (attendance.length > 0) {
-        alert("Attendance already created for this date.");
+        toast({
+          title: "Success",
+          description: "Attendance already created for this date",
+          variant: "destructive",
+        });
+
         setAttendanceData(attendance);
       } else {
         const employees = await fetchAllEmployees();
@@ -59,7 +65,11 @@ const AttendancePage = () => {
         );
         setAttendanceData(newAttendance);
         setShowGenerateButton(false);
-        alert("Attendance created for today!");
+        toast({
+          title: "Success",
+          description: "Attendance sheet created for today",
+          variant: "default",
+        });
       }
     } catch (error) {
       console.error("Error:", error);

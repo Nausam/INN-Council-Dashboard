@@ -116,14 +116,13 @@ export const updateAttendanceRecord = async (
         previousLeaveType: updates.previousLeaveType,
       }
     );
-
-    console.log("Attendance updated successfully");
   } catch (error) {
     console.error("Error updating attendance:", error);
     throw error;
   }
 };
 
+// Fetch attendance for the month
 export const fetchAttendanceForMonth = async (month: string) => {
   const startOfMonth = new Date(`${month}-01T00:00:00Z`).toISOString();
   const endOfMonth = new Date(
@@ -146,7 +145,7 @@ export const fetchAttendanceForMonth = async (month: string) => {
   }
 };
 
-// Function to create employee record
+// Create employee record
 export const createEmployeeRecord = async (employeeData: any) => {
   try {
     const response = await databases.createDocument(
@@ -163,6 +162,7 @@ export const createEmployeeRecord = async (employeeData: any) => {
   }
 };
 
+// Fetch employee by ID
 export const fetchEmployeeById = async (employeeId: string) => {
   try {
     const response = await databases.getDocument(
@@ -217,7 +217,7 @@ export const deductLeave = async (
   }
 };
 
-// Function to update employee's leave balance in the database
+// Update employee's leave balance
 export const updateEmployeeLeaveBalance = async (
   employeeId: string,
   updatedLeaveData: any
@@ -231,5 +231,57 @@ export const updateEmployeeLeaveBalance = async (
     );
   } catch (error) {
     console.error("Error updating employee leave:", error);
+  }
+};
+
+// Update Employee
+export const updateEmployeeRecord = async (
+  employeeId: string,
+  formData: any
+) => {
+  try {
+    const updatedEmployee = await databases.updateDocument(
+      databaseId,
+      employeesCollectionId,
+      employeeId,
+      formData
+    );
+
+    return updatedEmployee;
+  } catch (error) {
+    console.error("Error updating employee record:", error);
+    throw new Error("Failed to update employee record.");
+  }
+};
+
+// Delete all attendances for a specific date
+export const deleteAttendancesByDate = async (date: string): Promise<void> => {
+  try {
+    // Query the documents by date field
+    const response = await databases.listDocuments(
+      databaseId,
+      attendanceCollectionId,
+      [Query.equal("date", date)]
+    );
+
+    const attendanceRecords = response.documents;
+
+    if (attendanceRecords.length === 0) {
+      console.log(`No attendance records found for date: ${date}`);
+      return; // No records to delete
+    }
+
+    // Delete each attendance record
+    const deletePromises = attendanceRecords.map((record) =>
+      databases.deleteDocument(databaseId, attendanceCollectionId, record.$id)
+    );
+
+    // Wait for all delete operations to complete
+    await Promise.all(deletePromises);
+
+    console.log(`Successfully deleted all attendances for ${date}`);
+  } catch (error) {
+    console.error(`Error deleting attendance records for ${date}:`, error);
+    throw new Error(`Failed to delete attendance records for ${date}`);
   }
 };

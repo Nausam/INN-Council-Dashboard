@@ -77,6 +77,14 @@ body {
   }
 }
 
+* {
+  scroll-behavior: smooth;
+  -ms-overflow-style: none;
+}
+::-webkit-scrollbar {
+  display: none;
+}
+
 @layer utilities {
   .container {
     @apply lg:max-w-6xl;
@@ -93,13 +101,13 @@ body {
   }
 
   .rotate-text {
-    transform: rotate(180deg); /* Rotate the text upside down */
-    writing-mode: vertical-rl; /* Display text vertically */
-    white-space: nowrap; /* Prevent text wrapping */
-    text-align: center; /* Center the text */
-    height: 150px; /* Adjust height as needed */
-    width: 30px; /* Adjust width as needed */
-    vertical-align: middle; /* Align text vertically in the cell */
+    transform: rotate(180deg);
+    writing-mode: vertical-rl;
+    white-space: nowrap;
+    text-align: center;
+    height: 150px;
+    width: 30px;
+    vertical-align: middle;
   }
 
   .table-head {
