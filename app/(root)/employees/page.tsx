@@ -111,10 +111,7 @@ const EmployeesPage = () => {
         <h1 className="text-3xl font-bold mb-6">Employees</h1>
 
         {/* Add Employee Button */}
-        <Link
-          href="/employees/add"
-          className="border-2 border-gray-400 text-black font-semibold px-4 py-2 rounded-md flex items-center hover:border-cyan-600 transition duration-300"
-        >
+        <Link href="/employees/add" className="custom-button">
           <p>Add Employee</p>
         </Link>
       </div>
@@ -122,7 +119,7 @@ const EmployeesPage = () => {
       <div className="flex gap-4 my-10">
         {/* Filter by Designation */}
         <select
-          className="border-2 border-gray-400 rounded-md px-3 py-2"
+          className="border border-gray-400 rounded-md px-3 py-2"
           value={selectedDesignation}
           onChange={handleDesignationChange}
         >
@@ -140,7 +137,7 @@ const EmployeesPage = () => {
 
         {/* Filter by Section */}
         <select
-          className="border-2 border-gray-400 rounded-md px-3 py-2"
+          className="border border-gray-400 rounded-md px-3 py-2"
           value={selectedSection}
           onChange={handleSectionChange}
         >
