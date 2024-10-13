@@ -170,8 +170,9 @@ const EmployeeForm = ({
               <option value="Council Vice President">
                 Council Vice President
               </option>
-              <option value="Finance Officer">Finance Officer</option>
               <option value="Council Member">Council Member</option>
+              <option value="Council Executive">Council Executive</option>
+              <option value="Finance Officer">Finance Officer</option>
               <option value="Council Officer">Council Officer</option>
               <option value="A. Council Officer">A. Council Officer</option>
               <option value="Council Assistant">Council Assistant</option>

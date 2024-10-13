@@ -95,7 +95,7 @@ const AttendancePage = () => {
 
         <div>
           <button
-            className="bg-blue-500 text-white px-4 py-2 rounded mt-4"
+            className="custom-button mt-4"
             onClick={() => fetchAttendanceData(selectedDate)}
             disabled={loading}
           >
@@ -107,7 +107,7 @@ const AttendancePage = () => {
         {showGenerateButton && (
           <div className="mt-4">
             <button
-              className="bg-green-500 text-white px-4 py-2 rounded shadow-md"
+              className="custom-button"
               onClick={handleGenerateAttendance}
               disabled={loading}
             >

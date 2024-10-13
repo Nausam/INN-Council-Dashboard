@@ -78,6 +78,37 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
 
   const { toast } = useToast();
 
+  // List of employee names in the required order
+  const employeeOrder = [
+    "Ahmed Azmeen",
+    "Ahmed Ruzaan",
+    "Ibrahim Nuhan",
+    "Aminath Samaha",
+    "Aishath Samaha",
+    "Imraan Shareef",
+    "Aminath Shazuly",
+    "Fazeel Ahmed",
+    "Hussain Sazeen",
+    "Mohamed Suhail",
+    "Aminath Shaliya",
+    "Fathimath Jazlee",
+    "Aminath Nuha",
+    "Hussain Nausam",
+    "Fathimath Zeyba",
+    "Fathimath Usaira",
+    "Mohamed Waheedh",
+    "Aishath Shaila",
+    "Azlifa Saleem",
+    "Aishath Shabaana",
+  ];
+
+  // Sort attendanceUpdates based on the required employee order
+  const sortedAttendance = attendanceUpdates.sort(
+    (a, b) =>
+      employeeOrder.indexOf(a.employeeId.name) -
+      employeeOrder.indexOf(b.employeeId.name)
+  );
+
   // Handle sign-in time change
   const handleSignInChange = (attendanceId: string, newSignInTime: string) => {
     const dateTime = convertTimeToDateTime(newSignInTime, date);
@@ -226,6 +257,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
         description: "All attendances deleted successfully.",
         variant: "default",
       });
+      window!.location.reload();
     } catch (error) {
       toast({
         title: "Error",
@@ -249,7 +281,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {attendanceUpdates.map((record, index) => (
+          {sortedAttendance.map((record, index) => (
             <TableRow key={record.$id || index}>
               <TableCell className="py-2 px-4">{index + 1}</TableCell>
               <TableCell className="py-2 px-4">
@@ -304,7 +336,9 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
 
       <div className="flex justify-between mt-10">
         <button
-          className="mt-4 bg-blue-500 text-white px-4 py-2 rounded"
+          className={`custom-button ${
+            submitting ? "opacity-50 cursor-not-allowed" : ""
+          }`}
           onClick={handleSubmitAttendance}
           disabled={submitting}
         >
@@ -312,7 +346,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
         </button>
 
         <button
-          className={`bg-red-500 text-white px-4 py-2 rounded ${
+          className={`red-button ${
             submitting ? "opacity-50 cursor-not-allowed" : ""
           }`}
           onClick={handleDeleteAllAttendances}

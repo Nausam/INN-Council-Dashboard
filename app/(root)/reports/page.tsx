@@ -9,8 +9,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import html2pdf from "html2pdf.js";
 import SkeletonReportsTable from "@/components/skeletons/SkeletonReportsTable";
+import { EMPLOYEE_NAMES } from "@/constants";
 
 interface LeaveReport {
   sickLeave: number;
@@ -45,8 +45,8 @@ const ReportsPage = () => {
   const [reportData, setReportData] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [reportAvailable, setReportAvailable] = useState<boolean>(false);
-
-  console.log(reportData);
+  const [selectedSection, setSelectedSection] = useState<string>("All");
+  const [selectedEmployee, setSelectedEmployee] = useState<string>("All");
 
   const generateReport = async (month: string) => {
     setLoading(true);
@@ -56,7 +56,16 @@ const ReportsPage = () => {
       const monthRecords = attendanceRecords.filter((record) => {
         const recordDate = new Date(record.date);
         const recordMonth = recordDate.toISOString().slice(0, 7);
-        return recordMonth === month;
+
+        // Check if section and employee filters apply
+        const sectionMatches =
+          selectedSection === "All" ||
+          record.employeeId.section === selectedSection;
+        const employeeMatches =
+          selectedEmployee === "All" ||
+          record.employeeId.name === selectedEmployee;
+
+        return recordMonth === month && sectionMatches && employeeMatches;
       });
 
       if (monthRecords.length === 0) {
@@ -108,42 +117,75 @@ const ReportsPage = () => {
     setLoading(false);
   };
 
-  useEffect(() => {
-    generateReport(selectedMonth);
-  }, [selectedMonth]);
+  // useEffect(() => {
+  //   generateReport(selectedMonth);
+  // }, [selectedMonth, selectedSection, selectedEmployee]);
 
   return (
     <div className="max-w-7xl mx-auto p-8">
       <h1 className="text-3xl font-bold mb-4">Monthly Attendance Report</h1>
 
-      <div className="mb-6 flex items-center space-x-4">
-        <div>
-          <p>Select Month</p>
-          <input
-            type="month"
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            className="border p-2"
-          />
+      <div className="mb-6 flex justify-between space-x-4">
+        <div className="flex gap-2">
+          <div>
+            <p>Select Month</p>
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="border p-2 rounded-md"
+            />
+          </div>
+
+          <div>
+            <p>Enter Total Working Days</p>
+            <input
+              type="number"
+              value={totalDays}
+              onChange={(e) => setTotalDays(Number(e.target.value))}
+              className="border p-2 rounded-md"
+              placeholder="Total Days"
+            />
+          </div>
+
+          <div>
+            <p>Select Employee</p>
+            <select
+              value={selectedEmployee}
+              onChange={(e) => setSelectedEmployee(e.target.value)}
+              className="border p-2 rounded-md"
+            >
+              <option value="All">All Employees</option>
+              {EMPLOYEE_NAMES.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <p>Select Section</p>
+            <select
+              value={selectedSection}
+              onChange={(e) => setSelectedSection(e.target.value)}
+              className="border p-2 rounded-md"
+            >
+              <option value="All">All Sections</option>
+              <option value="Admin">Admin</option>
+              <option value="Councillor">Councillor</option>
+            </select>
+          </div>
         </div>
 
-        <div>
-          <p>Enter Total Working Days</p>
-          <input
-            type="number"
-            value={totalDays}
-            onChange={(e) => setTotalDays(Number(e.target.value))}
-            className="border p-2"
-            placeholder="Total Days"
-          />
+        <div className="flex items-center justify-center">
+          <button
+            onClick={() => generateReport(selectedMonth)}
+            className="custom-button"
+          >
+            Generate Report
+          </button>
         </div>
-
-        {/* <button
-          onClick={downloadPDF}
-          className="bg-blue-500 text-white p-2 rounded"
-        >
-          Download PDF
-        </button> */}
       </div>
 
       {loading ? (

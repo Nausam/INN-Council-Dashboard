@@ -14,13 +14,38 @@ const EmployeesPage = () => {
 
   const router = useRouter();
 
+  // List of employee names in the required order
+  const employeeOrder = [
+    "Ahmed Azmeen",
+    "Ahmed Ruzaan",
+    "Ibrahim Nuhan",
+    "Aminath Samaha",
+    "Aishath Samaha",
+    "Imraan Shareef",
+    "Aminath Shazuly",
+    "Fazeel Ahmed",
+    "Hussain Sazeen",
+    "Mohamed Suhail",
+    "Aminath Shaliya",
+    "Fathimath Jazlee",
+    "Aminath Nuha",
+    "Hussain Nausam",
+    "Fathimath Zeyba",
+    "Fathimath Usaira",
+    "Mohamed Waheedh",
+    "Aishath Shaila",
+    "Azlifa Saleem",
+    "Aishath Shabaana",
+  ];
+
   // Fetch all employees on component mount
   useEffect(() => {
     const getEmployees = async () => {
       try {
         const employeeData = await fetchAllEmployees();
-        setEmployees(employeeData);
-        setFilteredEmployees(employeeData); // Initially, show all employees
+        const sortedData = sortEmployeesByOrder(employeeData);
+        setEmployees(sortedData);
+        setFilteredEmployees(sortedData); // Initially, show all employees
       } catch (error) {
         console.error("Error fetching employees:", error);
       }
@@ -29,6 +54,23 @@ const EmployeesPage = () => {
 
     getEmployees();
   }, []);
+
+  // Sort employees based on the desired order
+  const sortEmployeesByOrder = (employeesList: any[]) => {
+    const employeeOrderMap = employeeOrder.reduce((acc, name, index) => {
+      acc[name.toLowerCase()] = index;
+      return acc;
+    }, {} as Record<string, number>);
+
+    return employeesList.sort((a, b) => {
+      const indexA =
+        employeeOrderMap[a.name.toLowerCase()] ?? employeeOrder.length;
+      const indexB =
+        employeeOrderMap[b.name.toLowerCase()] ?? employeeOrder.length;
+
+      return indexA - indexB;
+    });
+  };
 
   const handleCardClick = (employeeId: string) => {
     router.push(`/employees/${employeeId}`);
@@ -59,7 +101,8 @@ const EmployeesPage = () => {
       filtered = filtered.filter((employee) => employee.section === section);
     }
 
-    setFilteredEmployees(filtered);
+    // Sort the filtered employees according to the desired order
+    setFilteredEmployees(sortEmployeesByOrder(filtered));
   };
 
   return (
@@ -86,8 +129,9 @@ const EmployeesPage = () => {
           <option value="All">All Designations</option>
           <option value="Council President">Council President</option>
           <option value="Council Vice President">Council Vice President</option>
-          <option value="Finance Officer">Finance Officer</option>
           <option value="Council Member">Council Member</option>
+          <option value="Council Executive">Council Executive</option>
+          <option value="Finance Officer">Finance Officer</option>
           <option value="Council Officer">Council Officer</option>
           <option value="A. Council Officer">A. Council Officer</option>
           <option value="Council Assistant">Council Assistant</option>
