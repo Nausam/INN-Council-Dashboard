@@ -7,6 +7,7 @@ interface EmployeeDetailsCardProps {
     name: string;
     designation: string;
     sickLeave: number;
+    certificateSickLeave: number;
     annualLeave: number;
     familyRelatedLeave: number;
     maternityLeave: number;
@@ -47,31 +48,36 @@ const EmployeeDetailsCard: React.FC<EmployeeDetailsCardProps> = ({
           </li>
 
           <li className="flex justify-between p-2">
+            <p>Certificate Leave</p>
+            <p>{employee.certificateSickLeave}</p>
+          </li>
+
+          <li className="flex justify-between bg-gray-100 p-2">
             <p>Annual Leave</p>
             <p>{employee.annualLeave}</p>
           </li>
 
-          <li className="flex justify-between bg-gray-100 p-2">
+          <li className="flex justify-between p-2">
             <p>Family Related Leave</p>
             <p>{employee.familyRelatedLeave}</p>
           </li>
 
-          <li className="flex justify-between p-2 ">
+          <li className="flex justify-between bg-gray-100 p-2 ">
             <p>Maternity Leave</p>
             <p>{employee.maternityLeave}</p>
           </li>
 
-          <li className="flex justify-between bg-gray-100 p-2">
+          <li className="flex justify-between p-2">
             <p>Paternity Leave</p>
             <p>{employee.paternityLeave}</p>
           </li>
 
-          <li className="flex justify-between p-2">
+          <li className="flex justify-between bg-gray-100 p-2">
             <p>No Pay Leave</p>
             <p>{employee.noPayLeave}</p>
           </li>
 
-          <li className="flex justify-between bg-gray-100 p-2">
+          <li className="flex justify-between p-2">
             <p>Official Leave</p>
             <p>{employee.officialLeave}</p>
           </li>
