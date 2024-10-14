@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   deductLeave,
   deleteAttendancesByDate,
@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Toast } from "./ui/toast";
+
 import { useToast } from "@/hooks/use-toast";
 
 interface AttendanceRecord {
@@ -25,6 +25,7 @@ interface AttendanceRecord {
   minutesLate: number | null;
   previousLeaveType: string | null;
   leaveDeducted: boolean;
+  changed: boolean;
 }
 interface AttendanceTableProps {
   date: string;
@@ -74,9 +75,16 @@ const convertTimeToDateTime = (time: string, date: string) => {
 const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
   const [attendanceUpdates, setAttendanceUpdates] =
     useState<AttendanceRecord[]>(data);
+  const [initialAttendanceData, setInitialAttendanceData] =
+    useState<AttendanceRecord[]>(data);
   const [submitting, setSubmitting] = useState(false);
 
   const { toast } = useToast();
+
+  // Track initial attendance state
+  useEffect(() => {
+    setInitialAttendanceData(data);
+  }, [data]);
 
   // List of employee names in the required order
   const employeeOrder = [
@@ -114,7 +122,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     const dateTime = convertTimeToDateTime(newSignInTime, date);
     const updatedAttendance = attendanceUpdates.map((record) =>
       record.$id === attendanceId
-        ? { ...record, signInTime: dateTime, leaveType: "" }
+        ? { ...record, signInTime: dateTime, leaveType: "", changed: true }
         : record
     );
     setAttendanceUpdates(updatedAttendance);
@@ -131,13 +139,14 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
 
     const updatedAttendance = attendanceUpdates.map((record) => {
       if (record.$id === attendanceId) {
-        const previousLeaveType = record.leaveType; // Save the previous leave type
+        const previousLeaveType = record.leaveType;
 
         return {
           ...record,
-          signInTime: leaveTypeValue ? null : record.signInTime, // Remove sign-in if on leave
-          leaveType: leaveTypeValue, // Set the new leave type
-          previousLeaveType, // Store previous leave type for restoration if needed
+          signInTime: leaveTypeValue ? null : record.signInTime,
+          leaveType: leaveTypeValue,
+          previousLeaveType,
+          changed: true,
         };
       }
       return record;
@@ -179,7 +188,21 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
       return record;
     });
 
-    for (const record of updatedAttendanceWithLateness) {
+    const changedRecords = updatedAttendanceWithLateness.filter(
+      (record) => record.changed
+    );
+
+    if (changedRecords.length === 0) {
+      toast({
+        title: "No Changes",
+        description: "No changes detected to submit.",
+        variant: "destructive",
+      });
+      setSubmitting(false);
+      return;
+    }
+
+    for (const record of changedRecords) {
       try {
         // Fetch the complete employee data to get leave balances
         const employeeData = await fetchEmployeeById(record.employeeId.$id);
@@ -224,6 +247,17 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
           previousLeaveType: record.leaveType || null,
           leaveDeducted: !!record.leaveType,
         });
+
+        // Reset the 'changed' field after submission
+        setAttendanceUpdates((prev) =>
+          prev.map((record) => ({ ...record, changed: false }))
+        );
+
+        toast({
+          title: "Success",
+          description: "Attendance updated successfully.",
+          variant: "default",
+        });
       } catch (error) {
         toast({
           title: "Error",
@@ -234,11 +268,6 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
         setSubmitting(false);
       }
     }
-    toast({
-      title: "Success",
-      description: "Attendance updated successfully",
-      variant: "default",
-    });
   };
 
   // Delete attendances for selected date
@@ -352,7 +381,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
           onClick={handleDeleteAllAttendances}
           disabled={submitting}
         >
-          Delete Today's Attendance
+          Delete Attendance
         </button>
       </div>
     </div>

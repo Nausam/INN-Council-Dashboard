@@ -52,6 +52,7 @@ const ReportsPage = () => {
     setLoading(true);
     try {
       const attendanceRecords = await fetchAttendanceForMonth(month);
+      console.log("Fetched Records:", attendanceRecords);
 
       const monthRecords = attendanceRecords.filter((record) => {
         const recordDate = new Date(record.date);

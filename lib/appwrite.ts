@@ -126,21 +126,43 @@ export const updateAttendanceRecord = async (
 export const fetchAttendanceForMonth = async (month: string) => {
   const startOfMonth = new Date(`${month}-01T00:00:00Z`).toISOString();
   const endOfMonth = new Date(
-    new Date(`${month}-01T00:00:00Z`).setMonth(new Date().getMonth() + 1)
+    new Date(`${month}-01T00:00:00Z`).setMonth(
+      new Date(`${month}-01`).getMonth() + 1
+    )
   ).toISOString();
 
+  let allAttendanceRecords: any[] = [];
+  let hasMore = true;
+  let offset = 0;
+
+  const limit = 100; // Appwrite limit for pagination
+
   try {
-    const response = await databases.listDocuments(
-      appwriteConfig.databaseId,
-      appwriteConfig.attendanceCollectionId,
-      [
-        Query.greaterThanEqual("date", startOfMonth),
-        Query.lessThanEqual("date", endOfMonth),
-      ]
-    );
-    return response.documents;
+    while (hasMore) {
+      const response = await databases.listDocuments(
+        appwriteConfig.databaseId,
+        appwriteConfig.attendanceCollectionId,
+        [
+          Query.greaterThanEqual("date", startOfMonth),
+          Query.lessThanEqual("date", endOfMonth),
+          Query.limit(limit),
+          Query.offset(offset),
+        ]
+      );
+
+      allAttendanceRecords = allAttendanceRecords.concat(response.documents);
+
+      // If we get fewer documents than the limit, it means we're done
+      if (response.documents.length < limit) {
+        hasMore = false;
+      } else {
+        offset += limit; // Move to the next batch
+      }
+    }
+
+    return allAttendanceRecords;
   } catch (error) {
-    console.error("Error fetching attendance for month:", error);
+    console.error("Error fetching attendance for the month:", error);
     throw error;
   }
 };
