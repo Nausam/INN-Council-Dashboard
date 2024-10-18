@@ -373,9 +373,9 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
         </TableBody>
       </Table>
 
-      <div className="flex justify-between mt-10">
+      <div className="flex md:flex-row gap-4 flex-col w-full justify-between mt-10">
         <button
-          className={`custom-button w-fullh-12 ${
+          className={`custom-button md:w-60 w-full h-12 ${
             submitting ? "opacity-50 cursor-not-allowed" : ""
           }`}
           onClick={handleSubmitAttendance}
@@ -385,9 +385,9 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
         </button>
 
         <AlertDialog>
-          <AlertDialogTrigger>
+          <AlertDialogTrigger className="flex items-center justify-center w-full md:w-60">
             <div
-              className={`flex red-button w-full h-12  items-center ${
+              className={`flex justify-center red-button w-full h-12  items-center ${
                 submitting ? "opacity-50 cursor-not-allowed" : ""
               }`}
             >
