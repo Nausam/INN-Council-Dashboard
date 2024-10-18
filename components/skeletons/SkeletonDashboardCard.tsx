@@ -1,7 +1,7 @@
 import React from "react";
 
 const SkeletonDashboardCard: React.FC = () => (
-  <div className="p-4 shadow-lg rounded-md text-white animate-pulse border">
+  <div className="p-6 shadow-lg rounded-md text-white animate-pulse border">
     <div className="flex justify-between items-center">
       <div className="h-10 w-10 bg-gray-300 rounded-full"></div>
       <div className="h-6 w-32 bg-gray-300 rounded-md"></div>

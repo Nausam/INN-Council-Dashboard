@@ -14,8 +14,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 import { useToast } from "@/hooks/use-toast";
+import Link from "next/link";
 
 interface AttendanceRecord {
   $id: string;
@@ -202,71 +214,69 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
       return;
     }
 
-    for (const record of changedRecords) {
-      try {
-        // Fetch the complete employee data to get leave balances
-        const employeeData = await fetchEmployeeById(record.employeeId.$id);
+    try {
+      // Process all updates concurrently using Promise.all()
+      await Promise.all(
+        changedRecords.map(async (record) => {
+          // Fetch the complete employee data to get leave balances
+          const employeeData = await fetchEmployeeById(record.employeeId.$id);
 
-        // Access the leave balance using the leaveType field
-        const leaveType = record.leaveType || "";
-        const availableLeaveCount = employeeData[leaveType] ?? 0;
+          // Access the leave balance using the leaveType field
+          const leaveType = record.leaveType || "";
+          const availableLeaveCount = employeeData[leaveType] ?? 0;
 
-        if (record.leaveType && availableLeaveCount <= 0) {
-          toast({
-            title: "Error",
-            description: `${employeeData.name} does not have any ${record.leaveType} left.`,
-            variant: "destructive",
+          if (record.leaveType && availableLeaveCount <= 0) {
+            throw new Error(
+              `${employeeData.name} does not have any ${record.leaveType} left.`
+            );
+          }
+
+          if (
+            record.previousLeaveType &&
+            record.previousLeaveType !== record.leaveType
+          ) {
+            await deductLeave(
+              record.employeeId.$id,
+              record.previousLeaveType,
+              true
+            );
+          }
+
+          if (
+            record.leaveType &&
+            (!record.leaveDeducted ||
+              record.previousLeaveType !== record.leaveType)
+          ) {
+            await deductLeave(record.employeeId.$id, record.leaveType);
+          }
+
+          await updateAttendanceRecord(record.$id, {
+            signInTime: record.signInTime,
+            leaveType: record.leaveType || null,
+            minutesLate: record.minutesLate || 0,
+            previousLeaveType: record.leaveType || null,
+            leaveDeducted: !!record.leaveType,
           });
-          setSubmitting(false);
-          return;
-        }
+        })
+      );
 
-        if (
-          record.previousLeaveType &&
-          record.previousLeaveType !== record.leaveType
-        ) {
-          await deductLeave(
-            record.employeeId.$id,
-            record.previousLeaveType,
-            true
-          );
-        }
+      toast({
+        title: "Success",
+        description: "All attendance records updated successfully.",
+        variant: "success",
+      });
 
-        if (
-          record.leaveType &&
-          (!record.leaveDeducted ||
-            record.previousLeaveType !== record.leaveType)
-        ) {
-          await deductLeave(record.employeeId.$id, record.leaveType);
-        }
-
-        await updateAttendanceRecord(record.$id, {
-          signInTime: record.signInTime,
-          leaveType: record.leaveType || null,
-          minutesLate: record.minutesLate || 0,
-          previousLeaveType: record.leaveType || null,
-          leaveDeducted: !!record.leaveType,
-        });
-
-        // Reset the 'changed' field after submission
-        setAttendanceUpdates((prev) =>
-          prev.map((record) => ({ ...record, changed: false }))
-        );
-
-        toast({
-          title: "Success",
-          description: "Attendance updated successfully.",
-          variant: "default",
-        });
-      } catch (error) {
-        toast({
-          title: "Error",
-          description: `Error updating attendance for employee ${record.employeeId.$id}`,
-          variant: "destructive",
-        });
-      } finally {
-        setSubmitting(false);
-      }
+      setAttendanceUpdates((prev) =>
+        prev.map((record) => ({ ...record, changed: false }))
+      );
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Error updating attendance records.",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -284,7 +294,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
       toast({
         title: "Success",
         description: "All attendances deleted successfully.",
-        variant: "default",
+        variant: "success",
       });
       window!.location.reload();
     } catch (error) {
@@ -365,7 +375,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
 
       <div className="flex justify-between mt-10">
         <button
-          className={`custom-button ${
+          className={`custom-button w-fullh-12 ${
             submitting ? "opacity-50 cursor-not-allowed" : ""
           }`}
           onClick={handleSubmitAttendance}
@@ -374,15 +384,35 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
           Submit Attendance
         </button>
 
-        <button
-          className={`red-button ${
-            submitting ? "opacity-50 cursor-not-allowed" : ""
-          }`}
-          onClick={handleDeleteAllAttendances}
-          disabled={submitting}
-        >
-          Delete Attendance
-        </button>
+        <AlertDialog>
+          <AlertDialogTrigger>
+            <div
+              className={`flex red-button w-full h-12  items-center ${
+                submitting ? "opacity-50 cursor-not-allowed" : ""
+              }`}
+            >
+              <p>Delete Attendance</p>
+            </div>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete
+                today's attendance and remove your data from the database.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-red-600 hover:bg-red-700"
+                onClick={handleDeleteAllAttendances}
+              >
+                Continue
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );

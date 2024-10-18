@@ -71,10 +71,12 @@ export const createAttendanceForEmployees = async (
   employees: any[]
 ) => {
   try {
+    const defaultSignInTime = new Date(`${date}T08:00:00Z`).toISOString();
+
     const attendanceEntries = employees.map((employee: any) => ({
       employeeId: employee.$id,
       date,
-      signInTime: "",
+      signInTime: defaultSignInTime,
       leaveType: null,
       minutesLate: 0,
     }));

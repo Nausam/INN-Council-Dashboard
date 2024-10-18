@@ -3,6 +3,15 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+
 const Navbar = () => {
   const pathname = usePathname();
 
@@ -30,7 +39,7 @@ const Navbar = () => {
         </div>
 
         {/* Navigation Links */}
-        <div className="space-x-4">
+        <div className="space-x-4 md:flex hidden">
           {navigation.map((item) => (
             <Link
               key={item.name}
@@ -48,6 +57,37 @@ const Navbar = () => {
               </span>
             </Link>
           ))}
+        </div>
+
+        {/* Mobile Navigation */}
+        <div className="flex md:hidden z-50">
+          <Sheet>
+            <SheetTrigger>Open</SheetTrigger>
+            <SheetContent>
+              <SheetHeader>
+                <SheetTitle>Menu</SheetTitle>
+                <SheetDescription>
+                  {navigation.map((item) => (
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      className="flex flex-col text-black px-3 py-2 rounded-sm text-sm font-medium"
+                    >
+                      <span
+                        className={`${
+                          pathname === item.href
+                            ? "bg-cyan-700 text-white" // Highlight the active page
+                            : "hover:bg-gray-200 hover:text-black"
+                        } px-2 py-4 rounded-sm`}
+                      >
+                        {item.name}
+                      </span>
+                    </Link>
+                  ))}
+                </SheetDescription>
+              </SheetHeader>
+            </SheetContent>
+          </Sheet>
         </div>
       </div>
     </nav>

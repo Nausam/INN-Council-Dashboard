@@ -1,5 +1,6 @@
 import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 interface EmployeeListCardProps {
   title: string;
@@ -14,9 +15,11 @@ const EmployeeListCard: React.FC<EmployeeListCardProps> = ({
   bgColor,
   emptyMessage,
 }) => (
-  <Card className="w-full max-w-lg mx-auto mt-8 shadow-lg">
+  <Card className="w-full max-w-lg mx-auto mt-8 shadow-xl rounded-lg ">
     <CardHeader>
-      <CardTitle>{title}</CardTitle>
+      <CardTitle className="text-2xl font-semibold text-gray-700">
+        {title}
+      </CardTitle>
     </CardHeader>
     <CardContent>
       {employees.length > 0 ? (
@@ -24,7 +27,11 @@ const EmployeeListCard: React.FC<EmployeeListCardProps> = ({
           {employees.map((name, index) => (
             <div
               key={index}
-              className={`p-2 rounded-md shadow-md text-sm text-white ${bgColor}`}
+              className={cn("p-2 rounded-full shadow-lg text-sm text-white")}
+              style={{
+                boxShadow: `0px 4px 10px 0px rgba(0, 0, 0, 0.15) inset`,
+                backgroundColor: bgColor,
+              }}
             >
               {name}
             </div>

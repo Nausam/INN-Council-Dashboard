@@ -31,6 +31,7 @@ interface EmployeeDetails {
   designation: string;
   recordCardNumber: string;
   joinedDate: string;
+  section: string;
 }
 
 interface Report {
@@ -47,12 +48,12 @@ const ReportsPage = () => {
   const [reportAvailable, setReportAvailable] = useState<boolean>(false);
   const [selectedSection, setSelectedSection] = useState<string>("All");
   const [selectedEmployee, setSelectedEmployee] = useState<string>("All");
+  const [fullReportData, setFullReportData] = useState<any[]>([]);
 
   const generateReport = async (month: string) => {
     setLoading(true);
     try {
       const attendanceRecords = await fetchAttendanceForMonth(month);
-      console.log("Fetched Records:", attendanceRecords);
 
       const monthRecords = attendanceRecords.filter((record) => {
         const recordDate = new Date(record.date);
@@ -95,6 +96,7 @@ const ReportsPage = () => {
               designation: record.employeeId.designation,
               recordCardNumber: record.employeeId.recordCardNumber,
               joinedDate: record.employeeId.joinedDate,
+              section: record.employeeId.section,
             };
           }
 
@@ -108,7 +110,8 @@ const ReportsPage = () => {
           }
         });
 
-        setReportData(Object.entries(report));
+        setFullReportData(Object.entries(report)); // Store full report data
+        setReportData(Object.entries(report)); // Initial data to be displayed
         setReportAvailable(true);
       }
     } catch (error) {
@@ -118,71 +121,96 @@ const ReportsPage = () => {
     setLoading(false);
   };
 
-  // useEffect(() => {
-  //   generateReport(selectedMonth);
-  // }, [selectedMonth, selectedSection, selectedEmployee]);
+  const filterReportData = () => {
+    const filteredData = fullReportData.filter(([employeeId, stats]) => {
+      const sectionMatches =
+        selectedSection === "All" || stats.section === selectedSection;
+
+      const employeeMatches =
+        selectedEmployee === "All" || stats.name === selectedEmployee;
+
+      return sectionMatches && employeeMatches;
+    });
+
+    setReportData(filteredData);
+  };
+
+  useEffect(() => {
+    if (fullReportData.length > 0) {
+      filterReportData();
+    }
+  }, [selectedSection, selectedEmployee]);
 
   return (
     <div className="max-w-7xl mx-auto p-8">
       <h1 className="text-3xl font-bold mb-4">Monthly Attendance Report</h1>
 
-      <div className="mb-6 flex justify-between space-x-4">
-        <div className="flex gap-2">
-          <div>
-            <p>Select Month</p>
-            <input
-              type="month"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="border p-2 rounded-md"
-            />
-          </div>
-
-          <div>
-            <p>Enter Total Working Days</p>
-            <input
-              type="number"
-              value={totalDays}
-              onChange={(e) => setTotalDays(Number(e.target.value))}
-              className="border p-2 rounded-md"
-              placeholder="Total Days"
-            />
-          </div>
-
-          <div>
-            <p>Select Employee</p>
-            <select
-              value={selectedEmployee}
-              onChange={(e) => setSelectedEmployee(e.target.value)}
-              className="border p-2 rounded-md"
-            >
-              <option value="All">All Employees</option>
-              {EMPLOYEE_NAMES.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <p>Select Section</p>
-            <select
-              value={selectedSection}
-              onChange={(e) => setSelectedSection(e.target.value)}
-              className="border p-2 rounded-md"
-            >
-              <option value="All">All Sections</option>
-              <option value="Admin">Admin</option>
-              <option value="Councillor">Councillor</option>
-            </select>
-          </div>
+      <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4">
+        {/* Select Month */}
+        <div>
+          <p className="text-sm font-medium text-gray-600 mb-2">Select Month</p>
+          <input
+            type="month"
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="border p-2 rounded-md w-full h-12"
+          />
         </div>
 
-        <div className="flex items-center justify-center">
+        {/* Total Working Days */}
+        <div>
+          <p className="text-sm font-medium text-gray-600 mb-2">
+            Enter Total Working Days
+          </p>
+          <input
+            type="number"
+            value={totalDays}
+            onChange={(e) => setTotalDays(Number(e.target.value))}
+            className="border p-2 rounded-md w-full h-12"
+            placeholder="Total Days"
+          />
+        </div>
+
+        {/* Select Employee */}
+        <div>
+          <p className="text-sm font-medium text-gray-600 mb-2">
+            Select Employee
+          </p>
+          <select
+            value={selectedEmployee}
+            onChange={(e) => setSelectedEmployee(e.target.value)}
+            className="border p-2 rounded-md w-full h-12"
+          >
+            <option value="All">All Employees</option>
+            {EMPLOYEE_NAMES.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Select Section */}
+        <div>
+          <p className="text-sm font-medium text-gray-600 mb-2">
+            Select Section
+          </p>
+          <select
+            value={selectedSection}
+            onChange={(e) => setSelectedSection(e.target.value)}
+            className="border p-2 rounded-md w-full h-12"
+          >
+            <option value="All">All Sections</option>
+            <option value="Admin">Admin</option>
+            <option value="Councillor">Councillor</option>
+          </select>
+        </div>
+
+        {/* Generate Report Button */}
+        <div className="lg:col-span-2 xl:col-span-4">
           <button
             onClick={() => generateReport(selectedMonth)}
-            className="custom-button"
+            className="custom-button h-12 w-full lg:w-auto"
           >
             Generate Report
           </button>

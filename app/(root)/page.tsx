@@ -11,6 +11,17 @@ import SkeletonListCard from "@/components/skeletons/SkeletonListCard";
 import SkeletonDashboardCard from "@/components/skeletons/SkeletonDashboardCard";
 import SkeletonProgressSection from "@/components/skeletons/SkeletonProgressBar";
 
+import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar as CalendarIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+
 interface DashboardProps {
   totalEmployees: number;
   onTime: number;
@@ -28,15 +39,32 @@ const Dashboard: React.FC = () => {
   const [absentEmployees, setAbsentEmployees] = useState<string[]>([]);
   const [lateEmployees, setLateEmployees] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(
+    new Date()
+  );
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
-  const todayDate = new Date().toISOString().split("T")[0];
+  const formattedSelectedDate = selectedDate
+    ? new Date(
+        selectedDate.getTime() - selectedDate.getTimezoneOffset() * 60000
+      )
+        .toISOString()
+        .split("T")[0]
+    : "";
+
+  const handleDateSelect = (date: Date | undefined) => {
+    setSelectedDate(date);
+    setIsPopoverOpen(false);
+  };
 
   // Fetch data from the backend
   useEffect(() => {
     const fetchData = async () => {
       try {
         const employees = await fetchAllEmployees();
-        const attendanceRecords = await fetchAttendanceForDate(todayDate);
+        const attendanceRecords = await fetchAttendanceForDate(
+          formattedSelectedDate
+        );
 
         const totalEmployees = employees.length;
         let onTimeCount = 0;
@@ -76,7 +104,7 @@ const Dashboard: React.FC = () => {
     };
 
     fetchData();
-  }, [todayDate]);
+  }, [selectedDate]);
 
   const { totalEmployees, onTime, late, absent } = dashboardData;
   const onTimePercent = Math.round((onTime / totalEmployees) * 100);
@@ -85,6 +113,35 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="container mx-auto p-8">
+      <div className="mb-4">
+        <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant={"outline"}
+              className={cn(
+                "border p-2 rounded-md w-48 h-12",
+                !selectedDate && "text-muted-foreground"
+              )}
+            >
+              <CalendarIcon className="mr-2 h-4 w-4" />
+              {selectedDate ? (
+                format(selectedDate, "PPP")
+              ) : (
+                <span>Pick a date</span>
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0">
+            <Calendar
+              mode="single"
+              selected={selectedDate}
+              onSelect={handleDateSelect}
+              initialFocus
+            />
+          </PopoverContent>
+        </Popover>
+      </div>
+
       <DashboardHeader />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -95,7 +152,7 @@ const Dashboard: React.FC = () => {
             icon={<FaUsers />}
             title="Total Employees"
             value={totalEmployees}
-            bgColor="bg-blue-600"
+            gradient="linear-gradient(135deg, #6DD5FA, #2980B9)"
           />
         )}
 
@@ -106,7 +163,7 @@ const Dashboard: React.FC = () => {
             icon={<FaClock />}
             title="On Time"
             value={onTime}
-            bgColor="bg-green-600"
+            gradient="linear-gradient(135deg, #A8E063, #56AB2F)"
           />
         )}
 
@@ -117,7 +174,7 @@ const Dashboard: React.FC = () => {
             icon={<FaRunning />}
             title="Late"
             value={late}
-            bgColor="bg-yellow-500"
+            gradient="linear-gradient(135deg, #F2C94C,  #F2994A)"
           />
         )}
 
@@ -126,16 +183,16 @@ const Dashboard: React.FC = () => {
         ) : (
           <DashboardCard
             icon={<FaTimes />}
-            title="Absent"
+            title="On Leave"
             value={absent}
-            bgColor="bg-red-500"
+            gradient="linear-gradient(135deg, #F2994A, #EB5757)"
           />
         )}
       </div>
 
       <div className="mt-16">
-        <h2 className="text-2xl font-bold mb-4">Attendance Overview</h2>
-        <div className="flex w-full items-center justify-between mx-auto gap-10">
+        {/* <h2 className="text-2xl font-bold mb-4">Attendance Overview</h2> */}
+        <div className="flex flex-col md:flex-row w-full items-center justify-between mx-auto gap-10">
           {loading ? (
             <SkeletonProgressSection />
           ) : (
@@ -152,9 +209,9 @@ const Dashboard: React.FC = () => {
               <SkeletonListCard />
             ) : (
               <EmployeeListCard
-                title="Absent Employees"
+                title="On Leave"
                 employees={absentEmployees}
-                bgColor="bg-red-500"
+                bgColor="#EB5757"
                 emptyMessage="No employees are absent today."
               />
             )}
@@ -166,7 +223,7 @@ const Dashboard: React.FC = () => {
               <EmployeeListCard
                 title="Late Employees"
                 employees={lateEmployees}
-                bgColor="bg-yellow-500"
+                bgColor="#F2994A"
                 emptyMessage="No employees are late today."
               />
             )}

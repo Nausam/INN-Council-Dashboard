@@ -109,17 +109,12 @@ const EmployeesPage = () => {
     <div className="container mx-auto p-8">
       <div className="flex justify-between mb-10 items-center">
         <h1 className="text-3xl font-bold mb-6">Employees</h1>
-
-        {/* Add Employee Button */}
-        <Link href="/employees/add" className="custom-button">
-          <p>Add Employee</p>
-        </Link>
       </div>
 
-      <div className="flex gap-4 my-10">
+      <div className="flex md:flex-row flex-col gap-4 my-10">
         {/* Filter by Designation */}
         <select
-          className="border border-gray-400 rounded-md px-3 py-2"
+          className="border p-2 rounded-md w-full h-12"
           value={selectedDesignation}
           onChange={handleDesignationChange}
         >
@@ -137,7 +132,7 @@ const EmployeesPage = () => {
 
         {/* Filter by Section */}
         <select
-          className="border border-gray-400 rounded-md px-3 py-2"
+          className="border p-2 rounded-md w-full h-12"
           value={selectedSection}
           onChange={handleSectionChange}
         >
@@ -146,6 +141,14 @@ const EmployeesPage = () => {
           <option value="Admin">Admin</option>
           <option value="Imam">Imam</option>
         </select>
+
+        {/* Add Employee Button */}
+        <Link
+          href="/employees/add"
+          className="flex items-center justify-center custom-button border p-2 rounded-md w-full h-12"
+        >
+          <p>Add Employee</p>
+        </Link>
       </div>
 
       {/* Display loading state */}
