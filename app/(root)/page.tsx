@@ -21,6 +21,7 @@ import {
 import { Calendar as CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
+import LeaveDistributionChart from "@/components/Dashboard/LeaveDistributionChart";
 
 interface DashboardProps {
   totalEmployees: number;
@@ -41,6 +42,9 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(
     new Date()
+  );
+  const [selectedMonth, setSelectedMonth] = useState<string>(
+    new Date().toISOString().slice(0, 7)
   );
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
@@ -190,7 +194,7 @@ const Dashboard: React.FC = () => {
         )}
       </div>
 
-      <div className="mt-16">
+      <div className="mt-10">
         {/* <h2 className="text-2xl font-bold mb-4">Attendance Overview</h2> */}
         <div className="flex flex-col md:flex-row w-full items-center justify-between mx-auto gap-10">
           {loading ? (
@@ -203,7 +207,7 @@ const Dashboard: React.FC = () => {
             />
           )}
 
-          <div className="w-full items-center justify-center">
+          <div className="flex flex-col gap-4 w-full items-center justify-center">
             {/* Absent Employees */}
             {loading ? (
               <SkeletonListCard />
@@ -213,9 +217,9 @@ const Dashboard: React.FC = () => {
                 employees={absentEmployees}
                 bgColor="#EB5757"
                 emptyMessage="No employees are absent today."
+                gradient="linear-gradient(to right, #ddbea8,  #fad4c0)"
               />
             )}
-
             {/* Late Employees */}
             {loading ? (
               <SkeletonListCard />
@@ -223,13 +227,29 @@ const Dashboard: React.FC = () => {
               <EmployeeListCard
                 title="Late Employees"
                 employees={lateEmployees}
-                bgColor="#F2994A"
+                bgColor="#fa6e28"
                 emptyMessage="No employees are late today."
+                gradient="linear-gradient(to right, #ddbea8,  #fad4c0)"
               />
             )}
           </div>
         </div>
       </div>
+
+      {/* <div className="max-w-7xl mx-auto p-8 mt-10">
+        <div className="mb-6">
+         
+          <input
+            type="month"
+            id="month-picker"
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="border p-2 rounded-md"
+          />
+        </div>
+
+        <LeaveDistributionChart month={selectedMonth} />
+      </div> */}
     </div>
   );
 };

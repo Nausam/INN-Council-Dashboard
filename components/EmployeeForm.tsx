@@ -118,10 +118,10 @@ const EmployeeForm = ({
       <h1 className="text-3xl font-bold mb-6">
         {initialData ? "Edit Employee" : "Add Employee"}
       </h1>
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-6">
-        <div className="flex gap-2">
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-6 mt-10">
+        <div className="flex flex-wrap gap-4 lg:flex-row">
           {/* Name */}
-          <div className="w-full">
+          <div className="flex-1 min-w-[250px]">
             <label className="block font-bold mb-2" htmlFor="name">
               Name
             </label>
@@ -131,13 +131,13 @@ const EmployeeForm = ({
               id="name"
               value={formData.name}
               onChange={handleInputChange}
-              className="border p-2 rounded w-full"
+              className="border p-2 rounded w-full h-12"
               required
             />
           </div>
 
           {/* Adress */}
-          <div className="w-full">
+          <div className="flex-1 min-w-[250px]">
             <label className="block font-bold mb-2" htmlFor="name">
               Address
             </label>
@@ -147,13 +147,13 @@ const EmployeeForm = ({
               id="address"
               value={formData.address}
               onChange={handleInputChange}
-              className="border p-2 rounded w-full"
+              className="border p-2 rounded w-full h-12"
               required
             />
           </div>
 
           {/* Designation */}
-          <div className="w-full">
+          <div className="flex-1 min-w-[250px]">
             <label className="block font-bold mb-2" htmlFor="designation">
               Designation
             </label>
@@ -162,7 +162,7 @@ const EmployeeForm = ({
               id="designation"
               value={formData.designation}
               onChange={handleInputChange}
-              className="border p-2 rounded w-full"
+              className="border p-2 rounded w-full h-12"
               required
             >
               <option value="">Select Designation</option>
@@ -182,9 +182,9 @@ const EmployeeForm = ({
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-4 lg:flex-row">
           {/* Section */}
-          <div className="w-full">
+          <div className="flex-1 min-w-[250px]">
             <label className="block font-bold mb-2" htmlFor="designation">
               Section
             </label>
@@ -193,7 +193,7 @@ const EmployeeForm = ({
               id="section"
               value={formData.section}
               onChange={handleInputChange}
-              className="border p-2 rounded w-full"
+              className="border p-2 rounded w-full h-12"
               required
             >
               <option value="">Select Section</option>
@@ -204,7 +204,7 @@ const EmployeeForm = ({
           </div>
 
           {/* Record Card Number */}
-          <div className="w-full">
+          <div className="flex-1 min-w-[250px]">
             <label className="block font-bold mb-2" htmlFor="sickLeave">
               Record Card Number
             </label>
@@ -214,13 +214,13 @@ const EmployeeForm = ({
               id="recordCardNumber"
               value={formData.recordCardNumber}
               onChange={handleInputChange}
-              className="border p-2 rounded w-full"
+              className="border p-2 rounded w-full h-12"
               required
             />
           </div>
 
           {/* Joined Date */}
-          <div className="w-full">
+          <div className="flex-1 min-w-[250px]">
             <label className="block font-bold mb-2" htmlFor="joinedDate">
               Joined Date
             </label>
@@ -230,15 +230,15 @@ const EmployeeForm = ({
               id="joinedDate"
               value={formData.joinedDate}
               onChange={handleInputChange}
-              className="border p-2 rounded w-full"
+              className="border p-2 rounded w-full h-12"
               required
             />
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-4 lg:flex-row">
           {/* Sick Leave */}
-          <div className="w-full">
+          <div className="flex-1 min-w-[250px]">
             <label className="block font-bold mb-2" htmlFor="sickLeave">
               Sick Leave
             </label>
@@ -248,14 +248,14 @@ const EmployeeForm = ({
               id="sickLeave"
               value={formData.sickLeave}
               onChange={handleInputChange}
-              className="border p-2 rounded w-full"
+              className="border p-2 rounded w-full h-12"
               min="0"
               required
             />
           </div>
 
           {/* Certificate Sick Leave */}
-          <div className="w-full">
+          <div className="flex-1 min-w-[250px]">
             <label
               className="block font-bold mb-2"
               htmlFor="certificateSickLeave"
@@ -268,14 +268,14 @@ const EmployeeForm = ({
               id="certificateSickLeave"
               value={formData.certificateSickLeave}
               onChange={handleInputChange}
-              className="border p-2 rounded w-full"
+              className="border p-2 rounded w-full h-12"
               min="0"
               required
             />
           </div>
 
           {/* Annual Leave */}
-          <div className="w-full">
+          <div className="flex-1 min-w-[250px]">
             <label
               className="block font-bold mb-2"
               htmlFor="certificateSickLeave"
@@ -288,16 +288,16 @@ const EmployeeForm = ({
               id="annualLeave"
               value={formData.annualLeave}
               onChange={handleInputChange}
-              className="border p-2 rounded w-full"
+              className="border p-2 rounded w-full h-12"
               min="0"
               required
             />
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-4 lg:flex-row">
           {/* Family Related Leave */}
-          <div className="w-full">
+          <div className="flex-1 min-w-[250px]">
             <label
               className="block font-bold mb-2"
               htmlFor="familyRelatedLeave"
@@ -310,14 +310,14 @@ const EmployeeForm = ({
               id="familyRelatedLeave"
               value={formData.familyRelatedLeave}
               onChange={handleInputChange}
-              className="border p-2 rounded w-full"
+              className="border p-2 rounded w-full h-12"
               min="0"
               required
             />
           </div>
 
           {/* Maternity Leave */}
-          <div className="w-full">
+          <div className="flex-1 min-w-[250px]">
             <label className="block font-bold mb-2" htmlFor="maternityLeave">
               Maternity Leave
             </label>
@@ -327,14 +327,14 @@ const EmployeeForm = ({
               id="maternityLeave"
               value={formData.maternityLeave}
               onChange={handleInputChange}
-              className="border p-2 rounded w-full"
+              className="border p-2 rounded w-full h-12"
               min="0"
               required
             />
           </div>
 
           {/* Paternity Leave */}
-          <div className="w-full">
+          <div className="flex-1 min-w-[250px]">
             <label className="block font-bold mb-2" htmlFor="paternityLeave">
               Paternity Leave
             </label>
@@ -344,16 +344,16 @@ const EmployeeForm = ({
               id="paternityLeave"
               value={formData.paternityLeave}
               onChange={handleInputChange}
-              className="border p-2 rounded w-full"
+              className="border p-2 rounded w-full h-12"
               min="0"
               required
             />
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-4 lg:flex-row">
           {/* Official Leave */}
-          <div className="w-full">
+          <div className="flex-1 min-w-[250px]">
             <label className="block font-bold mb-2" htmlFor="officialLeave">
               Official Leave
             </label>
@@ -363,15 +363,15 @@ const EmployeeForm = ({
               id="officialLeave"
               value={formData.officialLeave}
               onChange={handleInputChange}
-              className="border p-2 rounded w-full"
+              className="border p-2 rounded w-full h-12"
               min="0"
               required
             />
           </div>
 
           {/* No Pay Leave */}
-          <div className="w-full">
-            <label className="block font-bold mb-2" htmlFor="noPayLeave">
+          <div className="flex-1 min-w-[250px]">
+            <label className="block font-bold mb-2 " htmlFor="noPayLeave">
               No Pay Leave
             </label>
             <input
@@ -380,17 +380,17 @@ const EmployeeForm = ({
               id="noPayLeave"
               value={formData.noPayLeave}
               onChange={handleInputChange}
-              className="border p-2 rounded w-full"
+              className="border p-2 rounded w-full h-12"
               min="0"
               required
             />
           </div>
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex justify-end mt-6">
           <button
             type="submit"
-            className="custom-button max-w-sm"
+            className="custom-button w-full md:w-auto h-12 px-8"
             disabled={loading}
           >
             {isLoading

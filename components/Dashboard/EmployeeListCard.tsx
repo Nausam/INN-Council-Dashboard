@@ -7,6 +7,7 @@ interface EmployeeListCardProps {
   employees: string[];
   bgColor: string;
   emptyMessage: string;
+  gradient: string;
 }
 
 const EmployeeListCard: React.FC<EmployeeListCardProps> = ({
@@ -14,8 +15,14 @@ const EmployeeListCard: React.FC<EmployeeListCardProps> = ({
   employees,
   bgColor,
   emptyMessage,
+  gradient,
 }) => (
-  <Card className="w-full max-w-lg mx-auto mt-8 shadow-xl rounded-lg ">
+  <Card
+    style={{
+      background: gradient,
+    }}
+    className="w-full max-w-lg mx-auto shadow-md rounded-lg border-none"
+  >
     <CardHeader>
       <CardTitle className="text-2xl font-semibold text-gray-700">
         {title}
@@ -27,9 +34,8 @@ const EmployeeListCard: React.FC<EmployeeListCardProps> = ({
           {employees.map((name, index) => (
             <div
               key={index}
-              className={cn("p-2 rounded-full shadow-lg text-sm text-white")}
+              className={cn("p-2 rounded-full shadow-sm text-sm text-white")}
               style={{
-                boxShadow: `0px 4px 10px 0px rgba(0, 0, 0, 0.15) inset`,
                 backgroundColor: bgColor,
               }}
             >

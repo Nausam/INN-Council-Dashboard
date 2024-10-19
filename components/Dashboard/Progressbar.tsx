@@ -18,7 +18,7 @@ const ProgressBar: React.FC<ProgressBarProps> = ({
       <span className="text-sm font-medium text-gray-600">{label}</span>
       <span className="text-sm font-medium text-gray-600">{value}%</span>
     </div>
-    <div className="relative h-6 rounded-full overflow-hidden bg-gray-300 shadow-inner">
+    <div className="relative h-6 rounded-full overflow-hidden bg-gray-100 shadow-inner">
       <div
         className={cn(
           "absolute top-0 left-0 h-full transition-all duration-500 ease-in-out rounded-full shadow-lg"
@@ -39,7 +39,12 @@ const ProgressSection: React.FC<{
   absentPercent: number;
 }> = ({ onTimePercent, latePercent, absentPercent }) => {
   return (
-    <Card className="w-full max-w-lg mx-auto mt-8 shadow-xl rounded-lg">
+    <Card
+      style={{
+        background: "linear-gradient(to right, #ddbea8,  #fad4c0)",
+      }}
+      className="w-full max-w-lg mx-auto mt-8 shadow-md rounded-lg border-none"
+    >
       <CardHeader>
         <CardTitle className="text-2xl font-semibold text-gray-700">
           Attendance Percentage

@@ -141,7 +141,7 @@ const AttendancePage = () => {
 
         <div className="flex items-end">
           <button
-            className="custom-button w-full lg:w-auto h-12"
+            className="custom-button w-full  h-12"
             onClick={() => fetchAttendanceData(formattedSelectedDate)}
             disabled={loading}
           >
@@ -151,7 +151,7 @@ const AttendancePage = () => {
 
         {/* Show message and generate button if no attendance is found */}
         {showGenerateButton && (
-          <div className="flex items-end">
+          <div className="flex items-end w-full">
             <button
               className="custom-button w-full lg:w-auto h-12"
               onClick={handleGenerateAttendance}
