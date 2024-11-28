@@ -20,7 +20,7 @@ import { Calendar as CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 
-const AttendancePage = () => {
+const AdminAttendancePage = () => {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(
     new Date()
   );
@@ -177,4 +177,4 @@ const AttendancePage = () => {
   );
 };
 
-export default AttendancePage;
+export default AdminAttendancePage;

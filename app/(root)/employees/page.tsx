@@ -127,7 +127,7 @@ const EmployeesPage = () => {
           <option value="Council Officer">Council Officer</option>
           <option value="A. Council Officer">A. Council Officer</option>
           <option value="Council Assistant">Council Assistant</option>
-          <option value="Mosque Worker">Mosque Worker</option>
+          <option value="Mosque Assistant">Mosque Assistant</option>
         </select>
 
         {/* Filter by Section */}

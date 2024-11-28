@@ -200,6 +200,7 @@ const EmployeeForm = ({
               <option value="Councillor">Councillor</option>
               <option value="Admin">Admin</option>
               <option value="Imam">Imam</option>
+              <option value="Mosque Assistant">Mosque Assistant</option>
             </select>
           </div>
 
