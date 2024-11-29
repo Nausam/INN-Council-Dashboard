@@ -22,6 +22,7 @@
     "@radix-ui/react-tooltip": "^1.1.4",
     "@types/react-icons": "^2.2.7",
     "appwrite": "^16.0.2",
+    "axios": "^1.7.8",
     "chart.js": "^4.4.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

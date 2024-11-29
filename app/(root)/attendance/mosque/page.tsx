@@ -1,10 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
-import AttendanceTable from "@/components/AttendanceTable";
+import MosqueAttendanceTable from "@/components/MosqueAttendanceTable";
 import {
-  createAttendanceForEmployees,
+  createMosqueAttendanceForEmployees,
+  fetchMosqueAttendanceForDate,
   fetchAllEmployees,
-  fetchAttendanceForDate,
 } from "@/lib/appwrite";
 import SkeletonAttendanceTable from "@/components/skeletons/SkeletonAttendanceTable";
 import { toast } from "@/hooks/use-toast";
@@ -52,11 +52,10 @@ const MosqueAttendancePage = () => {
   const fetchAttendanceData = async (date: string) => {
     setLoading(true);
     try {
-      const attendance = await fetchAttendanceForDate(date);
+      const attendance = await fetchMosqueAttendanceForDate(date);
       if (attendance.length > 0) {
         setAttendanceData(attendance);
         setIsAttendanceGenerated(true);
-        date;
       } else {
         setAttendanceData([]);
         setIsAttendanceGenerated(false);
@@ -72,7 +71,9 @@ const MosqueAttendancePage = () => {
   const handleGenerateAttendance = async () => {
     setLoading(true);
     try {
-      const attendance = await fetchAttendanceForDate(formattedSelectedDate);
+      const attendance = await fetchMosqueAttendanceForDate(
+        formattedSelectedDate
+      );
 
       if (attendance.length > 0) {
         toast({
@@ -84,15 +85,18 @@ const MosqueAttendancePage = () => {
         setAttendanceData(attendance);
       } else {
         const employees = await fetchAllEmployees();
-        const newAttendance = await createAttendanceForEmployees(
+        const mosqueAssistants = employees.filter(
+          (employee) => employee.designation === "Mosque Assistant"
+        );
+        const newAttendance = await createMosqueAttendanceForEmployees(
           formattedSelectedDate,
-          employees
+          mosqueAssistants
         );
         setAttendanceData(newAttendance);
         setShowGenerateButton(false);
         toast({
           title: "Success",
-          description: "Attendance sheet created for today",
+          description: "Attendance sheet created for mosque assistants",
           variant: "success",
         });
       }
@@ -105,7 +109,7 @@ const MosqueAttendancePage = () => {
 
   return (
     <div className="max-w-6xl mx-auto p-8">
-      <h1 className="text-3xl font-bold mb-4">Attendance</h1>
+      <h1 className="text-3xl font-bold mb-4">Mosque Attendance</h1>
 
       {/* Date Picker and Apply Button */}
       <div className="flex flex-col md:flex-row gap-4 mb-10">
@@ -141,7 +145,7 @@ const MosqueAttendancePage = () => {
 
         <div className="flex items-end">
           <button
-            className="custom-button w-full  h-12"
+            className="custom-button w-full h-12"
             onClick={() => fetchAttendanceData(formattedSelectedDate)}
             disabled={loading}
           >
@@ -167,7 +171,10 @@ const MosqueAttendancePage = () => {
       {loading ? (
         <SkeletonAttendanceTable />
       ) : attendanceData.length > 0 ? (
-        <AttendanceTable date={formattedSelectedDate} data={attendanceData} />
+        <MosqueAttendanceTable
+          date={formattedSelectedDate}
+          data={attendanceData}
+        />
       ) : (
         !isAttendanceGenerated && (
           <p>No attendance data for this date. Please generate one.</p>

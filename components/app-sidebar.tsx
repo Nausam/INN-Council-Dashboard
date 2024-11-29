@@ -93,6 +93,10 @@ const data = {
           title: "Mosque",
           url: "/attendance/mosque",
         },
+        {
+          title: "Prayer Times",
+          url: "/attendance/mosque/prayerTimes",
+        },
       ],
     },
     {
@@ -102,7 +106,11 @@ const data = {
       isActive: true,
       items: [
         {
-          title: "Monthly Report",
+          title: "Council Report",
+          url: "/reports",
+        },
+        {
+          title: "Mosque Report",
           url: "/reports",
         },
       ],

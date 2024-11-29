@@ -1,3 +1,4 @@
+import { MosqueAttendanceRecord, PrayerKey } from "@/types";
 import {
   Account,
   Avatars,
@@ -11,6 +12,7 @@ import {
   Role,
   Models,
 } from "appwrite";
+import axios from "axios";
 
 export const appwriteConfig = {
   endpoint: "https://cloud.appwrite.io/v1",
@@ -18,6 +20,8 @@ export const appwriteConfig = {
   databaseId: "66f135a0002dfd91853a",
   employeesCollectionId: "6708bd860020db2f8598",
   attendanceCollectionId: "6701373d00373ea0dd09",
+  mosqueAttendanceCollectionId: "6748841b0005589c9c31",
+  prayerTimesCollectionId: "6749573400305f49417b",
 };
 
 const {
@@ -307,5 +311,138 @@ export const deleteAttendancesByDate = async (date: string): Promise<void> => {
   } catch (error) {
     console.error(`Error deleting attendance records for ${date}:`, error);
     throw new Error(`Failed to delete attendance records for ${date}`);
+  }
+};
+
+// MOSQUE ASSISTANT ATTENDANCE
+
+// Fetch employees by designation
+export const fetchMosqueAttendanceForDate = async (date: string) => {
+  try {
+    const response = await databases.listDocuments(
+      appwriteConfig.databaseId,
+      appwriteConfig.mosqueAttendanceCollectionId,
+      [Query.equal("date", date)]
+    );
+    return response.documents;
+  } catch (error) {
+    console.error("Error fetching mosque attendance:", error);
+    throw error;
+  }
+};
+
+// CREATE MOSQUE ASSISTANTS ATTENDANCE
+export const createMosqueAttendanceForEmployees = async (
+  date: string,
+  employees: any[]
+) => {
+  try {
+    const attendanceEntries = employees.map((employee: any) => ({
+      employeeId: employee.$id,
+      date,
+      fathisSignInTime: null,
+      mendhuruSignInTime: null,
+      asuruSignInTime: null,
+      maqribSignInTime: null,
+      ishaSignInTime: null,
+      leaveType: null,
+    }));
+    console.log(employees);
+
+    await Promise.all(
+      attendanceEntries.map(async (entry) => {
+        await databases.createDocument(
+          appwriteConfig.databaseId,
+          appwriteConfig.mosqueAttendanceCollectionId,
+          ID.unique(),
+          entry
+        );
+      })
+    );
+
+    return attendanceEntries;
+  } catch (error) {
+    console.error("Error creating mosque attendance:", error);
+    throw error;
+  }
+};
+
+// Update attendance record for mosque
+export const updateMosqueAttendanceRecord = async (
+  attendanceId: string,
+  updates: Partial<MosqueAttendanceRecord>
+) => {
+  try {
+    const response = await databases.updateDocument(
+      appwriteConfig.databaseId,
+      appwriteConfig.mosqueAttendanceCollectionId,
+      attendanceId,
+      updates
+    );
+    return response;
+  } catch (error) {
+    console.error("Error updating mosque attendance record:", error);
+    throw error;
+  }
+};
+
+// SAVE PRAYER TIMES
+export const savePrayerTimes = async (prayerTimes: {
+  date: string;
+  fathisTime: string;
+  mendhuruTime: string;
+  asuruTime: string;
+  maqribTime: string;
+  ishaTime: string;
+}) => {
+  try {
+    const response = await databases.createDocument(
+      appwriteConfig.databaseId,
+      appwriteConfig.prayerTimesCollectionId,
+      ID.unique(),
+      prayerTimes
+    );
+    return response;
+  } catch (error) {
+    console.error("Error saving prayer times:", error);
+    throw error;
+  }
+};
+
+export const updatePrayerTimes = async (
+  recordId: string,
+  updatedTimes: {
+    fathisTime?: string;
+    mendhuruTime?: string;
+    asuruTime?: string;
+    maqribTime?: string;
+    ishaTime?: string;
+  }
+) => {
+  try {
+    const response = await databases.updateDocument(
+      appwriteConfig.databaseId,
+      appwriteConfig.prayerTimesCollectionId,
+      recordId,
+      updatedTimes
+    );
+    return response;
+  } catch (error) {
+    console.error("Error updating prayer times:", error);
+    throw error;
+  }
+};
+
+export const fetchPrayerTimesByDate = async (date: string) => {
+  try {
+    const response = await databases.listDocuments(
+      appwriteConfig.databaseId,
+      appwriteConfig.prayerTimesCollectionId,
+      [Query.equal("date", date)]
+    );
+    return response.documents[0] || null;
+  } catch (error) {
+    console.error("Error fetching prayer times:", error);
+    throw error;
   }
 };
