@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { savePrayerTimes } from "@/lib/appwrite";
+import { savePrayerTimes } from "@/lib/appwrite/appwrite";
 
 const PrayerTimesForm = () => {
   const [formData, setFormData] = useState({

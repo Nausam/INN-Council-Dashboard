@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { fetchEmployeeById } from "@/lib/appwrite";
+import { fetchEmployeeById } from "@/lib/appwrite/appwrite";
 import { useParams } from "next/navigation";
 import EmployeeDetailsCard from "@/components/EmployeeDetailsCard";
 import SkeletonEmployeeDetailsCard from "@/components/skeletons/SkeletonEmployeeDetailsCard";

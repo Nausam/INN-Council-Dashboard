@@ -1,6 +1,9 @@
 "use client";
 import React, { useState } from "react";
-import { createEmployeeRecord, updateEmployeeRecord } from "@/lib/appwrite";
+import {
+  createEmployeeRecord,
+  updateEmployeeRecord,
+} from "@/lib/appwrite/appwrite";
 
 import { useParams } from "next/navigation";
 import { useRouter } from "next/navigation";

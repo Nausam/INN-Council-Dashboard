@@ -1,7 +1,10 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import EmployeeForm from "@/components/EmployeeForm";
-import { updateEmployeeRecord, fetchEmployeeById } from "@/lib/appwrite";
+import {
+  updateEmployeeRecord,
+  fetchEmployeeById,
+} from "@/lib/appwrite/appwrite";
 import { useRouter } from "next/navigation";
 
 const EmployeeEditPage = ({ params }: { params: { id: string } }) => {

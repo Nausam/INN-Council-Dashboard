@@ -14,7 +14,7 @@ import {
   fetchEmployeeById,
   fetchPrayerTimesByDate,
   updateMosqueAttendanceRecord,
-} from "@/lib/appwrite";
+} from "@/lib/appwrite/appwrite";
 import {
   leaveTypeMapping,
   leaveTypes,

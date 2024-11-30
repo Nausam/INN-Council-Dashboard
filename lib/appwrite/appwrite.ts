@@ -12,7 +12,6 @@ import {
   Role,
   Models,
 } from "appwrite";
-import axios from "axios";
 
 export const appwriteConfig = {
   endpoint: "https://cloud.appwrite.io/v1",
@@ -553,6 +552,17 @@ export const fetchMosqueAssistants = async () => {
     return response.documents; // Return filtered employees
   } catch (error) {
     console.error("Error fetching mosque assistants:", error);
+    throw error;
+  }
+};
+
+export const createEmailSession = async (email: string, password: string) => {
+  try {
+    const response = await account.createEmailPasswordSession(email, password);
+    console.log("Login successful:", response);
+    return response;
+  } catch (error) {
+    console.error("Error creating email session:", error);
     throw error;
   }
 };

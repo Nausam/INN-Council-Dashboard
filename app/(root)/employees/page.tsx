@@ -1,9 +1,10 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import EmployeeCard from "@/components/EmployeeCard";
-import { fetchAllEmployees } from "@/lib/appwrite";
+import { fetchAllEmployees } from "@/lib/appwrite/appwrite";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { getCurrentUser } from "@/lib/actions/user.actions";
 
 const EmployeesPage = () => {
   const [employees, setEmployees] = useState<any[]>([]);
@@ -11,6 +12,9 @@ const EmployeesPage = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedDesignation, setSelectedDesignation] = useState<string>("All");
   const [selectedSection, setSelectedSection] = useState<string>("All");
+  const [user, setUser] = useState();
+
+  console.log(user);
 
   const router = useRouter();
 
@@ -53,6 +57,19 @@ const EmployeesPage = () => {
     };
 
     getEmployees();
+  }, []);
+
+  useEffect(() => {
+    const getUser = async () => {
+      try {
+        const user = await getCurrentUser();
+        setUser(user);
+      } catch (error) {
+        console.error("Error fetching employees:", error);
+      }
+    };
+
+    getUser();
   }, []);
 
   // Sort employees based on the desired order
@@ -143,12 +160,16 @@ const EmployeesPage = () => {
         </select>
 
         {/* Add Employee Button */}
-        <Link
-          href="/employees/add"
-          className="flex items-center justify-center custom-button border p-2 rounded-md w-full h-12"
-        >
-          <p>Add Employee</p>
-        </Link>
+        {user ? (
+          <Link
+            href="/employees/add"
+            className="flex items-center justify-center custom-button border p-2 rounded-md w-full h-12"
+          >
+            <p>Add Employee</p>
+          </Link>
+        ) : (
+          <></>
+        )}
       </div>
 
       {/* Display loading state */}

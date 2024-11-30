@@ -1,7 +1,7 @@
 "use client";
 import React, { useState } from "react";
 
-import { createEmployeeRecord } from "@/lib/appwrite";
+import { createEmployeeRecord } from "@/lib/appwrite/appwrite";
 import EmployeeForm from "@/components/EmployeeForm";
 
 const AddEmployeePage = () => {

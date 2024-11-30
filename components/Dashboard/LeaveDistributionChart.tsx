@@ -10,7 +10,7 @@ import {
   CategoryScale,
   LinearScale,
 } from "chart.js";
-import { fetchAttendanceForMonth } from "@/lib/appwrite"; // Adjust the path based on your app structure
+import { fetchAttendanceForMonth } from "@/lib/appwrite/appwrite"; // Adjust the path based on your app structure
 
 ChartJS.register(
   ArcElement,

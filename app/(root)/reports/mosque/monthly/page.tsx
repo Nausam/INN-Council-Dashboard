@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { fetchMosqueAttendanceForMonth } from "@/lib/appwrite";
+import { fetchMosqueAttendanceForMonth } from "@/lib/appwrite/appwrite";
 import {
   Table,
   TableBody,

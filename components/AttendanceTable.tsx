@@ -5,7 +5,7 @@ import {
   deleteAttendancesByDate,
   fetchEmployeeById,
   updateAttendanceRecord,
-} from "@/lib/appwrite";
+} from "@/lib/appwrite/appwrite";
 import {
   Table,
   TableBody,

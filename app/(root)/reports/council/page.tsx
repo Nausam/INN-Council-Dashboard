@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { fetchAttendanceForMonth } from "@/lib/appwrite";
+import { fetchAttendanceForMonth } from "@/lib/appwrite/appwrite";
 import {
   Table,
   TableBody,

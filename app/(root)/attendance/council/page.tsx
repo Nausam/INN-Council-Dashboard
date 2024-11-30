@@ -5,7 +5,7 @@ import {
   createAttendanceForEmployees,
   fetchAllEmployees,
   fetchAttendanceForDate,
-} from "@/lib/appwrite";
+} from "@/lib/appwrite/appwrite";
 import SkeletonAttendanceTable from "@/components/skeletons/SkeletonAttendanceTable";
 import { toast } from "@/hooks/use-toast";
 
