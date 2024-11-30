@@ -38,7 +38,7 @@ interface Report {
   [employeeId: string]: LeaveReport & EmployeeDetails;
 }
 
-const ReportsPage = () => {
+const CouncilReportsPage = () => {
   const [selectedMonth, setSelectedMonth] = useState<string>(
     new Date().toISOString().slice(0, 7)
   );
@@ -141,6 +141,65 @@ const ReportsPage = () => {
     }
   }, [selectedSection, selectedEmployee]);
 
+  const downloadCSV = () => {
+    if (reportData.length === 0) return;
+
+    // Prepare CSV headers
+    const headers = [
+      "Name",
+      "Address",
+      "Designation",
+      "Record Card Number",
+      "Joined Date",
+      "Sick Leave",
+      "Certificate Leave",
+      "Annual Leave",
+      "Official Leave",
+      "Family Related Leave",
+      "Maternity & Paternity Leave",
+      "Late Minutes",
+      "Total Absent Days",
+      "Total Days Attended",
+      "Total Working Days",
+    ];
+
+    // Prepare CSV rows
+    const rows = reportData.map(([employeeId, stats]) => [
+      stats.name,
+      stats.address,
+      stats.designation,
+      stats.recordCardNumber,
+      `"${new Date(stats.joinedDate).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })}"`, // Enclose Joined Date in double quotes
+      `'${stats.sickLeave || 0}`, // Force text format for Sick Leave
+      `'${stats.certificateSickLeave || 0}`, // Force text format
+      `'${stats.annualLeave || 0}`, // Force text format
+      `'${stats.officialLeave || 0}`, // Force text format
+      `'${stats.familyRelatedLeave || 0}`, // Force text format
+      `'${stats.maternityLeave || 0}`, // Force text format
+      `'${stats.minutesLate || 0}`, // Force text format
+      `'${stats.totalAbsent || 0}`, // Force text format
+      `'${totalDays - (stats.totalAbsent || 0)}`, // Force text format
+      `'${totalDays}`, // Force text format
+    ]);
+
+    // Convert to CSV format
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) => row.join(",")),
+    ].join("\n");
+
+    // Trigger file download
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `Attendance_Report_${selectedMonth}.csv`;
+    link.click();
+  };
+
   return (
     <div className="max-w-7xl mx-auto p-8">
       <h1 className="text-3xl font-bold mb-4">Monthly Attendance Report</h1>
@@ -207,12 +266,22 @@ const ReportsPage = () => {
         </div>
 
         {/* Generate Report Button */}
-        <div className="lg:col-span-2 xl:col-span-4">
+        <div className="flex lg:col-span-2 xl:col-span-4 gap-4">
           <button
             onClick={() => generateReport(selectedMonth)}
             className="custom-button h-12 w-full lg:w-auto"
           >
             Generate Report
+          </button>
+
+          <button
+            onClick={downloadCSV}
+            disabled={!reportAvailable} // Disable if no report is available
+            className={`custom-button h-12 w-full lg:w-auto ${
+              !reportAvailable ? "bg-gray-300 cursor-not-allowed" : ""
+            }`}
+          >
+            Download CSV
           </button>
         </div>
       </div>
@@ -315,4 +384,4 @@ const ReportsPage = () => {
   );
 };
 
-export default ReportsPage;
+export default CouncilReportsPage;

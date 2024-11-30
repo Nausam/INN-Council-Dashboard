@@ -446,3 +446,113 @@ export const fetchPrayerTimesByDate = async (date: string) => {
     throw error;
   }
 };
+
+export const fetchPrayerTimesForMonth = async (month: string) => {
+  try {
+    const startOfMonth = new Date(`${month}-01T00:00:00Z`).toISOString();
+    const endOfMonth = new Date(
+      new Date(startOfMonth).setMonth(new Date(startOfMonth).getMonth() + 1)
+    ).toISOString();
+
+    const response = await databases.listDocuments(
+      appwriteConfig.databaseId,
+      appwriteConfig.prayerTimesCollectionId,
+      [
+        Query.greaterThanEqual("date", startOfMonth),
+        Query.lessThanEqual("date", endOfMonth),
+      ]
+    );
+
+    return response.documents; // Return all prayer times for the month
+  } catch (error) {
+    console.error("Error fetching prayer times for the month:", error);
+    throw error;
+  }
+};
+
+export const fetchMosqueAttendanceForMonth = async (month: string) => {
+  const startOfMonth = new Date(`${month}-01T00:00:00Z`).toISOString();
+  const endOfMonth = new Date(
+    new Date(`${month}-01T00:00:00Z`).setMonth(
+      new Date(`${month}-01`).getMonth() + 1
+    )
+  ).toISOString();
+
+  let allAttendanceRecords: any[] = [];
+  let hasMore = true;
+  let offset = 0;
+
+  const limit = 100; // Appwrite limit for pagination
+
+  try {
+    while (hasMore) {
+      const response = await databases.listDocuments(
+        appwriteConfig.databaseId,
+        appwriteConfig.mosqueAttendanceCollectionId,
+        [
+          Query.greaterThanEqual("date", startOfMonth),
+          Query.lessThanEqual("date", endOfMonth),
+          Query.limit(limit),
+          Query.offset(offset),
+        ]
+      );
+
+      allAttendanceRecords = allAttendanceRecords.concat(response.documents);
+
+      // If we get fewer documents than the limit, it means we're done
+      if (response.documents.length < limit) {
+        hasMore = false;
+      } else {
+        offset += limit; // Move to the next batch
+      }
+    }
+    return allAttendanceRecords;
+  } catch (error) {
+    console.error("Error fetching attendance for the month:", error);
+    throw error;
+  }
+};
+
+export const fetchMosqueDailyAttendanceForMonth = async (
+  month: string,
+  employeeId: string
+) => {
+  try {
+    const startOfMonth = `${month}-01T00:00:00Z`;
+    const endOfMonth = new Date(
+      new Date(`${month}-01T00:00:00Z`).setMonth(
+        new Date(`${month}-01T00:00:00Z`).getMonth() + 1
+      )
+    ).toISOString();
+
+    const response = await databases.listDocuments(
+      appwriteConfig.databaseId,
+      appwriteConfig.mosqueAttendanceCollectionId,
+      [
+        Query.greaterThanEqual("date", startOfMonth),
+        Query.lessThanEqual("date", endOfMonth),
+        Query.equal("employeeId", employeeId), // Filter by employee ID
+      ]
+    );
+
+    return response.documents;
+  } catch (error) {
+    console.error("Error fetching mosque attendance:", error);
+    throw error;
+  }
+};
+
+// Fetch employees with designation "Mosque Assistant"
+export const fetchMosqueAssistants = async () => {
+  try {
+    const response = await databases.listDocuments(
+      appwriteConfig.databaseId,
+      appwriteConfig.employeesCollectionId,
+      [Query.equal("designation", "Mosque Assistant")] // Filter employees by designation
+    );
+    return response.documents; // Return filtered employees
+  } catch (error) {
+    console.error("Error fetching mosque assistants:", error);
+    throw error;
+  }
+};

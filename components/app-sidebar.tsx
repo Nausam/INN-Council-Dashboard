@@ -107,11 +107,15 @@ const data = {
       items: [
         {
           title: "Council Report",
-          url: "/reports",
+          url: "/reports/council",
         },
         {
-          title: "Mosque Report",
-          url: "/reports",
+          title: "Mosque Daily Report",
+          url: "/reports/mosque/daily",
+        },
+        {
+          title: "Mosque Monthly Report",
+          url: "/reports/mosque/monthly",
         },
       ],
     },
