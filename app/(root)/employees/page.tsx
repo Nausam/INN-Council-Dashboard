@@ -5,6 +5,7 @@ import { fetchAllEmployees } from "@/lib/appwrite/appwrite";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getCurrentUser } from "@/lib/actions/user.actions";
+import { useCurrentUser } from "@/hooks/getCurrentUser";
 
 const EmployeesPage = () => {
   const [employees, setEmployees] = useState<any[]>([]);
@@ -12,9 +13,8 @@ const EmployeesPage = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedDesignation, setSelectedDesignation] = useState<string>("All");
   const [selectedSection, setSelectedSection] = useState<string>("All");
-  const [user, setUser] = useState();
 
-  console.log(user);
+  const { currentUser, loading: userLoading, isAdmin } = useCurrentUser();
 
   const router = useRouter();
 
@@ -57,19 +57,6 @@ const EmployeesPage = () => {
     };
 
     getEmployees();
-  }, []);
-
-  useEffect(() => {
-    const getUser = async () => {
-      try {
-        const user = await getCurrentUser();
-        setUser(user);
-      } catch (error) {
-        console.error("Error fetching employees:", error);
-      }
-    };
-
-    getUser();
   }, []);
 
   // Sort employees based on the desired order
@@ -160,7 +147,7 @@ const EmployeesPage = () => {
         </select>
 
         {/* Add Employee Button */}
-        {user ? (
+        {isAdmin ? (
           <Link
             href="/employees/add"
             className="flex items-center justify-center custom-button border p-2 rounded-md w-full h-12"
@@ -176,7 +163,7 @@ const EmployeesPage = () => {
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {/* Show SkeletonCard components while loading */}
-          {[...Array(15)].map((_, index) => (
+          {[...Array(20)].map((_, index) => (
             <SkeletonCard key={index} />
           ))}
         </div>

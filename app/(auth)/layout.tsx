@@ -4,7 +4,7 @@ import React from "react";
 const layout = ({ children }: { children: React.ReactNode }) => {
   return (
     <div className="flex min-h-screen">
-      <section className="bg-cyan-600 p-10 hiddem w-1/2 items-center justify-center lg:flex xl:w-2/5">
+      <section className="bg-cyan-600 p-10 hidden w-1/2 items-center justify-center lg:flex xl:w-2/5">
         <div className="flex max-h-[800px] max-w-[430px] flex-col justify-center items-center space-y-12">
           <Image
             src="/assets/icons/logo.png"

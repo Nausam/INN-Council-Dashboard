@@ -19,6 +19,7 @@ import {
 import { Calendar as CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
+import { useUser } from "@/Providers/UserProvider";
 
 const MosqueAttendancePage = () => {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(
@@ -29,6 +30,8 @@ const MosqueAttendancePage = () => {
   const [isAttendanceGenerated, setIsAttendanceGenerated] = useState(false);
   const [showGenerateButton, setShowGenerateButton] = useState(false);
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+
+  const { currentUser, isAdmin, loading: userLoading } = useUser();
 
   const formattedSelectedDate = selectedDate
     ? new Date(

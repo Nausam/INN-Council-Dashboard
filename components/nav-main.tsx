@@ -18,6 +18,7 @@ import {
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
 import { ChevronRightIcon } from "@radix-ui/react-icons";
+import { useState } from "react";
 
 export function NavMain({
   items,
@@ -33,21 +34,38 @@ export function NavMain({
     }[];
   }[];
 }) {
+  const [activeGroup, setActiveGroup] = useState<string | null>(null);
+
+  const handleGroupClick = (groupTitle: string) => {
+    setActiveGroup((prevGroup) =>
+      prevGroup === groupTitle ? null : groupTitle
+    );
+  };
+
   return (
     <SidebarGroup>
-      <SidebarGroupLabel>Innamaadhoo Council</SidebarGroupLabel>
+      <SidebarGroupLabel className="text-sm">
+        Innamaadhoo Council
+      </SidebarGroupLabel>
       <SidebarMenu>
         {items.map((item) => (
           <Collapsible
             key={item.title}
             asChild
-            defaultOpen={item.isActive}
+            open={activeGroup === item.title}
+            onOpenChange={() => handleGroupClick(item.title)}
             className="group/collapsible"
           >
             <SidebarMenuItem>
               <CollapsibleTrigger asChild>
-                <SidebarMenuButton tooltip={item.title}>
-                  {item.icon && <item.icon />}
+                <SidebarMenuButton
+                  size="lg"
+                  className="text-md"
+                  tooltip={item.title}
+                >
+                  {item.icon && (
+                    <item.icon style={{ width: "24px", height: "24px" }} />
+                  )}
                   <span className="font-bold">{item.title}</span>
                   <ChevronRightIcon className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
                 </SidebarMenuButton>
@@ -58,7 +76,9 @@ export function NavMain({
                     <SidebarMenuSubItem key={subItem.title}>
                       <SidebarMenuSubButton asChild>
                         <a href={subItem.url}>
-                          <span>{subItem.title}</span>
+                          <span className="text-md font-normal">
+                            {subItem.title}
+                          </span>
                         </a>
                       </SidebarMenuSubButton>
                     </SidebarMenuSubItem>

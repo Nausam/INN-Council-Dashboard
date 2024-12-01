@@ -20,7 +20,7 @@ const SkeletonAttendanceTable = () => {
         </TableRow>
       </TableHeader>
       <TableBody>
-        {[...Array(15)].map((_, index) => (
+        {[...Array(20)].map((_, index) => (
           <TableRow key={index}>
             <TableCell className="py-2 px-2">
               <div className="h-4 w-4 bg-gray-300 animate-pulse rounded-full"></div>

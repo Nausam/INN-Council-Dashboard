@@ -29,18 +29,31 @@ const PrayerTimesForm = () => {
   return (
     <form
       onSubmit={handleSubmit}
-      className="max-w-md mx-auto p-4 border rounded"
+      className="w-full max-w-xl mx-auto p-6 border border-gray-300 rounded-lg shadow-md bg-white"
     >
-      <h2 className="text-lg font-bold mb-4">Add Prayer Times</h2>
-      <label>Date:</label>
-      <input
-        type="date"
-        name="date"
-        value={formData.date}
-        onChange={handleInputChange}
-        className="w-full border p-2 mb-4"
-        required
-      />
+      <h2 className="text-2xl font-semibold text-gray-700 mb-6 text-center">
+        Add Prayer Times
+      </h2>
+
+      {/* Date Input */}
+      <div className="mb-6">
+        <label
+          htmlFor="date"
+          className="block text-sm font-medium text-gray-600 mb-2"
+        >
+          Date:
+        </label>
+        <input
+          type="date"
+          name="date"
+          value={formData.date}
+          onChange={handleInputChange}
+          className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-500 focus:outline-none"
+          required
+        />
+      </div>
+
+      {/* Prayer Time Inputs */}
       {[
         "fathisTime",
         "mendhuruTime",
@@ -48,21 +61,25 @@ const PrayerTimesForm = () => {
         "maqribTime",
         "ishaTime",
       ].map((timeKey) => (
-        <div key={timeKey} className="mb-4">
-          <label>{timeKey.replace("Time", " Time")}</label>
+        <div key={timeKey} className="mb-6">
+          <label
+            htmlFor={timeKey}
+            className="block text-sm font-medium text-gray-600 mb-2"
+          >
+            {timeKey.replace("Time", " Time")}:
+          </label>
           <input
             type="time"
             name={timeKey}
             value={formData[timeKey as keyof typeof formData]}
             onChange={handleInputChange}
-            className="w-full border p-2"
+            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-500 focus:outline-none"
           />
         </div>
       ))}
-      <button
-        type="submit"
-        className="w-full bg-blue-500 text-white p-2 rounded"
-      >
+
+      {/* Submit Button */}
+      <button type="submit" className="w-full h-14 custom-button">
         Save Prayer Times
       </button>
     </form>

@@ -28,6 +28,7 @@ import {
 
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
+import { useUser } from "@/Providers/UserProvider";
 
 interface AttendanceRecord {
   $id: string;
@@ -90,6 +91,8 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
   const [initialAttendanceData, setInitialAttendanceData] =
     useState<AttendanceRecord[]>(data);
   const [submitting, setSubmitting] = useState(false);
+
+  const { currentUser, isAdmin, loading: userLoading } = useUser();
 
   const { toast } = useToast();
 
@@ -384,35 +387,39 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
           Submit Attendance
         </button>
 
-        <AlertDialog>
-          <AlertDialogTrigger className="flex items-center justify-center w-full md:w-60">
-            <div
-              className={`flex justify-center red-button w-full h-12  items-center ${
-                submitting ? "opacity-50 cursor-not-allowed" : ""
-              }`}
-            >
-              <p>Delete Attendance</p>
-            </div>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete
-                today's attendance and remove your data from the database.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                className="bg-red-600 hover:bg-red-700"
-                onClick={handleDeleteAllAttendances}
+        {isAdmin ? (
+          <AlertDialog>
+            <AlertDialogTrigger className="flex items-center justify-center w-full md:w-60">
+              <div
+                className={`flex justify-center red-button w-full h-12  items-center ${
+                  submitting ? "opacity-50 cursor-not-allowed" : ""
+                }`}
               >
-                Continue
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+                <p>Delete Attendance</p>
+              </div>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone. This will permanently delete
+                  today's attendance and remove your data from the database.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-red-600 hover:bg-red-700"
+                  onClick={handleDeleteAllAttendances}
+                >
+                  Continue
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        ) : (
+          <></>
+        )}
       </div>
     </div>
   );

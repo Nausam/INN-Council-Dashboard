@@ -3,15 +3,16 @@
 import * as React from "react";
 import {
   AudioWaveform,
-  BookOpen,
-  Bot,
   Command,
-  Frame,
   GalleryVerticalEnd,
-  Map,
-  PieChart,
-  Settings2,
-  SquareTerminal,
+  Home,
+  Users,
+  Calendar,
+  FileText,
+  Settings,
+  Package,
+  Boxes,
+  UserCircle,
 } from "lucide-react";
 
 import { NavMain } from "@/components/nav-main";
@@ -35,9 +36,9 @@ const data = {
   },
   teams: [
     {
-      name: "Acme Inc",
+      name: "Innamaadhoo Council",
       logo: GalleryVerticalEnd,
-      plan: "Enterprise",
+      plan: "Dashboard",
     },
     {
       name: "Acme Corp.",
@@ -54,7 +55,7 @@ const data = {
     {
       title: "Dashboard",
       url: "#",
-      icon: SquareTerminal,
+      icon: Home,
       isActive: true,
       items: [
         {
@@ -66,7 +67,7 @@ const data = {
     {
       title: "Employees",
       url: "#",
-      icon: SquareTerminal,
+      icon: Users,
       isActive: true,
       items: [
         {
@@ -82,7 +83,7 @@ const data = {
     {
       title: "Attendance",
       url: "#",
-      icon: Bot,
+      icon: Calendar,
       isActive: true,
       items: [
         {
@@ -102,7 +103,7 @@ const data = {
     {
       title: "Reports",
       url: "#",
-      icon: BookOpen,
+      icon: FileText,
       isActive: true,
       items: [
         {
@@ -122,7 +123,7 @@ const data = {
     {
       title: "Stock",
       url: "#",
-      icon: Settings2,
+      icon: Package,
       isActive: true,
       items: [
         {
@@ -134,7 +135,7 @@ const data = {
     {
       title: "Inventory",
       url: "#",
-      icon: Settings2,
+      icon: Boxes,
       isActive: true,
       items: [
         {

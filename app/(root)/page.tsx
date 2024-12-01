@@ -25,7 +25,6 @@ import { Calendar as CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import LeaveDistributionChart from "@/components/Dashboard/LeaveDistributionChart";
-import { signOutUser } from "@/lib/actions/user.actions";
 
 interface DashboardProps {
   totalEmployees: number;
@@ -119,17 +118,8 @@ const Dashboard: React.FC = () => {
   const latePercent = Math.round((late / totalEmployees) * 100);
   const absentPercent = Math.round((absent / totalEmployees) * 100);
 
-  const logout = () => {};
-
   return (
     <div className="container mx-auto p-8">
-      <button
-        className="border-2 px-16 py-4 m-2 hover:cursor-pointer"
-        type="submit"
-        onClick={async () => await signOutUser()}
-      >
-        LOGOUT
-      </button>
       <div className="mb-4">
         <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
           <PopoverTrigger asChild>

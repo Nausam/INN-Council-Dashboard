@@ -4,6 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/Providers/ThemeProvider";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { UserProvider } from "@/Providers/UserProvider";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -29,13 +30,13 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={geistSans.className}>
-        <SidebarProvider>
-          <AppSidebar />
-          <main className="w-full">
-            {children}
+        <UserProvider>
+          <SidebarProvider>
+            <AppSidebar />
             <SidebarTrigger />
-          </main>
-        </SidebarProvider>
+            <main className="w-full">{children}</main>
+          </SidebarProvider>
+        </UserProvider>
       </body>
     </html>
   );
