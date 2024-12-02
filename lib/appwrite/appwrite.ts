@@ -29,6 +29,7 @@ const {
   databaseId,
   employeesCollectionId,
   attendanceCollectionId,
+  mosqueAttendanceCollectionId,
 } = appwriteConfig;
 
 const client = new Client();
@@ -76,7 +77,12 @@ export const createAttendanceForEmployees = async (
   try {
     const defaultSignInTime = new Date(`${date}T08:00:00Z`).toISOString();
 
-    const attendanceEntries = employees.map((employee: any) => ({
+    // Filter out employees with the designation "Mosque Assistant"
+    const filteredEmployees = employees.filter(
+      (employee) => employee.designation !== "Mosque Assistant"
+    );
+
+    const attendanceEntries = filteredEmployees.map((employee: any) => ({
       employeeId: employee.$id,
       date,
       signInTime: defaultSignInTime,
@@ -181,7 +187,7 @@ export const createEmployeeRecord = async (employeeData: any) => {
       ID.unique(),
       employeeData
     );
-    console.log("DATA : ", employeeData);
+
     return response;
   } catch (error) {
     console.error("Error creating employee:", error);
@@ -236,8 +242,6 @@ export const deductLeave = async (
       employeeId,
       updates
     );
-
-    console.log("Leave deducted successfully for employee", employeeId);
   } catch (error) {
     console.error("Error updating employee leave:", error);
     throw error;
@@ -305,8 +309,6 @@ export const deleteAttendancesByDate = async (date: string): Promise<void> => {
 
     // Wait for all delete operations to complete
     await Promise.all(deletePromises);
-
-    console.log(`Successfully deleted all attendances for ${date}`);
   } catch (error) {
     console.error(`Error deleting attendance records for ${date}:`, error);
     throw new Error(`Failed to delete attendance records for ${date}`);
@@ -346,7 +348,6 @@ export const createMosqueAttendanceForEmployees = async (
       ishaSignInTime: null,
       leaveType: null,
     }));
-    console.log(employees);
 
     await Promise.all(
       attendanceEntries.map(async (entry) => {
@@ -559,10 +560,45 @@ export const fetchMosqueAssistants = async () => {
 export const createEmailSession = async (email: string, password: string) => {
   try {
     const response = await account.createEmailPasswordSession(email, password);
-    console.log("Login successful:", response);
+
     return response;
   } catch (error) {
     console.error("Error creating email session:", error);
     throw error;
+  }
+};
+
+export const deleteMosqueAttendancesByDate = async (
+  date: string
+): Promise<void> => {
+  try {
+    // Query the documents by date field
+    const response = await databases.listDocuments(
+      databaseId,
+      mosqueAttendanceCollectionId,
+      [Query.equal("date", date)]
+    );
+
+    const attendanceRecords = response.documents;
+
+    if (attendanceRecords.length === 0) {
+      console.log(`No attendance records found for date: ${date}`);
+      return; // No records to delete
+    }
+
+    // Delete each attendance record
+    const deletePromises = attendanceRecords.map((record) =>
+      databases.deleteDocument(
+        databaseId,
+        mosqueAttendanceCollectionId,
+        record.$id
+      )
+    );
+
+    // Wait for all delete operations to complete
+    await Promise.all(deletePromises);
+  } catch (error) {
+    console.error(`Error deleting attendance records for ${date}:`, error);
+    throw new Error(`Failed to delete attendance records for ${date}`);
   }
 };

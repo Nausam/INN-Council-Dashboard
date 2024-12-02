@@ -101,6 +101,22 @@ const data = {
       ],
     },
     {
+      title: "Requests",
+      url: "#",
+      icon: Calendar,
+      isActive: true,
+      items: [
+        {
+          title: "Leave",
+          url: "/requests/leave",
+        },
+        {
+          title: "Overtime",
+          url: "/requests/overtime",
+        },
+      ],
+    },
+    {
       title: "Reports",
       url: "#",
       icon: FileText,

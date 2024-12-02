@@ -15,17 +15,17 @@ const ProgressBar: React.FC<ProgressBarProps> = ({
 }) => (
   <div className="mb-6">
     <div className="flex justify-between mb-2">
-      <span className="text-sm font-medium text-gray-600">{label}</span>
-      <span className="text-sm font-medium text-gray-600">{value}%</span>
+      <span className="text-base font-medium text-gray-700">{label}</span>
+      <span className="text-base font-bold text-gray-800">{value}%</span>
     </div>
-    <div className="relative h-6 rounded-full overflow-hidden bg-gray-100 shadow-inner">
+    <div className="relative h-8 rounded-full overflow-hidden bg-gray-200 shadow-inner">
       <div
         className={cn(
-          "absolute top-0 left-0 h-full transition-all duration-500 ease-in-out rounded-full shadow-lg"
+          "absolute top-0 left-0 h-full transition-all duration-700 ease-in-out rounded-full"
         )}
         style={{
           width: `${value}%`,
-          background: gradient, // Using the gradient prop here
+          background: gradient,
           boxShadow: `0px 4px 10px 0px rgba(0, 0, 0, 0.15) inset`,
         }}
       ></div>
@@ -41,25 +41,25 @@ const ProgressSection: React.FC<{
   return (
     <Card
       style={{
-        background: "linear-gradient(to right, #ddbea8,  #fad4c0)",
+        background: "linear-gradient(to bottom right, #fdfdfd, #f8f8f8)",
       }}
-      className="w-full max-w-lg mx-auto mt-8 shadow-md rounded-lg border-none"
+      className="w-full mx-auto mt-8 shadow-lg rounded-xl border-none p-6 "
     >
       <CardHeader>
-        <CardTitle className="text-2xl font-semibold text-gray-700">
+        <CardTitle className="text-2xl font-bold text-gray-800 mb-4">
           Attendance Percentage
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-6">
         <ProgressBar
           value={onTimePercent}
           label="On Time"
-          gradient="linear-gradient(135deg,  #56AB2F, #A8E063)"
+          gradient="linear-gradient(135deg, #56AB2F, #A8E063)"
         />
         <ProgressBar
           value={latePercent}
           label="Late"
-          gradient="linear-gradient(135deg,  #F2994A, #F2C94C)"
+          gradient="linear-gradient(135deg, #F2994A, #F2C94C)"
         />
         <ProgressBar
           value={absentPercent}

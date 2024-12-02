@@ -24,7 +24,7 @@ import {
 import { Calendar as CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import LeaveDistributionChart from "@/components/Dashboard/LeaveDistributionChart";
+import RecentActivities from "@/components/Dashboard/RecentActivities";
 
 interface DashboardProps {
   totalEmployees: number;
@@ -157,7 +157,7 @@ const Dashboard: React.FC = () => {
         ) : (
           <DashboardCard
             icon={<FaUsers />}
-            title="Total Employees"
+            title="Employees"
             value={totalEmployees}
             gradient="linear-gradient(135deg, #6DD5FA, #2980B9)"
           />
@@ -197,9 +197,9 @@ const Dashboard: React.FC = () => {
         )}
       </div>
 
-      <div className="mt-10">
+      <div className="mt-5 w-full">
         {/* <h2 className="text-2xl font-bold mb-4">Attendance Overview</h2> */}
-        <div className="flex flex-col md:flex-row w-full items-center justify-between mx-auto gap-10">
+        <div className="flex flex-col w-full items-center justify-between mx-auto gap-10">
           {loading ? (
             <SkeletonProgressSection />
           ) : (
@@ -209,50 +209,34 @@ const Dashboard: React.FC = () => {
               absentPercent={absentPercent}
             />
           )}
-
-          <div className="flex flex-col gap-4 w-full items-center justify-center">
-            {/* Absent Employees */}
-            {loading ? (
-              <SkeletonListCard />
-            ) : (
-              <EmployeeListCard
-                title="On Leave"
-                employees={absentEmployees}
-                bgColor="#EB5757"
-                emptyMessage="No employees are absent today."
-                gradient="linear-gradient(to right, #ddbea8,  #fad4c0)"
-              />
-            )}
-            {/* Late Employees */}
-            {loading ? (
-              <SkeletonListCard />
-            ) : (
-              <EmployeeListCard
-                title="Late Employees"
-                employees={lateEmployees}
-                bgColor="#fa6e28"
-                emptyMessage="No employees are late today."
-                gradient="linear-gradient(to right, #ddbea8,  #fad4c0)"
-              />
-            )}
-          </div>
+        </div>
+        <div className="flex flex-col lg:flex-row gap-4 w-full mt-10">
+          {/* Absent Employees */}
+          {loading ? (
+            <SkeletonListCard />
+          ) : (
+            <EmployeeListCard
+              title="On Leave"
+              employees={absentEmployees}
+              bgColor="#EB5757"
+              emptyMessage="No employees are absent today."
+              gradient="linear-gradient(to right, #fa6e28,  #fa6e28)"
+            />
+          )}
+          {/* Late Employees */}
+          {loading ? (
+            <SkeletonListCard />
+          ) : (
+            <EmployeeListCard
+              title="Late Employees"
+              employees={lateEmployees}
+              bgColor="#fa6e28"
+              emptyMessage="No employees are late today."
+              gradient="linear-gradient(to right, #EB5757,  #EB5757)"
+            />
+          )}
         </div>
       </div>
-
-      {/* <div className="max-w-7xl mx-auto p-8 mt-10">
-        <div className="mb-6">
-         
-          <input
-            type="month"
-            id="month-picker"
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            className="border p-2 rounded-md"
-          />
-        </div>
-
-        <LeaveDistributionChart month={selectedMonth} />
-      </div> */}
     </div>
   );
 };

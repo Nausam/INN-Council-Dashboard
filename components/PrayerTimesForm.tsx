@@ -29,7 +29,7 @@ const PrayerTimesForm = () => {
   return (
     <form
       onSubmit={handleSubmit}
-      className="w-full max-w-xl mx-auto p-6 border border-gray-300 rounded-lg shadow-md bg-white"
+      className="w-full max-w-xl mx-auto p-6 rounded-lg bg-white"
     >
       <h2 className="text-2xl font-semibold text-gray-700 mb-6 text-center">
         Add Prayer Times
@@ -79,7 +79,10 @@ const PrayerTimesForm = () => {
       ))}
 
       {/* Submit Button */}
-      <button type="submit" className="w-full h-14 custom-button">
+      <button
+        type="submit"
+        className="w-full h-14 custom-button text-black font-normal"
+      >
         Save Prayer Times
       </button>
     </form>

@@ -20,7 +20,7 @@ const getUserByEmail = async (email: string) => {
   return result.total > 0 ? result.documents[0] : null;
 };
 
-const handleError = (error: unknown, message: string) => {
+export const handleError = (error: unknown, message: string) => {
   console.log(error, message);
   throw error;
 };
@@ -107,11 +107,9 @@ export const getCurrentUser = async () => {
 
     if (user.total <= 0) return null;
 
-    console.log("User document:", user.documents[0]);
-
     return parseStringify(user.documents[0]);
   } catch (error) {
-    console.log(error);
+    handleError;
   }
 };
 

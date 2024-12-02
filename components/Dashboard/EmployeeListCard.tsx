@@ -21,30 +21,37 @@ const EmployeeListCard: React.FC<EmployeeListCardProps> = ({
     style={{
       background: gradient,
     }}
-    className="w-full max-w-lg mx-auto shadow-md rounded-lg border-none"
+    className="w-full max-w-lg mx-auto shadow-lg rounded-xl border-none overflow-hidden"
   >
-    <CardHeader>
-      <CardTitle className="text-2xl font-semibold text-gray-700">
+    <CardHeader className="p-6 bg-opacity-50 bg-white">
+      <CardTitle className="text-xl font-semibold text-gray-800">
         {title}
       </CardTitle>
     </CardHeader>
-    <CardContent>
+    <CardContent className="p-6 bg-white h-full">
       {employees.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
+        <ul className="space-y-3">
           {employees.map((name, index) => (
-            <div
+            <li
               key={index}
-              className={cn("p-2 rounded-full shadow-sm text-sm text-white")}
-              style={{
-                backgroundColor: bgColor,
-              }}
+              className="flex items-center gap-3 p-3 bg-gray-100 rounded-lg shadow-sm hover:shadow-md transition-shadow"
             >
-              {name}
-            </div>
+              <div
+                className="flex h-10 w-10 items-center justify-center rounded-full text-white font-bold shadow-lg"
+                style={{
+                  backgroundColor: bgColor,
+                }}
+              >
+                {name.charAt(0).toUpperCase()}
+              </div>
+              <span className="text-gray-800 text-sm font-medium">{name}</span>
+            </li>
           ))}
-        </div>
+        </ul>
       ) : (
-        <p className="text-gray-600">{emptyMessage}</p>
+        <div className="p-6 text-center text-gray-600">
+          <p className="text-base font-medium">{emptyMessage}</p>
+        </div>
       )}
     </CardContent>
   </Card>

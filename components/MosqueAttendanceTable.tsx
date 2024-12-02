@@ -8,9 +8,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
   deductLeave,
+  deleteMosqueAttendancesByDate,
   fetchEmployeeById,
   fetchPrayerTimesByDate,
   updateMosqueAttendanceRecord,
@@ -27,12 +39,15 @@ import {
   formatTimeForInput,
   reverseLeaveTypeMapping,
 } from "@/constants";
+import { useUser } from "@/Providers/UserProvider";
 
 const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
   const [attendanceRecords, setAttendanceRecords] =
     useState<MosqueAttendanceRecord[]>(data);
   const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
+
+  const { currentUser, isAdmin, loading: userLoading } = useUser();
 
   useEffect(() => {
     setAttendanceRecords(data);
@@ -175,9 +190,6 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
           const availableLeaveCount = employeeData[leaveType] ?? 0;
 
           if (record.leaveType && availableLeaveCount <= 0) {
-            console.log(
-              `${employeeData.name} does not have any ${record.leaveType} left.`
-            );
             toast({
               title: "Leave Balance Error",
               description: `${employeeData.name} does not have any ${record.leaveType} left.`,
@@ -230,9 +242,35 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
         prev.map((record) => ({ ...record, changed: false }))
       );
     } catch (error) {
-      console.log(
-        "An unexpected error occured! The employee might not have sufficient leave balance."
-      );
+      console.error(error);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Delete attendances for selected date
+  const handleDeleteAllAttendances = async () => {
+    setSubmitting(true);
+    toast({
+      title: "Deleting",
+      description: "Deleting all attendances for the selected date...",
+      variant: "destructive",
+    });
+
+    try {
+      await deleteMosqueAttendancesByDate(date);
+      toast({
+        title: "Success",
+        description: "All attendances deleted successfully.",
+        variant: "success",
+      });
+      window!.location.reload();
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete attendances. Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -315,7 +353,7 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
         </TableBody>
       </Table>
 
-      <div className="flex justify-end mt-6">
+      <div className="flex justify-between mt-6 gap-4">
         <button
           className={`custom-button ${
             submitting ? "opacity-50 cursor-not-allowed" : ""
@@ -325,6 +363,40 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
         >
           {submitting ? "Submitting..." : "Submit Attendance"}
         </button>
+
+        {isAdmin ? (
+          <AlertDialog>
+            <AlertDialogTrigger className="flex items-center justify-center w-full md:w-48">
+              <div
+                className={`flex justify-center red-button w-full h-12  items-center ${
+                  submitting ? "opacity-50 cursor-not-allowed" : ""
+                }`}
+              >
+                <p>Delete Attendance</p>
+              </div>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone. This will permanently delete
+                  today's attendance and remove your data from the database.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-red-600 hover:bg-red-700"
+                  onClick={handleDeleteAllAttendances}
+                >
+                  Continue
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        ) : (
+          <></>
+        )}
       </div>
     </div>
   );

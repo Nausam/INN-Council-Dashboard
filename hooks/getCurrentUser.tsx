@@ -12,7 +12,6 @@ export const useCurrentUser = () => {
     const fetchUser = async () => {
       try {
         const user = await getCurrentUser();
-        console.log("User labels:", user?.labels);
         setCurrentUser(user);
 
         // Check if the user has the "admin" label

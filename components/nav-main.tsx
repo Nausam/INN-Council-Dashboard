@@ -66,7 +66,7 @@ export function NavMain({
                   {item.icon && (
                     <item.icon style={{ width: "24px", height: "24px" }} />
                   )}
-                  <span className="font-bold">{item.title}</span>
+                  <span className="font-medium">{item.title}</span>
                   <ChevronRightIcon className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
                 </SidebarMenuButton>
               </CollapsibleTrigger>

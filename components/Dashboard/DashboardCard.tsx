@@ -22,7 +22,7 @@ const DashboardCard: React.FC<DashboardCardProps> = ({
   >
     <div className="flex justify-between items-center">
       <div className="text-3xl">{icon}</div>
-      <h3 className="text-lg font-semibold">{title}</h3>
+      <h3 className="lg:text-2xl text-xl font-semibold">{title}</h3>
     </div>
     <p className="text-3xl font-bold mt-2">{value}</p>
   </div>

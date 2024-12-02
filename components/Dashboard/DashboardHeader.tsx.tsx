@@ -16,7 +16,7 @@ const DashboardHeader: React.FC = () => {
     >
       <div className="flex flex-col lg:flex-row lg:items-center justify-between items-start">
         <div>
-          <h1 className="text-2xl font-bold">Welcome to Your Dashboard!</h1>
+          <h1 className="text-4xl font-bold">Welcome to Your Dashboard!</h1>
           <p>{currentDate}</p>
         </div>
         <p className="text-2xl font-bold lg:mt-0 mt-5">Innamaadhoo Council</p>

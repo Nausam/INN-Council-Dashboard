@@ -145,18 +145,6 @@ const EmployeesPage = () => {
           <option value="Admin">Admin</option>
           <option value="Imam">Imam</option>
         </select>
-
-        {/* Add Employee Button */}
-        {isAdmin ? (
-          <Link
-            href="/employees/add"
-            className="flex items-center justify-center custom-button border p-2 rounded-md w-full h-12"
-          >
-            <p>Add Employee</p>
-          </Link>
-        ) : (
-          <></>
-        )}
       </div>
 
       {/* Display loading state */}

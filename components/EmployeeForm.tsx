@@ -35,6 +35,7 @@ const EmployeeForm = ({
     paternityLeave: initialData?.paternityLeave || 0,
     officialLeave: initialData?.officialLeave || 0,
     noPayLeave: initialData?.noPayLeave || 0,
+    preMaternityLeave: initialData?.preMaternityLeave || 0,
   });
 
   const [loading, setLoading] = useState(false);
@@ -58,6 +59,7 @@ const EmployeeForm = ({
       "paternityLeave",
       "officialLeave",
       "noPayLeave",
+      "preMaternityLeave",
     ];
 
     setFormData({
@@ -105,6 +107,7 @@ const EmployeeForm = ({
         paternityLeave: 0,
         officialLeave: 0,
         noPayLeave: 0,
+        preMaternityLeave: 0,
       });
     } catch (error) {
       toast({
@@ -320,6 +323,23 @@ const EmployeeForm = ({
             />
           </div>
 
+          {/* Pre Maternity Leave */}
+          <div className="flex-1 min-w-[250px]">
+            <label className="block font-bold mb-2" htmlFor="preMaternityLeave">
+              Pre-Maternity Leave
+            </label>
+            <input
+              type="number"
+              name="preMaternityLeave"
+              id="preMaternityLeave"
+              value={formData.preMaternityLeave}
+              onChange={handleInputChange}
+              className="border p-2 rounded w-full h-12"
+              min="0"
+              required
+            />
+          </div>
+
           {/* Maternity Leave */}
           <div className="flex-1 min-w-[250px]">
             <label className="block font-bold mb-2" htmlFor="maternityLeave">
@@ -336,7 +356,9 @@ const EmployeeForm = ({
               required
             />
           </div>
+        </div>
 
+        <div className="flex flex-wrap gap-4 lg:flex-row">
           {/* Paternity Leave */}
           <div className="flex-1 min-w-[250px]">
             <label className="block font-bold mb-2" htmlFor="paternityLeave">
@@ -353,9 +375,7 @@ const EmployeeForm = ({
               required
             />
           </div>
-        </div>
 
-        <div className="flex flex-wrap gap-4 lg:flex-row">
           {/* Official Leave */}
           <div className="flex-1 min-w-[250px]">
             <label className="block font-bold mb-2" htmlFor="officialLeave">
