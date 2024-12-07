@@ -62,6 +62,10 @@ const data = {
           title: "Home",
           url: "/",
         },
+        {
+          title: "Admin",
+          url: "/admin",
+        },
       ],
     },
     {

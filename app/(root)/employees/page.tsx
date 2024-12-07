@@ -110,9 +110,9 @@ const EmployeesPage = () => {
   };
 
   return (
-    <div className="container mx-auto p-8">
+    <div className="w-full max-w-7xl mx-auto p-8">
       <div className="flex justify-between mb-10 items-center">
-        <h1 className="text-3xl font-bold mb-6">Employees</h1>
+        <h1 className="text-3xl font-bold mb-5 mt-10">Employees</h1>
       </div>
 
       <div className="flex md:flex-row flex-col gap-4 my-10">
@@ -147,17 +147,14 @@ const EmployeesPage = () => {
         </select>
       </div>
 
-      {/* Display loading state */}
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {/* Show SkeletonCard components while loading */}
           {[...Array(20)].map((_, index) => (
             <SkeletonCard key={index} />
           ))}
         </div>
       ) : filteredEmployees.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {/* Map through filteredEmployees and display EmployeeCard */}
           {filteredEmployees.map((employee) => (
             <EmployeeCard
               key={employee.$id}

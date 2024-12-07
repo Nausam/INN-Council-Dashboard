@@ -121,61 +121,58 @@ body {
 
 @layer utilities {
   .h1 {
-      @apply text-[34px] leading-[42px] font-bold;
-    }
-  
-    .h2 {
-      @apply text-[24px] leading-[36px] font-bold;
-    }
-  
-    .h3 {
-      @apply text-[20px] leading-[28px] font-semibold;
-    }
-  
-    .h4 {
-      @apply text-[18px] leading-[20px] font-medium;
-    }
-  
-    .h5 {
-      @apply text-[16px] leading-[24px] font-semibold;
-    }
-  
-    .subtitle-1 {
-      @apply text-[16px] leading-[24px] font-medium;
-    }
-  
-    .subtitle-2 {
-      @apply text-[14px] leading-[20px] font-semibold;
-    }
-  
-    .body-1 {
-      @apply text-[16px] leading-[24px] font-normal;
-    }
-  
-    .body-2 {
-      @apply text-[14px] leading-[20px] font-normal;
-    }
-  
-    .button {
-      @apply text-[14px] leading-[20px] font-medium;
-    }
-  
-    .caption {
-      @apply text-[12px] leading-[16px] font-normal;
-    }
-  
-    .overline {
-      @apply text-[10px] leading-[14px] font-normal;
-    }
+    @apply text-[34px] leading-[42px] font-bold;
+  }
 
-    
-    
-    /* CUSTOM CSS */
-    
+  .h2 {
+    @apply text-[24px] leading-[36px] font-bold;
+  }
+
+  .h3 {
+    @apply text-[20px] leading-[28px] font-semibold;
+  }
+
+  .h4 {
+    @apply text-[18px] leading-[20px] font-medium;
+  }
+
+  .h5 {
+    @apply text-[16px] leading-[24px] font-semibold;
+  }
+
+  .subtitle-1 {
+    @apply text-[16px] leading-[24px] font-medium;
+  }
+
+  .subtitle-2 {
+    @apply text-[14px] leading-[20px] font-semibold;
+  }
+
+  .body-1 {
+    @apply text-[16px] leading-[24px] font-normal;
+  }
+
+  .body-2 {
+    @apply text-[14px] leading-[20px] font-normal;
+  }
+
+  .button {
+    @apply text-[14px] leading-[20px] font-medium;
+  }
+
+  .caption {
+    @apply text-[12px] leading-[16px] font-normal;
+  }
+
+  .overline {
+    @apply text-[10px] leading-[14px] font-normal;
+  }
+
+  /* CUSTOM CSS */
+
   .container {
     @apply lg:max-w-7xl;
   }
-
 
   ::selection {
     background-color: #189297;
@@ -205,6 +202,10 @@ body {
     @apply border px-4 py-2 rounded-md border-red-500 hover:bg-red-600 hover:text-white transition duration-300 shadow-md;
   }
 
+  .close-button {
+    @apply border px-4 py-2 rounded-md border-gray-500 hover:bg-gray-600 hover:text-white transition duration-300 shadow-md;
+  }
+
   .table-head {
     @apply rotate-text border-r border-gray-400 text-gray-700;
   }
@@ -220,8 +221,6 @@ body {
   .table-cell-rotate {
     @apply text-center rotate-text border-r text-gray-600;
   }
-
-  
 }
 
 @media print {

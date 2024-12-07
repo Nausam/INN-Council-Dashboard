@@ -27,7 +27,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   return (
     <div
       onClick={onClick}
-      className="shadow-md rounded-lg p-6 mt-2 cursor-pointer border hover:scale-105 transition duration-300 hover:border-cyan-600 relative"
+      className="shadow-md rounded-lg p-6 mt-2 cursor-pointer border border-cyan-300 hover:scale-105 transition duration-300 hover:border-cyan-600 relative bg-gradient-to-r from-white to-cyan-400/10"
     >
       <h2 className="text-xl font-bold mb-2">{name}</h2>
       <p className="text-gray-500">{designation}</p>

@@ -22,5 +22,7 @@ export const config = {
     "/reports/council",
     "/reports/mosque/daily",
     "/reports/mosque/monthly",
+    "/requests/leave",
+    "/requests/overtime",
   ],
 };

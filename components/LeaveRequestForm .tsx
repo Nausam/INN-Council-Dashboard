@@ -1,15 +1,17 @@
 "use client";
-import React, { useState } from "react";
+
+import React, { useState, useEffect } from "react";
 
 interface LeaveRequestFormProps {
   onSubmit: (formData: {
     fullName: string;
     reason: string;
-    totalDays: string;
+    totalDays: number;
     startDate: string;
     endDate: string;
     leaveType: string;
   }) => void;
+  currentUser: any | null;
 }
 
 const leaveTypes = [
@@ -24,15 +26,25 @@ const leaveTypes = [
   "Official Leave",
 ];
 
-const LeaveRequestForm: React.FC<LeaveRequestFormProps> = ({ onSubmit }) => {
+const LeaveRequestForm: React.FC<LeaveRequestFormProps> = ({
+  onSubmit,
+  currentUser,
+}) => {
   const [formData, setFormData] = useState({
     fullName: "",
     reason: "",
-    totalDays: "",
+    totalDays: 0,
     startDate: "",
     endDate: "",
     leaveType: "",
   });
+
+  useEffect(() => {
+    if (currentUser) {
+      // Pre-populate full name
+      setFormData((prev) => ({ ...prev, fullName: currentUser.fullName }));
+    }
+  }, [currentUser]);
 
   const handleInputChange = (
     e: React.ChangeEvent<
@@ -40,16 +52,22 @@ const LeaveRequestForm: React.FC<LeaveRequestFormProps> = ({ onSubmit }) => {
     >
   ) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+
+    setFormData((prev) => ({
+      ...prev,
+      [name]: name === "totalDays" ? parseInt(value, 10) || 0 : value,
+    }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSubmit(formData);
+
+    // Reset form fields after submission
     setFormData({
-      fullName: "",
+      fullName: currentUser?.fullName || "",
       reason: "",
-      totalDays: "",
+      totalDays: 0,
       startDate: "",
       endDate: "",
       leaveType: "",
@@ -59,17 +77,13 @@ const LeaveRequestForm: React.FC<LeaveRequestFormProps> = ({ onSubmit }) => {
   return (
     <form
       onSubmit={handleSubmit}
-      className="max-w-xl w-full p-6 bg-white rounded-lg shadow-lg"
+      className="max-w-lg w-full p-6 bg-white rounded-lg space-y-6"
     >
-      <h2 className="text-2xl font-semibold text-gray-700 mb-6 text-center">
-        Leave Request Form
-      </h2>
-
       {/* Full Name */}
-      <div className="mb-6">
+      <div>
         <label
           htmlFor="fullName"
-          className="block text-sm font-medium text-gray-600 mb-2"
+          className="block text-sm font-medium text-gray-700"
         >
           Full Name
         </label>
@@ -78,16 +92,16 @@ const LeaveRequestForm: React.FC<LeaveRequestFormProps> = ({ onSubmit }) => {
           name="fullName"
           value={formData.fullName}
           onChange={handleInputChange}
-          className="w-full px-4 py-2 border rounded-md focus:ring focus:ring-blue-500"
-          required
+          className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-1 focus:ring-cyan-500 focus:outline-none bg-gray-100 cursor-not-allowed"
+          readOnly // Make this field read-only
         />
       </div>
 
       {/* Leave Type */}
-      <div className="mb-6">
+      <div>
         <label
           htmlFor="leaveType"
-          className="block text-sm font-medium text-gray-600 mb-2"
+          className="block text-sm font-medium text-gray-700"
         >
           Leave Type
         </label>
@@ -95,7 +109,7 @@ const LeaveRequestForm: React.FC<LeaveRequestFormProps> = ({ onSubmit }) => {
           name="leaveType"
           value={formData.leaveType}
           onChange={handleInputChange}
-          className="w-full px-4 py-2 border rounded-md focus:ring focus:ring-blue-500"
+          className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-1 focus:ring-cyan-500 focus:outline-none"
           required
         >
           <option value="">Select Leave Type</option>
@@ -108,10 +122,10 @@ const LeaveRequestForm: React.FC<LeaveRequestFormProps> = ({ onSubmit }) => {
       </div>
 
       {/* Reason for Leave */}
-      <div className="mb-6">
+      <div>
         <label
           htmlFor="reason"
-          className="block text-sm font-medium text-gray-600 mb-2"
+          className="block text-sm font-medium text-gray-700"
         >
           Reason for Leave
         </label>
@@ -119,73 +133,72 @@ const LeaveRequestForm: React.FC<LeaveRequestFormProps> = ({ onSubmit }) => {
           name="reason"
           value={formData.reason}
           onChange={handleInputChange}
-          className="w-full px-4 py-2 border rounded-md focus:ring focus:ring-blue-500"
+          className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-1 focus:ring-cyan-500 focus:outline-none"
           rows={4}
+          placeholder="Explain why you need the leave..."
           required
         />
       </div>
 
       {/* Total Days */}
-      <div className="mb-6">
+      <div>
         <label
           htmlFor="totalDays"
-          className="block text-sm font-medium text-gray-600 mb-2"
+          className="block text-sm font-medium text-gray-700"
         >
           Total Days for Leave
         </label>
         <input
           type="number"
           name="totalDays"
-          value={formData.totalDays}
+          value={formData.totalDays || ""}
           onChange={handleInputChange}
-          className="w-full px-4 py-2 border rounded-md focus:ring focus:ring-blue-500"
+          className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-1 focus:ring-cyan-500 focus:outline-none"
           required
           min="1"
         />
       </div>
 
-      {/* Leave Start Date */}
-      <div className="mb-6">
-        <label
-          htmlFor="startDate"
-          className="block text-sm font-medium text-gray-600 mb-2"
-        >
-          Leave Start Date
-        </label>
-        <input
-          type="date"
-          name="startDate"
-          value={formData.startDate}
-          onChange={handleInputChange}
-          className="w-full px-4 py-2 border rounded-md focus:ring focus:ring-blue-500"
-          required
-        />
-      </div>
+      {/* Leave Dates */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label
+            htmlFor="startDate"
+            className="block text-sm font-medium text-gray-700"
+          >
+            Leave Start Date
+          </label>
+          <input
+            type="date"
+            name="startDate"
+            value={formData.startDate}
+            onChange={handleInputChange}
+            className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-1 focus:ring-cyan-500 focus:outline-none"
+            required
+          />
+        </div>
 
-      {/* Leave End Date */}
-      <div className="mb-6">
-        <label
-          htmlFor="endDate"
-          className="block text-sm font-medium text-gray-600 mb-2"
-        >
-          Leave End Date
-        </label>
-        <input
-          type="date"
-          name="endDate"
-          value={formData.endDate}
-          onChange={handleInputChange}
-          className="w-full px-4 py-2 border rounded-md focus:ring focus:ring-blue-500"
-          required
-        />
+        <div>
+          <label
+            htmlFor="endDate"
+            className="block text-sm font-medium text-gray-700"
+          >
+            Leave End Date
+          </label>
+          <input
+            type="date"
+            name="endDate"
+            value={formData.endDate}
+            onChange={handleInputChange}
+            className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-1 focus:ring-cyan-500 focus:outline-none"
+            required
+          />
+        </div>
       </div>
 
       {/* Submit Button */}
-      <button
-        type="submit"
-        className="w-full py-3 text-white bg-blue-500 hover:bg-blue-600 rounded-md"
-      >
-        Submit Leave Request
+      <button type="submit" className="custom-button w-full h-12">
+        Submit Request
       </button>
     </form>
   );

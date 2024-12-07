@@ -21,6 +21,7 @@ export const appwriteConfig = {
   attendanceCollectionId: "6701373d00373ea0dd09",
   mosqueAttendanceCollectionId: "6748841b0005589c9c31",
   prayerTimesCollectionId: "6749573400305f49417b",
+  leaveRequestsCollectionId: "674ee238003517f3004d",
 };
 
 const {
@@ -30,6 +31,7 @@ const {
   employeesCollectionId,
   attendanceCollectionId,
   mosqueAttendanceCollectionId,
+  leaveRequestsCollectionId,
 } = appwriteConfig;
 
 const client = new Client();
@@ -39,6 +41,16 @@ client.setEndpoint(endpoint).setProject(projectId);
 const account = new Account(client);
 const avatars = new Avatars(client);
 const databases = new Databases(client);
+
+type LeaveRequest = Models.Document & {
+  fullName: string;
+  leaveType: string;
+  reason: string;
+  totalDays: number;
+  startDate: string;
+  endDate: string;
+  approvalStatus: string;
+};
 
 // Fetch attendance for a given date
 export const fetchAttendanceForDate = async (date: string) => {
@@ -315,7 +327,7 @@ export const deleteAttendancesByDate = async (date: string): Promise<void> => {
   }
 };
 
-// MOSQUE ASSISTANT ATTENDANCE
+// MOSQUE ASSISTANTS ATTENDANCE
 
 // Fetch employees by designation
 export const fetchMosqueAttendanceForDate = async (date: string) => {
@@ -332,7 +344,7 @@ export const fetchMosqueAttendanceForDate = async (date: string) => {
   }
 };
 
-// CREATE MOSQUE ASSISTANTS ATTENDANCE
+// Create attendance for mosque assistants
 export const createMosqueAttendanceForEmployees = async (
   date: string,
   employees: any[]
@@ -367,7 +379,7 @@ export const createMosqueAttendanceForEmployees = async (
   }
 };
 
-// Update attendance record for mosque
+// Update attendance record for mosque assistants
 export const updateMosqueAttendanceRecord = async (
   attendanceId: string,
   updates: Partial<MosqueAttendanceRecord>
@@ -386,7 +398,7 @@ export const updateMosqueAttendanceRecord = async (
   }
 };
 
-// SAVE PRAYER TIMES
+// Save prayer times
 export const savePrayerTimes = async (prayerTimes: {
   date: string;
   fathisTime: string;
@@ -409,6 +421,7 @@ export const savePrayerTimes = async (prayerTimes: {
   }
 };
 
+// Update prayer times
 export const updatePrayerTimes = async (
   recordId: string,
   updatedTimes: {
@@ -433,6 +446,7 @@ export const updatePrayerTimes = async (
   }
 };
 
+// Get prayer times by date
 export const fetchPrayerTimesByDate = async (date: string) => {
   try {
     const response = await databases.listDocuments(
@@ -447,6 +461,7 @@ export const fetchPrayerTimesByDate = async (date: string) => {
   }
 };
 
+// Get prayer times by month
 export const fetchPrayerTimesForMonth = async (month: string) => {
   try {
     const startOfMonth = new Date(`${month}-01T00:00:00Z`).toISOString();
@@ -470,6 +485,7 @@ export const fetchPrayerTimesForMonth = async (month: string) => {
   }
 };
 
+// Get mosque attendance for the month
 export const fetchMosqueAttendanceForMonth = async (month: string) => {
   const startOfMonth = new Date(`${month}-01T00:00:00Z`).toISOString();
   const endOfMonth = new Date(
@@ -513,6 +529,7 @@ export const fetchMosqueAttendanceForMonth = async (month: string) => {
   }
 };
 
+// Get daily mosque attendance
 export const fetchMosqueDailyAttendanceForMonth = async (
   month: string,
   employeeId: string
@@ -542,7 +559,7 @@ export const fetchMosqueDailyAttendanceForMonth = async (
   }
 };
 
-// Fetch employees with designation "Mosque Assistant"
+// Get mosque assistants
 export const fetchMosqueAssistants = async () => {
   try {
     const response = await databases.listDocuments(
@@ -557,17 +574,7 @@ export const fetchMosqueAssistants = async () => {
   }
 };
 
-export const createEmailSession = async (email: string, password: string) => {
-  try {
-    const response = await account.createEmailPasswordSession(email, password);
-
-    return response;
-  } catch (error) {
-    console.error("Error creating email session:", error);
-    throw error;
-  }
-};
-
+// Delete mosque attendances by date
 export const deleteMosqueAttendancesByDate = async (
   date: string
 ): Promise<void> => {
@@ -600,5 +607,121 @@ export const deleteMosqueAttendancesByDate = async (
   } catch (error) {
     console.error(`Error deleting attendance records for ${date}:`, error);
     throw new Error(`Failed to delete attendance records for ${date}`);
+  }
+};
+
+// AUTHENTICATION
+
+// Create email and password session
+export const createEmailSession = async (email: string, password: string) => {
+  try {
+    const response = await account.createEmailPasswordSession(email, password);
+
+    return response;
+  } catch (error) {
+    console.error("Error creating email session:", error);
+    throw error;
+  }
+};
+
+// LEAVE REQUESTS
+
+// Create leave requests
+export const createLeaveRequest = async (leaveRequestData: {
+  fullName: string;
+  leaveType: string;
+  reason: string;
+  totalDays: number;
+  startDate: string;
+  endDate: string;
+}) => {
+  try {
+    const currentDateTime = new Date().toISOString();
+
+    const response = await databases.createDocument(
+      appwriteConfig.databaseId,
+      appwriteConfig.leaveRequestsCollectionId,
+      ID.unique(),
+      {
+        ...leaveRequestData,
+        createdAt: currentDateTime,
+      }
+    );
+
+    console.log("Leave request created:", response);
+    return response;
+  } catch (error) {
+    console.error("Error creating leave request:", error);
+    throw new Error("Failed to create leave request.");
+  }
+};
+
+// Get leave requests for admin
+export const fetchLeaveRequests = async (
+  limit = 10,
+  offset = 0
+): Promise<{ requests: any[]; totalCount: number }> => {
+  try {
+    // Fetch leave requests with pagination
+    const response = await databases.listDocuments(
+      appwriteConfig.databaseId,
+      appwriteConfig.leaveRequestsCollectionId,
+      [Query.orderDesc("createdAt"), Query.limit(limit), Query.offset(offset)]
+    );
+
+    return {
+      requests: response.documents, // The leave requests
+      totalCount: response.total, // Total number of documents in the collection
+    };
+  } catch (error) {
+    console.error("Error fetching leave requests:", error);
+    throw error;
+  }
+};
+
+// Update leave requests
+export const updateLeaveRequest = async (
+  requestId: string,
+  data: { approvalStatus: string; actionBy?: string }
+) => {
+  try {
+    await databases.updateDocument(
+      appwriteConfig.databaseId,
+      appwriteConfig.leaveRequestsCollectionId,
+      requestId,
+      data
+    );
+  } catch (error) {
+    console.error("Error updating leave request:", error);
+    throw error;
+  }
+};
+
+// Get leave requests for users
+export const fetchUserLeaveRequests = async (
+  status?: string,
+  limit = 10,
+  offset = 0
+): Promise<{ requests: LeaveRequest[]; totalCount: number }> => {
+  try {
+    const filters = status ? [Query.equal("approvalStatus", status)] : [];
+
+    const response = await databases.listDocuments<LeaveRequest>(
+      appwriteConfig.databaseId,
+      appwriteConfig.leaveRequestsCollectionId,
+      [
+        ...filters,
+        Query.limit(limit),
+        Query.offset(offset),
+        Query.orderDesc("createdAt"),
+      ]
+    );
+    return {
+      requests: response.documents,
+      totalCount: response.total,
+    };
+  } catch (error) {
+    console.error("Error fetching leave requests:", error);
+    throw error;
   }
 };

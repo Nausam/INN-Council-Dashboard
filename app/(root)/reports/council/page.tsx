@@ -202,7 +202,9 @@ const CouncilReportsPage = () => {
 
   return (
     <div className="max-w-7xl mx-auto p-8">
-      <h1 className="text-3xl font-bold mb-4">Monthly Attendance Report</h1>
+      <h1 className="text-3xl font-bold mb-5 mt-10">
+        Monthly Attendance Report
+      </h1>
 
       <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4">
         {/* Select Month */}

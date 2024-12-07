@@ -31,11 +31,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={geistSans.className}>
         <UserProvider>
-          <SidebarProvider>
-            <AppSidebar />
-            <SidebarTrigger />
-            <main className="w-full">{children}</main>
-          </SidebarProvider>
+          <main>{children}</main>
         </UserProvider>
       </body>
     </html>

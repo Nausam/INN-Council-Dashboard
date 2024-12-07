@@ -153,7 +153,7 @@ const MosqueMonthlyReportsPage = () => {
 
   return (
     <div className="max-w-7xl mx-auto p-8">
-      <h1 className="text-3xl font-bold mb-4">
+      <h1 className="text-3xl font-bold mb-5 mt-10">
         Mosque Monthly Attendance Report
       </h1>
 

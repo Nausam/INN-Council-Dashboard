@@ -29,17 +29,21 @@ const EmployeeDetails = () => {
     }
   }, [id]);
 
-  if (loading) {
-    return <SkeletonEmployeeDetailsCard />;
-  }
-
   if (!employee) {
-    return <SkeletonEmployeeDetailsCard />;
+    return (
+      <div className="flex items-center justify-center h-screen w-full">
+        <SkeletonEmployeeDetailsCard />
+      </div>
+    );
   }
 
   return (
-    <div className="max-w-6xl mx-auto p-8">
-      <EmployeeDetailsCard employee={employee} />
+    <div className="flex justify-center items-center max-w-7xl mx-auto p-8 h-screen w-full">
+      {loading ? (
+        <SkeletonEmployeeDetailsCard />
+      ) : (
+        <EmployeeDetailsCard employee={employee} />
+      )}
     </div>
   );
 };

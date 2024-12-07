@@ -111,8 +111,8 @@ const MosqueAttendancePage = () => {
   };
 
   return (
-    <div className="max-w-6xl mx-auto p-8">
-      <h1 className="text-3xl font-bold mb-4">Mosque Attendance</h1>
+    <div className="max-w-7xl mx-auto p-8">
+      <h1 className="text-3xl font-bold mb-5 mt-10">Mosque Attendance</h1>
 
       {/* Date Picker and Apply Button */}
       <div className="flex flex-col md:flex-row gap-4 mb-10">
