@@ -43,3 +43,13 @@ export const convertTimeToDateTime = (time: string, date: string) => {
   dateTime.setUTCHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
   return dateTime.toISOString();
 };
+
+export const registrationDefaultValues = {
+  fullName: "",
+  address: "",
+  contactNumber: 0,
+  idCard: "",
+  isCitizen: false,
+  isCompany: false,
+  isRetailer: false,
+};

@@ -59,3 +59,13 @@ export type PrayerKey =
   | "asuruSignInTime"
   | "maqribSignInTime"
   | "ishaSignInTime";
+
+export type Registration = {
+  fullName: string;
+  address: string;
+  contactNumber: number;
+  idCard: string;
+  isCitizen: boolean;
+  isCompany: boolean;
+  isRetailer: boolean;
+};

@@ -22,6 +22,7 @@ export const appwriteConfig = {
   mosqueAttendanceCollectionId: "6748841b0005589c9c31",
   prayerTimesCollectionId: "6749573400305f49417b",
   leaveRequestsCollectionId: "674ee238003517f3004d",
+  wasteManagementFormsId: "6784e0610000e598d1e6",
 };
 
 const {
@@ -32,6 +33,7 @@ const {
   attendanceCollectionId,
   mosqueAttendanceCollectionId,
   leaveRequestsCollectionId,
+  wasteManagementFormsId,
 } = appwriteConfig;
 
 const client = new Client();
