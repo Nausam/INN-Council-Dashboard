@@ -1,4 +1,5 @@
 "use client";
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,6 +32,7 @@ import {
   fetchPrayerTimesByDate, // fallback source
   updateMosqueAttendanceRecord,
 } from "@/lib/appwrite/appwrite";
+import { fetchInnamaadhooTimes, InnamaadhooTimes } from "@/lib/salat-client";
 import { useUser } from "@/Providers/UserProvider";
 import {
   leaveTypeMapping,
@@ -41,8 +43,15 @@ import {
 } from "@/types";
 import { useEffect, useMemo, useState } from "react";
 
-// Innamaadhoo salat helper
-import { fetchInnamaadhooTimes, InnamaadhooTimes } from "@/lib/salat-client";
+/* -------------------- local helpers & types -------------------- */
+
+type EmployeeRef =
+  | string
+  | {
+      $id?: string;
+      id?: string;
+      name?: string;
+    };
 
 /** Parse "HH:MM" -> minutes since midnight */
 function toMinutes(hhmm: string): number {
@@ -56,22 +65,14 @@ function latenessMinutes(
   actualISO?: string | null
 ): number {
   if (!actualISO) return 0;
-  // Your own helper returns "HH:MM" for inputs saved as ISO; perfect for local math
-  const actualHHMM = formatTimeForInput(actualISO);
+  const actualHHMM = formatTimeForInput(actualISO); // returns "HH:MM" locally
   if (!actualHHMM) return 0;
   const diff = toMinutes(actualHHMM) - toMinutes(requiredHHMM);
   return Math.max(0, Math.round(diff));
 }
 
-/** Build a *local* Date from an ISO yyyy-mm-dd and HH:mm string */
-function localDateFrom(dateISO: string, hhmm: string) {
-  const [y, m, d] = dateISO.split("-").map(Number);
-  const [H, M] = hhmm.split(":").map(Number);
-  return new Date(y, m - 1, d, H, M, 0, 0);
-}
-
 /** Normalize employee id from either embedded object or string */
-function resolveEmployeeId(emp: any): string | null {
+function resolveEmployeeId(emp: EmployeeRef | null | undefined): string | null {
   if (!emp) return null;
   if (typeof emp === "string") return emp;
   if (typeof emp.$id === "string") return emp.$id;
@@ -79,29 +80,39 @@ function resolveEmployeeId(emp: any): string | null {
   return null;
 }
 
+/** Get display name from EmployeeRef */
+function nameFromRef(
+  emp: EmployeeRef | null | undefined,
+  cache: Record<string, string>
+): string {
+  if (!emp) return "Unknown";
+  if (typeof emp === "string") return cache[emp] ?? emp;
+  return emp.name || emp.$id || emp.id || "Unknown";
+}
+
+/* ======================= Component ======================= */
+
 const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
   const [attendanceRecords, setAttendanceRecords] =
     useState<MosqueAttendanceRecord[]>(data);
   const [submitting, setSubmitting] = useState(false);
 
-  // NEW: local cache of id -> employee name
+  // id -> employee name (for rows where employeeId is a string id)
   const [nameMap, setNameMap] = useState<Record<string, string>>({});
 
   const { toast } = useToast();
-  const { currentUser, isAdmin } = useUser();
+  const { isAdmin } = useUser();
 
   useEffect(() => {
     setAttendanceRecords(data);
   }, [data]);
 
-  // --- NEW: fetch names for any string employeeId we don't know yet -----------
+  // fetch names for unknown string ids
   const unresolvedIds = useMemo(() => {
     const ids = new Set<string>();
     for (const r of data) {
       const emp = r.employeeId;
-      if (typeof emp === "string") {
-        if (!nameMap[emp]) ids.add(emp);
-      }
+      if (typeof emp === "string" && !nameMap[emp]) ids.add(emp);
     }
     return Array.from(ids);
   }, [data, nameMap]);
@@ -111,25 +122,20 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
 
     let cancelled = false;
     (async () => {
-      try {
-        const results = await Promise.allSettled(
-          unresolvedIds.map((id) => fetchEmployeeById(id))
-        );
-        const additions: Record<string, string> = {};
-        results.forEach((res, i) => {
-          const id = unresolvedIds[i];
-          if (res.status === "fulfilled" && res.value) {
-            additions[id] = res.value.name || id;
-          } else {
-            additions[id] = id; // fallback to showing id if fetch fails
-          }
-        });
-        if (!cancelled) {
-          setNameMap((prev) => ({ ...prev, ...additions }));
+      const results = await Promise.allSettled(
+        unresolvedIds.map((id) => fetchEmployeeById(id))
+      );
+      const additions: Record<string, string> = {};
+      results.forEach((res, i) => {
+        const id = unresolvedIds[i];
+        if (res.status === "fulfilled" && res.value) {
+          const doc = res.value as { name?: string };
+          additions[id] = doc?.name ?? id;
+        } else {
+          additions[id] = id;
         }
-      } catch {
-        // ignore; names for those ids will remain as id strings
-      }
+      });
+      if (!cancelled) setNameMap((prev) => ({ ...prev, ...additions }));
     })();
 
     return () => {
@@ -137,52 +143,39 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
     };
   }, [unresolvedIds]);
 
-  // ---------------------------------------------------------------------------
-
   const handleSignInChange = (
     attendanceId: string,
     prayer: PrayerKey,
     newSignInTime: string
   ) => {
     const dateTime = convertTimeToDateTime(newSignInTime, date);
-    const updatedRecords = attendanceRecords.map((record) =>
-      record.$id === attendanceId
-        ? { ...record, [prayer]: dateTime, changed: true }
-        : record
+    setAttendanceRecords((prev) =>
+      prev.map((r) =>
+        r.$id === attendanceId ? { ...r, [prayer]: dateTime, changed: true } : r
+      )
     );
-    setAttendanceRecords(updatedRecords);
   };
 
-  const handleLeaveChange = async (
-    attendanceId: string,
-    leaveTypeLabel: string,
-    employeeId: string
-  ) => {
+  const handleLeaveChange = (attendanceId: string, leaveTypeLabel: string) => {
     const leaveTypeValue =
-      leaveTypeMapping[leaveTypeLabel as keyof typeof leaveTypeMapping] || null;
-
-    const updatedAttendance = attendanceRecords.map((record) => {
-      if (record.$id === attendanceId) {
-        const previousLeaveType = record.leaveType;
-
-        const updatedRecord = {
-          ...record,
-          fathisSignInTime: leaveTypeValue ? null : record.fathisSignInTime,
-          mendhuruSignInTime: leaveTypeValue ? null : record.mendhuruSignInTime,
-          asuruSignInTime: leaveTypeValue ? null : record.asuruSignInTime,
-          maqribSignInTime: leaveTypeValue ? null : record.maqribSignInTime,
-          ishaSignInTime: leaveTypeValue ? null : record.ishaSignInTime,
-          leaveType: leaveTypeValue,
-          previousLeaveType,
-          changed: true,
-        };
-
-        return updatedRecord;
-      }
-      return record;
-    });
-
-    setAttendanceRecords(updatedAttendance);
+      leaveTypeMapping[leaveTypeLabel as keyof typeof leaveTypeMapping] ?? null;
+    setAttendanceRecords((prev) =>
+      prev.map((r) =>
+        r.$id === attendanceId
+          ? {
+              ...r,
+              fathisSignInTime: leaveTypeValue ? null : r.fathisSignInTime,
+              mendhuruSignInTime: leaveTypeValue ? null : r.mendhuruSignInTime,
+              asuruSignInTime: leaveTypeValue ? null : r.asuruSignInTime,
+              maqribSignInTime: leaveTypeValue ? null : r.maqribSignInTime,
+              ishaSignInTime: leaveTypeValue ? null : r.ishaSignInTime,
+              leaveType: leaveTypeValue,
+              previousLeaveType: r.leaveType,
+              changed: true,
+            }
+          : r
+      )
+    );
   };
 
   const handleSubmitAttendance = async () => {
@@ -193,15 +186,15 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
       variant: "default",
     });
 
-    // 1) Try salat.db Innamaadhoo times
+    // 1) Try salat.db (Innamaadhoo)
     let salat: InnamaadhooTimes | null = null;
     try {
       salat = await fetchInnamaadhooTimes(date);
     } catch {
-      salat = null; // fall back silently
+      salat = null;
     }
 
-    // 2) Fallback to existing Appwrite method to keep behaviour unchanged
+    // 2) Fallback to Appwrite prayerTimes collection
     let prayerTimes: Record<PrayerKey, string> | null = null;
     if (salat) {
       const t = salat.times;
@@ -232,46 +225,25 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
       };
     }
 
-    const MAX_LATE = 64;
-
-    function wholeMinutesDiff(a: Date, b: Date) {
-      // positive = a after b
-      const diff = (a.getTime() - b.getTime()) / 60000;
-      // round to nearest whole minute; then clamp
-      return Math.max(0, Math.min(MAX_LATE, Math.round(diff)));
-    }
-
-    const updatedAttendanceWithLateness = attendanceRecords.map((record) => {
-      const updatedRecord = { ...record };
-
-      (Object.keys(prayerTimes!) as Array<PrayerKey>).forEach((prayerKey) => {
-        const requiredHHMM = prayerTimes![prayerKey]; // e.g. "04:40"
-        const actualISO = record[prayerKey] as string | undefined;
-
-        // Pure local HH:MM math (no UTC offset mistakes) + clamp to schema range
-        const minutesLate = Math.min(
-          64,
-          latenessMinutes(requiredHHMM, actualISO)
-        );
-
-        const latenessKey = `${prayerKey.replace(
+    // apply lateness per prayer (clamped to schema range 0..64)
+    const updatedAttendance = attendanceRecords.map((record) => {
+      const copy: MosqueAttendanceRecord = { ...record };
+      (Object.keys(prayerTimes!) as PrayerKey[]).forEach((key) => {
+        const required = prayerTimes![key];
+        const actualISO = record[key] as string | undefined;
+        const late = Math.min(64, latenessMinutes(required, actualISO));
+        const lateKey = key.replace(
           "SignInTime",
           "MinutesLate"
-        )}` as keyof typeof updatedRecord;
-
-        if (latenessKey in updatedRecord) {
-          updatedRecord[latenessKey] = minutesLate as never;
-        }
+        ) as unknown as keyof MosqueAttendanceRecord;
+        // @ts-expect-error – the dynamic key maps to the numeric late field in our record type
+        copy[lateKey] = late;
       });
-
-      return updatedRecord;
+      return copy;
     });
 
-    const changedRecords = updatedAttendanceWithLateness.filter(
-      (record) => record.changed
-    );
-
-    if (changedRecords.length === 0) {
+    const changed = updatedAttendance.filter((r) => r.changed);
+    if (changed.length === 0) {
       toast({
         title: "No Changes",
         description: "No changes detected to submit.",
@@ -283,70 +255,54 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
 
     try {
       await Promise.all(
-        changedRecords.map(async (record) => {
-          const empId = resolveEmployeeId(record.employeeId);
+        changed.map(async (r) => {
+          const empId = resolveEmployeeId(r.employeeId);
 
-          if (!empId) {
-            // Still update the record (timestamps & lateness), skip leave ops
-            await updateMosqueAttendanceRecord(record.$id, {
-              fathisSignInTime: record.fathisSignInTime || undefined,
-              mendhuruSignInTime: record.mendhuruSignInTime || undefined,
-              asuruSignInTime: record.asuruSignInTime || undefined,
-              maqribSignInTime: record.maqribSignInTime || undefined,
-              ishaSignInTime: record.ishaSignInTime || undefined,
-              fathisMinutesLate: record.fathisMinutesLate || 0,
-              mendhuruMinutesLate: record.mendhuruMinutesLate || 0,
-              asuruMinutesLate: record.asuruMinutesLate || 0,
-              maqribMinutesLate: record.maqribMinutesLate || 0,
-              ishaMinutesLate: record.ishaMinutesLate || 0,
-              leaveType: record.leaveType,
-            });
-            return;
+          if (empId) {
+            const employee = (await fetchEmployeeById(empId)) as Record<
+              string,
+              unknown
+            >;
+            const leaveType = r.leaveType ?? "";
+            const available =
+              typeof employee[leaveType] === "number"
+                ? (employee[leaveType] as number)
+                : 0;
+
+            if (r.leaveType && available <= 0) {
+              toast({
+                title: "Leave Balance Error",
+                description: `${nameFromRef(
+                  r.employeeId,
+                  nameMap
+                )} does not have any ${r.leaveType} left.`,
+                variant: "destructive",
+              });
+            }
+
+            if (r.previousLeaveType && r.previousLeaveType !== r.leaveType) {
+              await deductLeave(empId, r.previousLeaveType, true);
+            }
+            if (
+              r.leaveType &&
+              (!r.leaveDeducted || r.previousLeaveType !== r.leaveType)
+            ) {
+              await deductLeave(empId, r.leaveType);
+            }
           }
 
-          // fetch full employee doc to check balances
-          const employeeData = await fetchEmployeeById(empId);
-
-          const leaveType = record.leaveType || "";
-          const availableLeaveCount = employeeData?.[leaveType] ?? 0;
-
-          if (record.leaveType && availableLeaveCount <= 0) {
-            toast({
-              title: "Leave Balance Error",
-              description: `${employeeData?.name || empId} does not have any ${
-                record.leaveType
-              } left.`,
-              variant: "destructive",
-            });
-          }
-
-          if (
-            record.previousLeaveType &&
-            record.previousLeaveType !== record.leaveType
-          ) {
-            await deductLeave(empId, record.previousLeaveType, true);
-          }
-
-          if (
-            record.leaveType &&
-            (!record.leaveDeducted ||
-              record.previousLeaveType !== record.leaveType)
-          ) {
-            await deductLeave(empId, record.leaveType);
-          }
-
-          await updateMosqueAttendanceRecord(record.$id, {
-            fathisSignInTime: record.fathisSignInTime || undefined,
-            mendhuruSignInTime: record.mendhuruSignInTime || undefined,
-            asuruSignInTime: record.asuruSignInTime || undefined,
-            maqribSignInTime: record.maqribSignInTime || undefined,
-            ishaSignInTime: record.ishaSignInTime || undefined,
-            fathisMinutesLate: record.fathisMinutesLate || 0,
-            mendhuruMinutesLate: record.mendhuruMinutesLate || 0,
-            asuruMinutesLate: record.asuruMinutesLate || 0,
-            maqribMinutesLate: record.maqribMinutesLate || 0,
-            ishaMinutesLate: record.ishaMinutesLate || 0,
-            leaveType: record.leaveType,
+          await updateMosqueAttendanceRecord(r.$id, {
+            fathisSignInTime: r.fathisSignInTime || undefined,
+            mendhuruSignInTime: r.mendhuruSignInTime || undefined,
+            asuruSignInTime: r.asuruSignInTime || undefined,
+            maqribSignInTime: r.maqribSignInTime || undefined,
+            ishaSignInTime: r.ishaSignInTime || undefined,
+            fathisMinutesLate: r.fathisMinutesLate || 0,
+            mendhuruMinutesLate: r.mendhuruMinutesLate || 0,
+            asuruMinutesLate: r.asuruMinutesLate || 0,
+            maqribMinutesLate: r.maqribMinutesLate || 0,
+            ishaMinutesLate: r.ishaMinutesLate || 0,
+            leaveType: r.leaveType,
           });
         })
       );
@@ -358,9 +314,10 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
       });
 
       setAttendanceRecords((prev) =>
-        prev.map((record) => ({ ...record, changed: false }))
+        prev.map((r) => ({ ...r, changed: false }))
       );
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error(error);
     } finally {
       setSubmitting(false);
@@ -382,8 +339,8 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
         description: "All attendances deleted successfully.",
         variant: "success",
       });
-      window!.location.reload();
-    } catch (error) {
+      window.location.reload();
+    } catch {
       toast({
         title: "Error",
         description: "Failed to delete attendances. Please try again.",
@@ -392,15 +349,6 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
     } finally {
       setSubmitting(false);
     }
-  };
-
-  /** Derive display name for a row */
-  const renderEmployeeName = (emp: any) => {
-    if (!emp) return "Unknown";
-    if (typeof emp === "string") {
-      return nameMap[emp] || emp; // show fetched name or fallback to id
-    }
-    return emp.name || emp.$id || emp.id || "Unknown";
   };
 
   return (
@@ -422,7 +370,10 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
           {attendanceRecords.map((record, index) => (
             <TableRow key={record.$id}>
               <TableCell>{index + 1}</TableCell>
-              <TableCell>{renderEmployeeName(record.employeeId)}</TableCell>
+              <TableCell>
+                {nameFromRef(record.employeeId as EmployeeRef, nameMap)}
+              </TableCell>
+
               {(
                 [
                   "fathisSignInTime",
@@ -445,6 +396,7 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
                   />
                 </TableCell>
               ))}
+
               <TableCell>
                 <select
                   value={
@@ -455,11 +407,7 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
                       : ""
                   }
                   onChange={(e) =>
-                    handleLeaveChange(
-                      record.$id,
-                      e.target.value,
-                      resolveEmployeeId(record.employeeId) || ""
-                    )
+                    handleLeaveChange(record.$id, e.target.value)
                   }
                   className="border p-2"
                 >
@@ -491,7 +439,7 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
           <AlertDialog>
             <AlertDialogTrigger className="flex items-center justify-center w-full md:w-48">
               <div
-                className={`flex justify-center red-button w-full h-12  items-center ${
+                className={`flex justify-center red-button w-full h-12 items-center ${
                   submitting ? "opacity-50 cursor-not-allowed" : ""
                 }`}
               >
@@ -503,7 +451,8 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
                 <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
                 <AlertDialogDescription>
                   This action cannot be undone. This will permanently delete
-                  today's attendance and remove your data from the database.
+                  today&apos;s attendance and remove your data from the
+                  database.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

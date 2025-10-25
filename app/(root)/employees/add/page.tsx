@@ -1,16 +1,15 @@
 "use client";
+
+import EmployeeForm, { EmployeeFormData } from "@/components/EmployeeForm";
+import { createEmployeeRecord } from "@/lib/appwrite/appwrite";
+import { useUser } from "@/Providers/UserProvider";
 import React, { useState } from "react";
 
-import { createEmployeeRecord } from "@/lib/appwrite/appwrite";
-import EmployeeForm from "@/components/EmployeeForm";
-import { useCurrentUser } from "@/hooks/getCurrentUser";
-import { useUser } from "@/Providers/UserProvider";
-
-const AddEmployeePage = () => {
+const AddEmployeePage: React.FC = () => {
   const [loading, setLoading] = useState(false);
-  const { currentUser, isAdmin, loading: userLoading } = useUser();
+  const { isAdmin, loading: userLoading } = useUser();
 
-  const handleCreateEmployee = async (formData: any) => {
+  const handleCreateEmployee = async (formData: EmployeeFormData) => {
     setLoading(true);
     try {
       await createEmployeeRecord(formData);
@@ -18,8 +17,9 @@ const AddEmployeePage = () => {
     } catch (error) {
       console.error("Error adding employee:", error);
       alert("Failed to add employee.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   if (userLoading) {
@@ -42,7 +42,7 @@ const AddEmployeePage = () => {
           <div className="text-center p-8 rounded-lg shadow-lg bg-red-500 text-white">
             <h1 className="text-2xl font-bold mb-4">Access Denied</h1>
             <p className="text-lg">
-              You don't have permission to
+              You don&apos;t have permission to
               <span className="font-semibold"> add employees</span>.
             </p>
           </div>

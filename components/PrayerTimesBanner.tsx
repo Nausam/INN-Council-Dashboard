@@ -72,14 +72,18 @@ export default function PrayerTimesBanner({ dateISO }: { dateISO: string }) {
         setLoading(true);
         setErr(null);
         setData(null);
+
         const res = await fetch(`/api/innamaadhoo?date=${iso}`, {
           cache: "no-store",
         });
         if (!res.ok) throw new Error(`Failed to load: ${await res.text()}`);
-        const json = (await res.json()) as Payload;
+
+        const json: Payload = await res.json();
         if (active) setData(json);
-      } catch (e: any) {
-        if (active) setErr(String(e?.message || e));
+      } catch (e: unknown) {
+        const message =
+          e instanceof Error ? e.message : typeof e === "string" ? e : "Error";
+        if (active) setErr(message);
       } finally {
         if (active) setLoading(false);
       }
@@ -124,8 +128,6 @@ export default function PrayerTimesBanner({ dateISO }: { dateISO: string }) {
               />
             </PopoverContent>
           </Popover>
-
-          {/* <span className="text-gray-500">Date: {iso}</span> */}
         </div>
       </div>
 

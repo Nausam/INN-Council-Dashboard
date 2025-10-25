@@ -1,7 +1,7 @@
 "use client";
 
 import DashboardCard from "@/components/Dashboard/DashboardCard";
-import DashboardHeader from "@/components/Dashboard/DashboardHeader.tsx";
+
 import EmployeeListCard from "@/components/Dashboard/EmployeeListCard";
 import ProgressSection from "@/components/Dashboard/Progressbar";
 import SkeletonDashboardCard from "@/components/skeletons/SkeletonDashboardCard";
@@ -15,6 +15,7 @@ import {
 import React, { useEffect, useState } from "react";
 import { FaClock, FaRunning, FaTimes, FaUsers } from "react-icons/fa";
 
+import DashboardHeader from "@/components/Dashboard/DashboardHeader.tsx";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -25,6 +26,61 @@ import {
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { Calendar as CalendarIcon } from "lucide-react";
+
+/* ===================== Minimal types + guards ===================== */
+
+type EmployeeDoc = {
+  $id?: string;
+  id?: string;
+  name?: string;
+};
+
+type EmployeeRef =
+  | string
+  | {
+      $id?: string;
+      name?: string;
+    };
+
+type OfficeAttendanceDoc = {
+  employeeId?: EmployeeRef;
+  employeeName?: string;
+  leaveType?: string | null;
+  minutesLate?: number | null;
+};
+
+type MosqueAttendanceDoc = {
+  employeeId?: EmployeeRef;
+  employeeName?: string;
+  fathisMinutesLate?: number | null;
+  mendhuruMinutesLate?: number | null;
+  asuruMinutesLate?: number | null;
+  maqribMinutesLate?: number | null;
+  ishaMinutesLate?: number | null;
+};
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+function isEmployeeDoc(v: unknown): v is EmployeeDoc {
+  return (
+    isObject(v) &&
+    (typeof v.$id === "string" || typeof v.$id === "undefined") &&
+    (typeof v.id === "string" || typeof v.id === "undefined") &&
+    (typeof v.name === "string" || typeof v.name === "undefined")
+  );
+}
+
+function isOfficeAttendanceDoc(v: unknown): v is OfficeAttendanceDoc {
+  return isObject(v) && "employeeId" in v;
+}
+
+function isMosqueAttendanceDoc(v: unknown): v is MosqueAttendanceDoc {
+  return isObject(v) && "employeeId" in v;
+}
+
+/* ===================== Component ===================== */
 
 interface DashboardProps {
   totalEmployees: number;
@@ -45,9 +101,6 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(
     new Date()
-  );
-  const [selectedMonth, setSelectedMonth] = useState<string>(
-    new Date().toISOString().slice(0, 7)
   );
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
@@ -72,50 +125,68 @@ const Dashboard: React.FC = () => {
         setLoading(true);
 
         // Pull everything we need
-        const [employees, officeAttendance, mosqueAttendance] =
-          await Promise.all([
-            fetchAllEmployees(),
-            fetchAttendanceForDate(formattedSelectedDate),
-            fetchMosqueAttendanceForDate(formattedSelectedDate),
-          ]);
+        const [employeesRaw, officeRaw, mosqueRaw] = await Promise.all([
+          fetchAllEmployees(),
+          fetchAttendanceForDate(formattedSelectedDate),
+          fetchMosqueAttendanceForDate(formattedSelectedDate),
+        ]);
 
+        // Employees
+        const employees: EmployeeDoc[] = Array.isArray(employeesRaw)
+          ? employeesRaw.filter(isEmployeeDoc)
+          : [];
         const totalEmployees = employees.length;
 
         // Build an id -> name map (supports $id or id)
         const idToName = new Map<string, string>();
-        for (const e of employees as any[]) {
+        for (const e of employees) {
           const id = e.$id ?? e.id;
           if (id) idToName.set(String(id), String(e.name ?? "Unknown"));
         }
 
         // Helper to always return a human name
-        const resolveName = (rec: any) => {
+        const resolveName = (
+          rec: OfficeAttendanceDoc | MosqueAttendanceDoc
+        ) => {
           // prefer already-denormalized name
-          if (rec?.employeeName) return String(rec.employeeName);
-
-          // relation object with name
-          if (rec?.employeeId && typeof rec.employeeId === "object") {
-            if (rec.employeeId.name) return String(rec.employeeId.name);
-            if (rec.employeeId.$id && idToName.has(rec.employeeId.$id)) {
-              return idToName.get(rec.employeeId.$id)!;
-            }
+          if (typeof rec.employeeName === "string" && rec.employeeName.trim()) {
+            return rec.employeeName;
           }
 
-          // plain string id
-          const maybeId = String(rec?.employeeId ?? "");
-          if (maybeId && idToName.has(maybeId)) {
-            return idToName.get(maybeId)!;
+          const ref = rec.employeeId;
+
+          if (!ref) return "Unknown";
+
+          if (typeof ref === "string") {
+            return idToName.get(ref) ?? ref;
           }
 
-          // last fallback
-          return maybeId || "Unknown";
+          const objName = ref.name;
+          if (typeof objName === "string" && objName.trim()) return objName;
+
+          const objId = ref.$id;
+          if (typeof objId === "string") {
+            return idToName.get(objId) ?? objId;
+          }
+
+          return "Unknown";
         };
+
+        // Office attendance
+        const officeAttendance: OfficeAttendanceDoc[] = Array.isArray(officeRaw)
+          ? officeRaw.filter(isOfficeAttendanceDoc)
+          : [];
+
+        // Mosque attendance
+        const mosqueAttendance: MosqueAttendanceDoc[] = Array.isArray(mosqueRaw)
+          ? mosqueRaw.filter(isMosqueAttendanceDoc)
+          : [];
 
         // ---------- ABSENT (office) ----------
         const absentSet = new Set<string>();
         const absentees: string[] = [];
-        for (const rec of officeAttendance as any[]) {
-          if (rec?.leaveType) {
+        for (const rec of officeAttendance) {
+          if (rec.leaveType) {
             const nm = resolveName(rec);
             if (!absentSet.has(nm)) {
               absentSet.add(nm);
@@ -128,22 +199,34 @@ const Dashboard: React.FC = () => {
         const lateSet = new Set<string>();
 
         // Office: minutesLate > 0
-        for (const rec of officeAttendance as any[]) {
+        for (const rec of officeAttendance) {
           const nm = resolveName(rec);
-          const mins = Number(rec?.minutesLate ?? 0);
+          const mins =
+            typeof rec.minutesLate === "number" ? rec.minutesLate : 0;
           if (!absentSet.has(nm) && mins > 0) {
             lateSet.add(nm);
           }
         }
 
         // Mosque: any prayer minutesLate > 0
-        for (const rec of mosqueAttendance as any[]) {
+        for (const rec of mosqueAttendance) {
           const nm = resolveName(rec);
-          const f = Number(rec?.fathisMinutesLate ?? 0);
-          const m = Number(rec?.mendhuruMinutesLate ?? 0);
-          const a = Number(rec?.asuruMinutesLate ?? 0);
-          const q = Number(rec?.maqribMinutesLate ?? 0);
-          const i = Number(rec?.ishaMinutesLate ?? 0);
+          const f =
+            typeof rec.fathisMinutesLate === "number"
+              ? rec.fathisMinutesLate
+              : 0;
+          const m =
+            typeof rec.mendhuruMinutesLate === "number"
+              ? rec.mendhuruMinutesLate
+              : 0;
+          const a =
+            typeof rec.asuruMinutesLate === "number" ? rec.asuruMinutesLate : 0;
+          const q =
+            typeof rec.maqribMinutesLate === "number"
+              ? rec.maqribMinutesLate
+              : 0;
+          const i =
+            typeof rec.ishaMinutesLate === "number" ? rec.ishaMinutesLate : 0;
           const anyLate = f > 0 || m > 0 || a > 0 || q > 0 || i > 0;
 
           if (!absentSet.has(nm) && anyLate) {
@@ -175,7 +258,9 @@ const Dashboard: React.FC = () => {
       }
     };
 
-    fetchData();
+    if (formattedSelectedDate) {
+      fetchData();
+    }
   }, [formattedSelectedDate]);
 
   const { totalEmployees, onTime, late, absent } = dashboardData;
@@ -204,10 +289,7 @@ const Dashboard: React.FC = () => {
             <Calendar
               mode="single"
               selected={selectedDate}
-              onSelect={(date) => {
-                setSelectedDate(date);
-                setIsPopoverOpen(false);
-              }}
+              onSelect={handleDateSelect}
               initialFocus
             />
           </PopoverContent>

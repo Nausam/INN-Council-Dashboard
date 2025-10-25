@@ -1,72 +1,120 @@
 "use client";
-import React, { useState } from "react";
+
+import { toast } from "@/hooks/use-toast";
 import {
   createEmployeeRecord,
   updateEmployeeRecord,
 } from "@/lib/appwrite/appwrite";
+import { useParams, useRouter } from "next/navigation";
+import React, { useState } from "react";
 
-import { useParams } from "next/navigation";
-import { useRouter } from "next/navigation";
-import { toast } from "@/hooks/use-toast";
+/* ---------------- Types ---------------- */
+
+export type EmployeeFormData = {
+  name: string;
+  designation: string;
+  joinedDate: string; // ISO date (yyyy-mm-dd)
+  address: string;
+  section: string;
+  recordCardNumber: string;
+
+  // leave balances
+  sickLeave: number;
+  certificateSickLeave: number;
+  annualLeave: number;
+  familyRelatedLeave: number;
+  maternityLeave: number;
+  paternityLeave: number;
+  officialLeave: number;
+  noPayLeave: number;
+  preMaternityLeave: number;
+};
 
 interface EmployeeFormProps {
-  initialData?: any;
-  onSubmit: (formData: any) => Promise<void>;
+  /** When editing, pass in the existing values (partial is fine). */
+  initialData?: Partial<EmployeeFormData>;
+  /** Kept to avoid breaking callers; not used internally. */
+  onSubmit?: (formData: EmployeeFormData) => Promise<void>;
+  /** Controls button label text only (matches your original behavior). */
   isLoading: boolean;
 }
 
-const EmployeeForm = ({
+/* ---------------- Component ---------------- */
+
+const EmployeeForm: React.FC<EmployeeFormProps> = ({
   initialData,
-  onSubmit,
+  onSubmit, // intentionally unused to preserve behavior
   isLoading,
-}: EmployeeFormProps) => {
-  const [formData, setFormData] = useState({
-    name: initialData?.name || "",
-    designation: initialData?.designation || "",
-    joinedDate: initialData?.joinedDate || "",
-    address: initialData?.address || "",
-    section: initialData?.section || "",
-    recordCardNumber: initialData?.recordCardNumber || "",
-    sickLeave: initialData?.sickLeave || 0,
-    certificateSickLeave: initialData?.certificateSickLeave || 0,
-    annualLeave: initialData?.annualLeave || 0,
-    familyRelatedLeave: initialData?.familyRelatedLeave || 0,
-    maternityLeave: initialData?.maternityLeave || 0,
-    paternityLeave: initialData?.paternityLeave || 0,
-    officialLeave: initialData?.officialLeave || 0,
-    noPayLeave: initialData?.noPayLeave || 0,
-    preMaternityLeave: initialData?.preMaternityLeave || 0,
+}) => {
+  const [formData, setFormData] = useState<EmployeeFormData>({
+    name: initialData?.name ?? "",
+    designation: initialData?.designation ?? "",
+    joinedDate: initialData?.joinedDate ?? "",
+    address: initialData?.address ?? "",
+    section: initialData?.section ?? "",
+    recordCardNumber: initialData?.recordCardNumber ?? "",
+    sickLeave: initialData?.sickLeave ?? 0,
+    certificateSickLeave: initialData?.certificateSickLeave ?? 0,
+    annualLeave: initialData?.annualLeave ?? 0,
+    familyRelatedLeave: initialData?.familyRelatedLeave ?? 0,
+    maternityLeave: initialData?.maternityLeave ?? 0,
+    paternityLeave: initialData?.paternityLeave ?? 0,
+    officialLeave: initialData?.officialLeave ?? 0,
+    noPayLeave: initialData?.noPayLeave ?? 0,
+    preMaternityLeave: initialData?.preMaternityLeave ?? 0,
   });
 
+  // local submit-disabling state (kept from your original)
   const [loading, setLoading] = useState(false);
 
-  const { id } = useParams();
-  const employeeId = Array.isArray(id) ? id[0] : id;
+  const params = useParams();
+  const employeeId = Array.isArray(params.id)
+    ? params.id[0]
+    : (params.id as string | undefined);
   const router = useRouter();
+
+  const numericFields: (keyof EmployeeFormData)[] = [
+    "sickLeave",
+    "certificateSickLeave",
+    "annualLeave",
+    "familyRelatedLeave",
+    "maternityLeave",
+    "paternityLeave",
+    "officialLeave",
+    "noPayLeave",
+    "preMaternityLeave",
+  ];
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
+    const key = name as keyof EmployeeFormData;
 
-    // Convert numeric fields to integers
-    const numericFields = [
-      "sickLeave",
-      "certificateSickLeave",
-      "annualLeave",
-      "familyRelatedLeave",
-      "maternityLeave",
-      "paternityLeave",
-      "officialLeave",
-      "noPayLeave",
-      "preMaternityLeave",
-    ];
-
-    setFormData({
-      ...formData,
-      [name]: numericFields.includes(name) ? parseInt(value, 10) || 0 : value,
-    });
+    setFormData((prev) => ({
+      ...prev,
+      [key]: numericFields.includes(key) ? parseInt(value, 10) || 0 : value,
+    }));
   };
+
+  const resetForm = () =>
+    setFormData({
+      name: "",
+      designation: "",
+      joinedDate: "",
+      address: "",
+      section: "",
+      recordCardNumber: "",
+      sickLeave: 0,
+      certificateSickLeave: 0,
+      annualLeave: 0,
+      familyRelatedLeave: 0,
+      maternityLeave: 0,
+      paternityLeave: 0,
+      officialLeave: 0,
+      noPayLeave: 0,
+      preMaternityLeave: 0,
+    });
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -75,14 +123,11 @@ const EmployeeForm = ({
     try {
       if (employeeId) {
         await updateEmployeeRecord(employeeId, formData);
-
         toast({
           title: "Success",
           description: `${formData.name} updated successfully`,
           variant: "default",
         });
-
-        router.push("/employees");
       } else {
         await createEmployeeRecord(formData);
         toast({
@@ -90,85 +135,74 @@ const EmployeeForm = ({
           description: `${formData.name} added successfully`,
           variant: "default",
         });
-        router.push("/employees");
       }
-      setFormData({
-        name: "",
-        designation: "",
-        joinedDate: "",
-        address: "",
-        section: "",
-        recordCardNumber: "",
-        sickLeave: 0,
-        certificateSickLeave: 0,
-        annualLeave: 0,
-        familyRelatedLeave: 0,
-        maternityLeave: 0,
-        paternityLeave: 0,
-        officialLeave: 0,
-        noPayLeave: 0,
-        preMaternityLeave: 0,
-      });
-    } catch (error) {
+
+      router.push("/employees");
+      resetForm();
+    } catch {
       toast({
         title: "Error",
-        description: `Failed to add employee ${formData.name}`,
+        description: `Failed to ${employeeId ? "update" : "add"} employee ${
+          formData.name
+        }`,
         variant: "destructive",
       });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
-    <div className="w-full max-w-7xl mx-auto p-8">
-      <h1 className="text-3xl font-bold mb-5 mt-10">
-        {initialData ? "Edit Employee" : "Add Employee"}
+    <div className="mx-auto w-full max-w-7xl p-8">
+      <h1 className="mt-10 mb-5 text-3xl font-bold">
+        {employeeId ? "Edit Employee" : "Add Employee"}
       </h1>
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-6 mt-10">
+
+      <form onSubmit={handleSubmit} className="mt-10 grid grid-cols-1 gap-6">
         <div className="flex flex-wrap gap-4 lg:flex-row">
           {/* Name */}
-          <div className="flex-1 min-w-[250px]">
-            <label className="block font-bold mb-2" htmlFor="name">
+          <div className="min-w-[250px] flex-1">
+            <label className="mb-2 block font-bold" htmlFor="name">
               Name
             </label>
             <input
-              type="text"
-              name="name"
               id="name"
+              name="name"
+              type="text"
               value={formData.name}
               onChange={handleInputChange}
-              className="border p-2 rounded w-full h-12"
+              className="h-12 w-full rounded border p-2"
               required
             />
           </div>
 
-          {/* Adress */}
-          <div className="flex-1 min-w-[250px]">
-            <label className="block font-bold mb-2" htmlFor="name">
+          {/* Address */}
+          <div className="min-w-[250px] flex-1">
+            <label className="mb-2 block font-bold" htmlFor="address">
               Address
             </label>
             <input
-              type="text"
-              name="address"
               id="address"
+              name="address"
+              type="text"
               value={formData.address}
               onChange={handleInputChange}
-              className="border p-2 rounded w-full h-12"
+              className="h-12 w-full rounded border p-2"
               required
             />
           </div>
 
           {/* Designation */}
-          <div className="flex-1 min-w-[250px]">
-            <label className="block font-bold mb-2" htmlFor="designation">
+          <div className="min-w-[250px] flex-1">
+            <label className="mb-2 block font-bold" htmlFor="designation">
               Designation
             </label>
             <select
-              name="designation"
               id="designation"
+              name="designation"
               value={formData.designation}
               onChange={handleInputChange}
-              className="border p-2 rounded w-full h-12"
+              className="h-12 w-full rounded border p-2"
               required
             >
               <option value="">Select Designation</option>
@@ -190,16 +224,16 @@ const EmployeeForm = ({
 
         <div className="flex flex-wrap gap-4 lg:flex-row">
           {/* Section */}
-          <div className="flex-1 min-w-[250px]">
-            <label className="block font-bold mb-2" htmlFor="designation">
+          <div className="min-w-[250px] flex-1">
+            <label className="mb-2 block font-bold" htmlFor="section">
               Section
             </label>
             <select
-              name="section"
               id="section"
+              name="section"
               value={formData.section}
               onChange={handleInputChange}
-              className="border p-2 rounded w-full h-12"
+              className="h-12 w-full rounded border p-2"
               required
             >
               <option value="">Select Section</option>
@@ -211,217 +245,113 @@ const EmployeeForm = ({
           </div>
 
           {/* Record Card Number */}
-          <div className="flex-1 min-w-[250px]">
-            <label className="block font-bold mb-2" htmlFor="sickLeave">
+          <div className="min-w-[250px] flex-1">
+            <label className="mb-2 block font-bold" htmlFor="recordCardNumber">
               Record Card Number
             </label>
             <input
-              type="text"
-              name="recordCardNumber"
               id="recordCardNumber"
+              name="recordCardNumber"
+              type="text"
               value={formData.recordCardNumber}
               onChange={handleInputChange}
-              className="border p-2 rounded w-full h-12"
+              className="h-12 w-full rounded border p-2"
               required
             />
           </div>
 
           {/* Joined Date */}
-          <div className="flex-1 min-w-[250px]">
-            <label className="block font-bold mb-2" htmlFor="joinedDate">
+          <div className="min-w-[250px] flex-1">
+            <label className="mb-2 block font-bold" htmlFor="joinedDate">
               Joined Date
             </label>
             <input
-              type="date"
-              name="joinedDate"
               id="joinedDate"
+              name="joinedDate"
+              type="date"
               value={formData.joinedDate}
               onChange={handleInputChange}
-              className="border p-2 rounded w-full h-12"
+              className="h-12 w-full rounded border p-2"
               required
             />
           </div>
+        </div>
+
+        {/* Leave buckets */}
+        <div className="flex flex-wrap gap-4 lg:flex-row">
+          <NumberField
+            id="sickLeave"
+            label="Sick Leave"
+            value={formData.sickLeave}
+            onChange={handleInputChange}
+          />
+          <NumberField
+            id="certificateSickLeave"
+            label="Certificate Sick Leave"
+            value={formData.certificateSickLeave}
+            onChange={handleInputChange}
+          />
+          <NumberField
+            id="annualLeave"
+            label="Annual Leave"
+            value={formData.annualLeave}
+            onChange={handleInputChange}
+          />
         </div>
 
         <div className="flex flex-wrap gap-4 lg:flex-row">
-          {/* Sick Leave */}
-          <div className="flex-1 min-w-[250px]">
-            <label className="block font-bold mb-2" htmlFor="sickLeave">
-              Sick Leave
-            </label>
-            <input
-              type="number"
-              name="sickLeave"
-              id="sickLeave"
-              value={formData.sickLeave}
-              onChange={handleInputChange}
-              className="border p-2 rounded w-full h-12"
-              min="0"
-              required
-            />
-          </div>
-
-          {/* Certificate Sick Leave */}
-          <div className="flex-1 min-w-[250px]">
-            <label
-              className="block font-bold mb-2"
-              htmlFor="certificateSickLeave"
-            >
-              Certificate Sick Leave
-            </label>
-            <input
-              type="number"
-              name="certificateSickLeave"
-              id="certificateSickLeave"
-              value={formData.certificateSickLeave}
-              onChange={handleInputChange}
-              className="border p-2 rounded w-full h-12"
-              min="0"
-              required
-            />
-          </div>
-
-          {/* Annual Leave */}
-          <div className="flex-1 min-w-[250px]">
-            <label
-              className="block font-bold mb-2"
-              htmlFor="certificateSickLeave"
-            >
-              Annual Leave
-            </label>
-            <input
-              type="number"
-              name="annualLeave"
-              id="annualLeave"
-              value={formData.annualLeave}
-              onChange={handleInputChange}
-              className="border p-2 rounded w-full h-12"
-              min="0"
-              required
-            />
-          </div>
+          <NumberField
+            id="familyRelatedLeave"
+            label="Family Related Leave"
+            value={formData.familyRelatedLeave}
+            onChange={handleInputChange}
+          />
+          <NumberField
+            id="preMaternityLeave"
+            label="Pre-Maternity Leave"
+            value={formData.preMaternityLeave}
+            onChange={handleInputChange}
+          />
+          <NumberField
+            id="maternityLeave"
+            label="Maternity Leave"
+            value={formData.maternityLeave}
+            onChange={handleInputChange}
+          />
         </div>
 
         <div className="flex flex-wrap gap-4 lg:flex-row">
-          {/* Family Related Leave */}
-          <div className="flex-1 min-w-[250px]">
-            <label
-              className="block font-bold mb-2"
-              htmlFor="familyRelatedLeave"
-            >
-              Family Related Leave
-            </label>
-            <input
-              type="number"
-              name="familyRelatedLeave"
-              id="familyRelatedLeave"
-              value={formData.familyRelatedLeave}
-              onChange={handleInputChange}
-              className="border p-2 rounded w-full h-12"
-              min="0"
-              required
-            />
-          </div>
-
-          {/* Pre Maternity Leave */}
-          <div className="flex-1 min-w-[250px]">
-            <label className="block font-bold mb-2" htmlFor="preMaternityLeave">
-              Pre-Maternity Leave
-            </label>
-            <input
-              type="number"
-              name="preMaternityLeave"
-              id="preMaternityLeave"
-              value={formData.preMaternityLeave}
-              onChange={handleInputChange}
-              className="border p-2 rounded w-full h-12"
-              min="0"
-              required
-            />
-          </div>
-
-          {/* Maternity Leave */}
-          <div className="flex-1 min-w-[250px]">
-            <label className="block font-bold mb-2" htmlFor="maternityLeave">
-              Maternity Leave
-            </label>
-            <input
-              type="number"
-              name="maternityLeave"
-              id="maternityLeave"
-              value={formData.maternityLeave}
-              onChange={handleInputChange}
-              className="border p-2 rounded w-full h-12"
-              min="0"
-              required
-            />
-          </div>
+          <NumberField
+            id="paternityLeave"
+            label="Paternity Leave"
+            value={formData.paternityLeave}
+            onChange={handleInputChange}
+          />
+          <NumberField
+            id="officialLeave"
+            label="Official Leave"
+            value={formData.officialLeave}
+            onChange={handleInputChange}
+          />
+          <NumberField
+            id="noPayLeave"
+            label="No Pay Leave"
+            value={formData.noPayLeave}
+            onChange={handleInputChange}
+          />
         </div>
 
-        <div className="flex flex-wrap gap-4 lg:flex-row">
-          {/* Paternity Leave */}
-          <div className="flex-1 min-w-[250px]">
-            <label className="block font-bold mb-2" htmlFor="paternityLeave">
-              Paternity Leave
-            </label>
-            <input
-              type="number"
-              name="paternityLeave"
-              id="paternityLeave"
-              value={formData.paternityLeave}
-              onChange={handleInputChange}
-              className="border p-2 rounded w-full h-12"
-              min="0"
-              required
-            />
-          </div>
-
-          {/* Official Leave */}
-          <div className="flex-1 min-w-[250px]">
-            <label className="block font-bold mb-2" htmlFor="officialLeave">
-              Official Leave
-            </label>
-            <input
-              type="number"
-              name="officialLeave"
-              id="officialLeave"
-              value={formData.officialLeave}
-              onChange={handleInputChange}
-              className="border p-2 rounded w-full h-12"
-              min="0"
-              required
-            />
-          </div>
-
-          {/* No Pay Leave */}
-          <div className="flex-1 min-w-[250px]">
-            <label className="block font-bold mb-2 " htmlFor="noPayLeave">
-              No Pay Leave
-            </label>
-            <input
-              type="number"
-              name="noPayLeave"
-              id="noPayLeave"
-              value={formData.noPayLeave}
-              onChange={handleInputChange}
-              className="border p-2 rounded w-full h-12"
-              min="0"
-              required
-            />
-          </div>
-        </div>
-
-        <div className="flex justify-end mt-6">
+        <div className="mt-6 flex justify-end">
           <button
             type="submit"
-            className="custom-button w-full md:w-auto h-12 px-8"
+            className="custom-button h-12 w-full px-8 md:w-auto"
             disabled={loading}
           >
             {isLoading
-              ? initialData
+              ? employeeId
                 ? "Updating Employee..."
                 : "Adding Employee..."
-              : initialData
+              : employeeId
               ? "Update Employee"
               : "Add Employee"}
           </button>
@@ -432,3 +362,35 @@ const EmployeeForm = ({
 };
 
 export default EmployeeForm;
+
+/* ---------------- Small helper component ---------------- */
+
+function NumberField({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: keyof EmployeeFormData;
+  label: string;
+  value: number;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <div className="min-w-[250px] flex-1">
+      <label className="mb-2 block font-bold" htmlFor={id as string}>
+        {label}
+      </label>
+      <input
+        id={id as string}
+        name={id as string}
+        type="number"
+        min={0}
+        value={value}
+        onChange={onChange}
+        className="h-12 w-full rounded border p-2"
+        required
+      />
+    </div>
+  );
+}

@@ -1,24 +1,55 @@
 "use client";
-import React, { useState, useEffect } from "react";
-import EmployeeCard from "@/components/EmployeeCard";
-import { fetchAllEmployees } from "@/lib/appwrite/appwrite";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { getCurrentUser } from "@/lib/actions/user.actions";
-import { useCurrentUser } from "@/hooks/getCurrentUser";
 
-const EmployeesPage = () => {
-  const [employees, setEmployees] = useState<any[]>([]);
-  const [filteredEmployees, setFilteredEmployees] = useState<any[]>([]);
+import EmployeeCard from "@/components/EmployeeCard";
+import { useCurrentUser } from "@/hooks/getCurrentUser";
+import { fetchAllEmployees } from "@/lib/appwrite/appwrite";
+import { useRouter } from "next/navigation";
+import React, { useEffect, useState } from "react";
+
+/* ===== Types & helpers ===== */
+
+type Employee = {
+  $id: string;
+  name: string;
+  designation: string;
+  section: string;
+};
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+function toEmployee(doc: unknown): Employee | null {
+  if (!isRecord(doc)) return null;
+
+  const id =
+    (typeof doc.$id === "string" && doc.$id) ||
+    (typeof doc.id === "string" && doc.id);
+  if (!id) return null;
+
+  const name = (typeof doc.name === "string" && doc.name) || "Unknown";
+
+  const designation =
+    (typeof doc.designation === "string" && doc.designation) || "";
+
+  const section = (typeof doc.section === "string" && doc.section) || "";
+
+  return { $id: id, name, designation, section };
+}
+
+/* ===== Page ===== */
+
+const EmployeesPage: React.FC = () => {
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedDesignation, setSelectedDesignation] = useState<string>("All");
   const [selectedSection, setSelectedSection] = useState<string>("All");
 
-  const { currentUser, loading: userLoading, isAdmin } = useCurrentUser();
-
+  const { currentUser, loading: userLoading, isAdmin } = useCurrentUser(); // kept in case you use it elsewhere
   const router = useRouter();
 
-  // List of employee names in the required order
+  // Fixed order
   const employeeOrder = [
     "Ahmed Azmeen",
     "Ahmed Ruzaan",
@@ -42,42 +73,59 @@ const EmployeesPage = () => {
     "Aishath Shabaana",
   ];
 
-  // Fetch all employees on component mount
-  useEffect(() => {
-    const getEmployees = async () => {
-      try {
-        const employeeData = await fetchAllEmployees();
-        const sortedData = sortEmployeesByOrder(employeeData);
-        setEmployees(sortedData);
-        setFilteredEmployees(sortedData); // Initially, show all employees
-      } catch (error) {
-        console.error("Error fetching employees:", error);
-      }
-      setLoading(false);
-    };
-
-    getEmployees();
-  }, []);
-
   // Sort employees based on the desired order
-  const sortEmployeesByOrder = (employeesList: any[]) => {
-    const employeeOrderMap = employeeOrder.reduce((acc, name, index) => {
-      acc[name.toLowerCase()] = index;
-      return acc;
-    }, {} as Record<string, number>);
+  function sortEmployeesByOrder(list: Employee[]): Employee[] {
+    const indexMap = employeeOrder.reduce<Record<string, number>>(
+      (acc, name, idx) => {
+        acc[name.toLowerCase()] = idx;
+        return acc;
+      },
+      {}
+    );
 
-    return employeesList.sort((a, b) => {
-      const indexA =
-        employeeOrderMap[a.name.toLowerCase()] ?? employeeOrder.length;
-      const indexB =
-        employeeOrderMap[b.name.toLowerCase()] ?? employeeOrder.length;
-
-      return indexA - indexB;
+    return [...list].sort((a, b) => {
+      const ia = indexMap[a.name.toLowerCase()] ?? employeeOrder.length;
+      const ib = indexMap[b.name.toLowerCase()] ?? employeeOrder.length;
+      return ia - ib;
     });
-  };
+  }
+
+  // Fetch all employees on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        setLoading(true);
+        const raw = await fetchAllEmployees();
+        const normalized: Employee[] = (Array.isArray(raw) ? raw : [])
+          .map(toEmployee)
+          .filter((e): e is Employee => e !== null);
+
+        const sorted = sortEmployeesByOrder(normalized);
+        setEmployees(sorted);
+        setFilteredEmployees(sorted);
+      } catch (err) {
+        console.error("Error fetching employees:", err);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
 
   const handleCardClick = (employeeId: string) => {
     router.push(`/employees/${employeeId}`);
+  };
+
+  const applyFilters = (designation: string, section: string) => {
+    let filtered = employees;
+
+    if (designation !== "All") {
+      filtered = filtered.filter((e) => e.designation === designation);
+    }
+    if (section !== "All") {
+      filtered = filtered.filter((e) => e.section === section);
+    }
+
+    setFilteredEmployees(sortEmployeesByOrder(filtered));
   };
 
   const handleDesignationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -90,23 +138,6 @@ const EmployeesPage = () => {
     const section = e.target.value;
     setSelectedSection(section);
     applyFilters(selectedDesignation, section);
-  };
-
-  const applyFilters = (designation: string, section: string) => {
-    let filtered = employees;
-
-    if (designation !== "All") {
-      filtered = filtered.filter(
-        (employee) => employee.designation === designation
-      );
-    }
-
-    if (section !== "All") {
-      filtered = filtered.filter((employee) => employee.section === section);
-    }
-
-    // Sort the filtered employees according to the desired order
-    setFilteredEmployees(sortEmployeesByOrder(filtered));
   };
 
   return (
@@ -144,24 +175,25 @@ const EmployeesPage = () => {
           <option value="Councillor">Councillor</option>
           <option value="Admin">Admin</option>
           <option value="Imam">Imam</option>
+          <option value="Mosque Assistant">Mosque Assistant</option>
         </select>
       </div>
 
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[...Array(20)].map((_, index) => (
-            <SkeletonCard key={index} />
+          {Array.from({ length: 20 }).map((_, i) => (
+            <SkeletonCard key={i} />
           ))}
         </div>
       ) : filteredEmployees.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredEmployees.map((employee) => (
+          {filteredEmployees.map((e) => (
             <EmployeeCard
-              key={employee.$id}
-              name={employee.name}
-              designation={employee.designation}
-              employeeId={employee.$id}
-              onClick={() => handleCardClick(employee.$id)}
+              key={e.$id}
+              name={e.name}
+              designation={e.designation}
+              employeeId={e.$id}
+              onClick={() => handleCardClick(e.$id)}
             />
           ))}
         </div>
@@ -174,11 +206,9 @@ const EmployeesPage = () => {
 
 export default EmployeesPage;
 
-const SkeletonCard = () => {
-  return (
-    <div className="shadow-md rounded-lg p-6 mt-2 cursor-pointer border animate-pulse">
-      <div className="h-6 bg-gray-300 rounded mb-4 w-3/4"></div>
-      <div className="h-4 bg-gray-300 rounded w-1/2"></div>
-    </div>
-  );
-};
+const SkeletonCard: React.FC = () => (
+  <div className="shadow-md rounded-lg p-6 mt-2 cursor-pointer border animate-pulse">
+    <div className="h-6 bg-gray-300 rounded mb-4 w-3/4" />
+    <div className="h-4 bg-gray-300 rounded w-1/2" />
+  </div>
+);

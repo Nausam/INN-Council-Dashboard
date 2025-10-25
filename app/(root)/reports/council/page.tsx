@@ -1,6 +1,6 @@
 "use client";
-import React, { useState, useEffect } from "react";
-import { fetchAttendanceForMonth } from "@/lib/appwrite/appwrite";
+
+import SkeletonReportsTable from "@/components/skeletons/SkeletonReportsTable";
 import {
   Table,
   TableBody,
@@ -9,8 +9,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import SkeletonReportsTable from "@/components/skeletons/SkeletonReportsTable";
 import { EMPLOYEE_NAMES } from "@/constants";
+import { fetchAttendanceForMonth } from "@/lib/appwrite/appwrite";
+import React, { useEffect, useState } from "react";
+
+/* ======================= Types ======================= */
 
 interface LeaveReport {
   sickLeave: number;
@@ -30,99 +33,199 @@ interface EmployeeDetails {
   address: string;
   designation: string;
   recordCardNumber: string;
-  joinedDate: string;
+  joinedDate: string; // ISO date string
   section: string;
 }
 
-interface Report {
-  [employeeId: string]: LeaveReport & EmployeeDetails;
+type ReportEntry = LeaveReport & EmployeeDetails;
+
+type ReportTuple = [employeeKey: string, entry: ReportEntry];
+
+/** Minimal shape of an employee reference on the attendance document */
+type EmployeeRef =
+  | string
+  | {
+      name: string;
+      address?: string;
+      designation?: string;
+      recordCardNumber?: string;
+      joinedDate?: string;
+      section?: string;
+    };
+
+/** Minimal shape of an attendance document we need here */
+interface AttendanceDoc {
+  date: string; // ISO
+  employeeId: EmployeeRef;
+  minutesLate?: number | null;
+  leaveType?: string | null;
 }
 
-const CouncilReportsPage = () => {
+/* ======================= Type guards ======================= */
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+function isEmployeeRef(v: unknown): v is EmployeeRef {
+  if (typeof v === "string") return true;
+  return (
+    isObject(v) &&
+    typeof v.name === "string" &&
+    (typeof v.address === "string" || typeof v.address === "undefined") &&
+    (typeof v.designation === "string" ||
+      typeof v.designation === "undefined") &&
+    (typeof v.recordCardNumber === "string" ||
+      typeof v.recordCardNumber === "undefined") &&
+    (typeof v.joinedDate === "string" || typeof v.joinedDate === "undefined") &&
+    (typeof v.section === "string" || typeof v.section === "undefined")
+  );
+}
+
+function isAttendanceDoc(v: unknown): v is AttendanceDoc {
+  return (
+    isObject(v) &&
+    typeof v.date === "string" &&
+    "employeeId" in v &&
+    isEmployeeRef((v as Record<string, unknown>).employeeId) &&
+    (typeof (v as Record<string, unknown>).minutesLate === "number" ||
+      typeof (v as Record<string, unknown>).minutesLate === "undefined" ||
+      (v as Record<string, unknown>).minutesLate === null) &&
+    (typeof (v as Record<string, unknown>).leaveType === "string" ||
+      typeof (v as Record<string, unknown>).leaveType === "undefined" ||
+      (v as Record<string, unknown>).leaveType === null)
+  );
+}
+
+/* ======================= Utilities ======================= */
+
+function normalizeEmployee(ref: EmployeeRef): EmployeeDetails | null {
+  if (typeof ref === "string") {
+    // We can’t produce a full details record from a string id; skip those rows
+    return null;
+  }
+  // Default empty strings to keep CSV/view consistent
+  return {
+    name: ref.name,
+    address: ref.address ?? "",
+    designation: ref.designation ?? "",
+    recordCardNumber: ref.recordCardNumber ?? "",
+    joinedDate: ref.joinedDate ?? "",
+    section: ref.section ?? "",
+  };
+}
+
+/* ======================= Component ======================= */
+
+const CouncilReportsPage: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState<string>(
     new Date().toISOString().slice(0, 7)
   );
   const [totalDays, setTotalDays] = useState<number>(0);
-  const [reportData, setReportData] = useState<any[]>([]);
+
   const [loading, setLoading] = useState<boolean>(false);
   const [reportAvailable, setReportAvailable] = useState<boolean>(false);
+
   const [selectedSection, setSelectedSection] = useState<string>("All");
   const [selectedEmployee, setSelectedEmployee] = useState<string>("All");
-  const [fullReportData, setFullReportData] = useState<any[]>([]);
+
+  const [fullReportData, setFullReportData] = useState<ReportTuple[]>([]);
+  const [reportData, setReportData] = useState<ReportTuple[]>([]);
 
   const generateReport = async (month: string) => {
     setLoading(true);
     try {
-      const attendanceRecords = await fetchAttendanceForMonth(month);
+      const raw = await fetchAttendanceForMonth(month);
 
-      const monthRecords = attendanceRecords.filter((record) => {
-        const recordDate = new Date(record.date);
-        const recordMonth = recordDate.toISOString().slice(0, 7);
+      const docs: AttendanceDoc[] = Array.isArray(raw)
+        ? raw.filter(isAttendanceDoc)
+        : [];
 
-        // Check if section and employee filters apply
+      // Filter to chosen month + (employee/section) *when present in the row*
+      const monthRecords = docs.filter((record) => {
+        const recordMonth = new Date(record.date).toISOString().slice(0, 7);
+
+        if (recordMonth !== month) return false;
+
+        const emp = normalizeEmployee(record.employeeId);
+        if (!emp) return false; // cannot use rows without full employee details
+
         const sectionMatches =
-          selectedSection === "All" ||
-          record.employeeId.section === selectedSection;
-        const employeeMatches =
-          selectedEmployee === "All" ||
-          record.employeeId.name === selectedEmployee;
+          selectedSection === "All" || emp.section === selectedSection;
 
-        return recordMonth === month && sectionMatches && employeeMatches;
+        const employeeMatches =
+          selectedEmployee === "All" || emp.name === selectedEmployee;
+
+        return sectionMatches && employeeMatches;
       });
 
       if (monthRecords.length === 0) {
         setReportAvailable(false);
+        setFullReportData([]);
         setReportData([]);
-      } else {
-        const report: Report = {};
-
-        monthRecords.forEach((record) => {
-          const employeeId = record.employeeId.name;
-
-          if (!report[employeeId]) {
-            report[employeeId] = {
-              sickLeave: 0,
-              annualLeave: 0,
-              certificateSickLeave: 0,
-              familyRelatedLeave: 0,
-              maternityLeave: 0,
-              paternityLeave: 0,
-              noPayLeave: 0,
-              officialLeave: 0,
-              minutesLate: 0,
-              totalAbsent: 0,
-              name: record.employeeId.name,
-              address: record.employeeId.address,
-              designation: record.employeeId.designation,
-              recordCardNumber: record.employeeId.recordCardNumber,
-              joinedDate: record.employeeId.joinedDate,
-              section: record.employeeId.section,
-            };
-          }
-
-          if (record.leaveType) {
-            report[employeeId][record.leaveType as keyof LeaveReport] += 1;
-            report[employeeId].totalAbsent += 1;
-          }
-
-          if (record.minutesLate) {
-            report[employeeId].minutesLate += record.minutesLate;
-          }
-        });
-
-        setFullReportData(Object.entries(report)); // Store full report data
-        setReportData(Object.entries(report)); // Initial data to be displayed
-        setReportAvailable(true);
+        setLoading(false);
+        return;
       }
-    } catch (error) {
-      console.error("Error generating report:", error);
+
+      // Build report keyed by employee name
+      const reportMap = new Map<string, ReportEntry>();
+
+      monthRecords.forEach((record) => {
+        const emp = normalizeEmployee(record.employeeId);
+        if (!emp) return;
+
+        // Initialize entry if not present
+        if (!reportMap.has(emp.name)) {
+          reportMap.set(emp.name, {
+            sickLeave: 0,
+            annualLeave: 0,
+            certificateSickLeave: 0,
+            familyRelatedLeave: 0,
+            maternityLeave: 0,
+            paternityLeave: 0,
+            noPayLeave: 0,
+            officialLeave: 0,
+            minutesLate: 0,
+            totalAbsent: 0,
+            ...emp,
+          });
+        }
+
+        const entry = reportMap.get(emp.name)!;
+
+        // Count leave
+        const leave = record.leaveType ?? "";
+        const leaveKey = leave as keyof LeaveReport;
+        if (leave && leaveKey in entry) {
+          (entry[leaveKey] as number) += 1;
+          entry.totalAbsent += 1;
+        }
+
+        // Sum minutes late
+        if (typeof record.minutesLate === "number") {
+          entry.minutesLate += record.minutesLate;
+        }
+      });
+
+      const tuples: ReportTuple[] = Array.from(reportMap.entries());
+      setFullReportData(tuples);
+      setReportData(tuples);
+      setReportAvailable(true);
+    } catch (err) {
+      console.error("Error generating report:", err);
       setReportAvailable(false);
+      setFullReportData([]);
+      setReportData([]);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const filterReportData = () => {
-    const filteredData = fullReportData.filter(([employeeId, stats]) => {
+  // Apply UI filters to fullReportData
+  useEffect(() => {
+    if (fullReportData.length === 0) return;
+
+    const filtered = fullReportData.filter(([, stats]) => {
       const sectionMatches =
         selectedSection === "All" || stats.section === selectedSection;
 
@@ -132,19 +235,12 @@ const CouncilReportsPage = () => {
       return sectionMatches && employeeMatches;
     });
 
-    setReportData(filteredData);
-  };
-
-  useEffect(() => {
-    if (fullReportData.length > 0) {
-      filterReportData();
-    }
-  }, [selectedSection, selectedEmployee]);
+    setReportData(filtered);
+  }, [selectedSection, selectedEmployee, fullReportData]);
 
   const downloadCSV = () => {
     if (reportData.length === 0) return;
 
-    // Prepare CSV headers
     const headers = [
       "Name",
       "Address",
@@ -163,41 +259,40 @@ const CouncilReportsPage = () => {
       "Total Working Days",
     ];
 
-    // Prepare CSV rows
-    const rows = reportData.map(([employeeId, stats]) => [
-      stats.name,
-      stats.address,
-      stats.designation,
-      stats.recordCardNumber,
-      `"${new Date(stats.joinedDate).toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      })}"`, // Enclose Joined Date in double quotes
-      `'${stats.sickLeave || 0}`, // Force text format for Sick Leave
-      `'${stats.certificateSickLeave || 0}`, // Force text format
-      `'${stats.annualLeave || 0}`, // Force text format
-      `'${stats.officialLeave || 0}`, // Force text format
-      `'${stats.familyRelatedLeave || 0}`, // Force text format
-      `'${stats.maternityLeave || 0}`, // Force text format
-      `'${stats.minutesLate || 0}`, // Force text format
-      `'${stats.totalAbsent || 0}`, // Force text format
-      `'${totalDays - (stats.totalAbsent || 0)}`, // Force text format
-      `'${totalDays}`, // Force text format
-    ]);
+    const rows = reportData.map(([, stats]) => {
+      const joined = stats.joinedDate
+        ? new Date(stats.joinedDate).toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          })
+        : "";
 
-    // Convert to CSV format
-    const csvContent = [
-      headers.join(","),
-      ...rows.map((row) => row.join(",")),
-    ].join("\n");
+      return [
+        stats.name,
+        stats.address,
+        stats.designation,
+        stats.recordCardNumber,
+        `"${joined}"`,
+        `'${stats.sickLeave || 0}`,
+        `'${stats.certificateSickLeave || 0}`,
+        `'${stats.annualLeave || 0}`,
+        `'${stats.officialLeave || 0}`,
+        `'${stats.familyRelatedLeave || 0}`,
+        `'${stats.maternityLeave || 0}`,
+        `'${stats.minutesLate || 0}`,
+        `'${stats.totalAbsent || 0}`,
+        `'${Math.max(0, totalDays - (stats.totalAbsent || 0))}`,
+        `'${totalDays}`,
+      ];
+    });
 
-    // Trigger file download
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `Attendance_Report_${selectedMonth}.csv`;
-    link.click();
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `Attendance_Report_${selectedMonth}.csv`;
+    a.click();
   };
 
   return (
@@ -226,7 +321,7 @@ const CouncilReportsPage = () => {
           <input
             type="number"
             value={totalDays}
-            onChange={(e) => setTotalDays(Number(e.target.value))}
+            onChange={(e) => setTotalDays(Number(e.target.value) || 0)}
             className="border p-2 rounded-md w-full h-12"
             placeholder="Total Days"
           />
@@ -267,7 +362,7 @@ const CouncilReportsPage = () => {
           </select>
         </div>
 
-        {/* Generate Report Button */}
+        {/* Buttons */}
         <div className="flex lg:col-span-2 xl:col-span-4 gap-4">
           <button
             onClick={() => generateReport(selectedMonth)}
@@ -278,7 +373,7 @@ const CouncilReportsPage = () => {
 
           <button
             onClick={downloadCSV}
-            disabled={!reportAvailable} // Disable if no report is available
+            disabled={!reportAvailable}
             className={`custom-button h-12 w-full lg:w-auto ${
               !reportAvailable ? "bg-gray-300 cursor-not-allowed" : ""
             }`}
@@ -322,8 +417,8 @@ const CouncilReportsPage = () => {
               </TableRow>
             </TableHeader>
             <TableBody className="border border-gray-400">
-              {reportData.map(([employeeId, stats], index) => (
-                <TableRow key={index} className="border-r border-gray-300">
+              {reportData.map(([_, stats], index) => (
+                <TableRow key={stats.name} className="border-r border-gray-300">
                   <TableCell className="text-center border-r">
                     {index + 1}
                   </TableCell>
@@ -340,11 +435,13 @@ const CouncilReportsPage = () => {
                     {stats.recordCardNumber}
                   </TableCell>
                   <TableCell className="table-cell-rotate">
-                    {new Date(stats.joinedDate).toLocaleDateString("en-US", {
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })}
+                    {stats.joinedDate
+                      ? new Date(stats.joinedDate).toLocaleDateString("en-US", {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                        })
+                      : ""}
                   </TableCell>
                   <TableCell className="table-cell">
                     {stats.sickLeave}
@@ -371,7 +468,7 @@ const CouncilReportsPage = () => {
                     {stats.totalAbsent}
                   </TableCell>
                   <TableCell className="table-cell">
-                    {totalDays! - stats.totalAbsent}
+                    {Math.max(0, totalDays - stats.totalAbsent)}
                   </TableCell>
                   <TableCell className="text-center border-r border-gray-400">
                     {totalDays}

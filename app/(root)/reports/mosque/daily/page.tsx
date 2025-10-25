@@ -1,12 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import {
-  fetchMosqueAttendanceForMonth,
-  fetchPrayerTimesForMonth,
-  fetchMosqueAssistants,
-  fetchMosqueDailyAttendanceForMonth,
-} from "@/lib/appwrite/appwrite";
+import SkeletonReportsTable from "@/components/skeletons/SkeletonReportsTable";
 import {
   Table,
   TableBody,
@@ -15,87 +9,257 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import SkeletonReportsTable from "@/components/skeletons/SkeletonReportsTable";
+import {
+  fetchMosqueAssistants,
+  fetchMosqueDailyAttendanceForMonth,
+  fetchPrayerTimesForMonth,
+} from "@/lib/appwrite/appwrite";
+import React, { useEffect, useState } from "react";
 
-const MosqueMonthlyReportsPage = () => {
+/* ========================= Types ========================= */
+
+type EmployeeRef =
+  | string
+  | {
+      $id: string;
+      name: string;
+      designation?: string;
+    };
+
+type AttRow = {
+  $id: string;
+  date: string; // ISO date-time
+  employeeId: EmployeeRef;
+  fathisSignInTime: string | null;
+  mendhuruSignInTime: string | null;
+  asuruSignInTime: string | null;
+  maqribSignInTime: string | null;
+  ishaSignInTime: string | null;
+};
+
+type MosqueAssistant = {
+  $id: string;
+  name: string;
+};
+
+type PrayerTimesDoc = {
+  date: string; // ISO date-time
+  fathisTime: string;
+  mendhuruTime: string;
+  asuruTime: string;
+  maqribTime: string;
+  ishaTime: string;
+};
+
+type PrayerTimesMap = Record<
+  string, // YYYY-MM-DD
+  {
+    fathisTime: string;
+    mendhuruTime: string;
+    asuruTime: string;
+    maqribTime: string;
+    ishaTime: string;
+  }
+>;
+
+/* ========================= Type Guards ========================= */
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+function isMosqueAssistant(v: unknown): v is MosqueAssistant {
+  return isObject(v) && typeof v.$id === "string" && typeof v.name === "string";
+}
+
+function isEmployeeRef(v: unknown): v is EmployeeRef {
+  if (typeof v === "string") return true;
+  return (
+    isObject(v) &&
+    typeof v.$id === "string" &&
+    typeof v.name === "string" &&
+    (typeof v.designation === "string" || typeof v.designation === "undefined")
+  );
+}
+
+function isNullableString(v: unknown): v is string | null {
+  return typeof v === "string" || v === null;
+}
+
+/** Looser “attendance-like” check against unknown API rows */
+function isAttendanceLike(v: unknown): v is {
+  $id: unknown;
+  date: unknown;
+  employeeId: unknown;
+  fathisSignInTime: unknown;
+  mendhuruSignInTime: unknown;
+  asuruSignInTime: unknown;
+  maqribSignInTime: unknown;
+  ishaSignInTime: unknown;
+} {
+  return (
+    isObject(v) &&
+    typeof v.$id === "string" &&
+    typeof v.date === "string" &&
+    "employeeId" in v &&
+    "fathisSignInTime" in v &&
+    "mendhuruSignInTime" in v &&
+    "asuruSignInTime" in v &&
+    "maqribSignInTime" in v &&
+    "ishaSignInTime" in v
+  );
+}
+
+function isPrayerTimesDoc(v: unknown): v is PrayerTimesDoc {
+  return (
+    isObject(v) &&
+    typeof v.date === "string" &&
+    typeof v.fathisTime === "string" &&
+    typeof v.mendhuruTime === "string" &&
+    typeof v.asuruTime === "string" &&
+    typeof v.maqribTime === "string" &&
+    typeof v.ishaTime === "string"
+  );
+}
+
+/* ========================= Helpers ========================= */
+
+function empName(emp: EmployeeRef): string {
+  return typeof emp === "string" ? emp : emp.name || emp.$id || "Unknown";
+}
+
+function empDesignation(emp: EmployeeRef): string {
+  return typeof emp === "string" ? "" : emp.designation ?? "";
+}
+
+/** signInTime (ISO) is late if strictly after expected "HH:MM" (as UTC). */
+function isLate(signInTime: string | null, expectedTime?: string) {
+  if (!signInTime || !expectedTime) return false;
+  const signInDate = new Date(signInTime);
+  const datePart = signInDate.toISOString().slice(0, 10);
+  const expected = new Date(`${datePart}T${expectedTime}Z`);
+  return signInDate.getTime() > expected.getTime();
+}
+
+function fmtTimeOrDash(iso: string | null): string {
+  if (!iso) return "Not Signed In";
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "UTC",
+  }).format(new Date(iso));
+}
+
+/* ========================= Component ========================= */
+
+const MosqueMonthlyReportsPage: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState<string>(
     new Date().toISOString().slice(0, 7)
   );
   const [selectedEmployee, setSelectedEmployee] = useState<string>("");
-  const [employees, setEmployees] = useState<any[]>([]);
+  const [employees, setEmployees] = useState<MosqueAssistant[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
-  const [attendanceData, setAttendanceData] = useState<any[]>([]);
-  const [prayerTimes, setPrayerTimes] = useState<{ [date: string]: any }>({});
+  const [attendanceData, setAttendanceData] = useState<AttRow[]>([]);
+  const [prayerTimes, setPrayerTimes] = useState<PrayerTimesMap>({});
 
-  // Fetch Employees with designation "Mosque Assistant"
-  const fetchEmployees = async () => {
-    try {
-      const employees = await fetchMosqueAssistants();
-      setEmployees(employees);
-    } catch (error) {
-      console.error("Error fetching employees:", error);
-    }
-  };
+  // Fetch employees with designation "Mosque Assistant"
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetchMosqueAssistants();
+        const list: MosqueAssistant[] = Array.isArray(res)
+          ? res.filter(isMosqueAssistant)
+          : [];
+        setEmployees(list);
+      } catch (err) {
+        console.error("Error fetching employees:", err);
+      }
+    })();
+  }, []);
 
-  // Fetch Attendance Data
+  // Fetch attendance & prayer-times for the selected assistant/month
   const fetchMonthlyReport = async (month: string) => {
-    if (!selectedEmployee) return; // Only generate for a selected employee
+    if (!selectedEmployee) return;
     setLoading(true);
     try {
-      // Fetch attendance data for the month for the selected employee
-      const attendance = await fetchMosqueDailyAttendanceForMonth(
+      // Attendance for the chosen employee
+      const attRaw = await fetchMosqueDailyAttendanceForMonth(
         month,
         selectedEmployee
       );
-      setAttendanceData(attendance);
 
-      // Fetch all prayer times for the month in one query
-      const prayerTimesData = await fetchPrayerTimesForMonth(month);
+      // Build strongly-typed AttRow[] from unknown input without casts
+      const att: AttRow[] = Array.isArray(attRaw)
+        ? attRaw.reduce<AttRow[]>((acc, row) => {
+            if (!isAttendanceLike(row)) return acc;
+            if (!isEmployeeRef(row.employeeId)) return acc;
 
-      // Convert prayer times into a key-value map (keyed by date)
-      const prayerTimesMap: { [date: string]: any } = {};
-      prayerTimesData.forEach((record: any) => {
-        const date = record.date.slice(0, 10);
-        prayerTimesMap[date] = {
-          fathisTime: record.fathisTime,
-          mendhuruTime: record.mendhuruTime,
-          asuruTime: record.asuruTime,
-          maqribTime: record.maqribTime,
-          ishaTime: record.ishaTime,
+            // Narrow each sign-in field to string | null
+            const f = row.fathisSignInTime;
+            const m1 = row.mendhuruSignInTime;
+            const a = row.asuruSignInTime;
+            const m2 = row.maqribSignInTime;
+            const i = row.ishaSignInTime;
+
+            if (
+              !isNullableString(f) ||
+              !isNullableString(m1) ||
+              !isNullableString(a) ||
+              !isNullableString(m2) ||
+              !isNullableString(i)
+            ) {
+              return acc;
+            }
+
+            acc.push({
+              $id: row.$id,
+              date: row.date as string,
+              employeeId: row.employeeId,
+              fathisSignInTime: f,
+              mendhuruSignInTime: m1,
+              asuruSignInTime: a,
+              maqribSignInTime: m2,
+              ishaSignInTime: i,
+            });
+            return acc;
+          }, [])
+        : [];
+
+      setAttendanceData(att);
+
+      // All prayer times for the month, mapped by date
+      const ptRaw = await fetchPrayerTimesForMonth(month);
+      const ptDocs: PrayerTimesDoc[] = Array.isArray(ptRaw)
+        ? ptRaw.filter(isPrayerTimesDoc)
+        : [];
+
+      const ptMap: PrayerTimesMap = {};
+      ptDocs.forEach((doc) => {
+        const key = doc.date.slice(0, 10);
+        ptMap[key] = {
+          fathisTime: doc.fathisTime,
+          mendhuruTime: doc.mendhuruTime,
+          asuruTime: doc.asuruTime,
+          maqribTime: doc.maqribTime,
+          ishaTime: doc.ishaTime,
         };
       });
-
-      setPrayerTimes(prayerTimesMap);
-    } catch (error) {
-      console.error("Error fetching data:", error);
+      setPrayerTimes(ptMap);
+    } catch (err) {
+      console.error("Error fetching data:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  // Check if the employee is late
-  const isLate = (signInTime: string | null, expectedTime: string | null) => {
-    if (!signInTime || !expectedTime) return false;
-
-    const signInDate = new Date(signInTime);
-    const expectedDate = new Date(
-      `${signInDate.toISOString().slice(0, 10)}T${expectedTime}Z`
-    );
-
-    return signInDate > expectedDate;
-  };
-
-  // Download CSV
+  // CSV export
   const downloadCSV = () => {
     if (attendanceData.length === 0) return;
 
-    // Find the selected employee's name
-    const employee = employees.find((emp) => emp.$id === selectedEmployee);
-    const employeeName = employee
-      ? employee.name.replace(/\s+/g, "_")
-      : "Employee";
+    const emp = employees.find((e) => e.$id === selectedEmployee);
+    const employeeName = (emp?.name || "Employee").replace(/\s+/g, "_");
 
-    // Prepare CSV data
     const headers = [
       "Date",
       "Employee Name",
@@ -106,74 +270,28 @@ const MosqueMonthlyReportsPage = () => {
       "Maghrib Sign-In",
       "Isha Sign-In",
     ];
-    const rows = attendanceData.map((record) => {
-      const date = record.date.slice(0, 10); // YYYY-MM-DD
-      const times = prayerTimes[date] || {};
 
+    const rows = attendanceData.map((rec) => {
+      const date = rec.date.slice(0, 10);
       return [
         date,
-        record.employeeId.name,
-        record.employeeId.designation,
-        record.fathisSignInTime
-          ? new Intl.DateTimeFormat("en-US", {
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: true,
-              timeZone: "UTC",
-            }).format(new Date(record.fathisSignInTime))
-          : "Not Signed In",
-        record.mendhuruSignInTime
-          ? new Intl.DateTimeFormat("en-US", {
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: true,
-              timeZone: "UTC",
-            }).format(new Date(record.mendhuruSignInTime))
-          : "Not Signed In",
-        record.asuruSignInTime
-          ? new Intl.DateTimeFormat("en-US", {
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: true,
-              timeZone: "UTC",
-            }).format(new Date(record.asuruSignInTime))
-          : "Not Signed In",
-        record.maqribSignInTime
-          ? new Intl.DateTimeFormat("en-US", {
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: true,
-              timeZone: "UTC",
-            }).format(new Date(record.maqribSignInTime))
-          : "Not Signed In",
-        record.ishaSignInTime
-          ? new Intl.DateTimeFormat("en-US", {
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: true,
-              timeZone: "UTC",
-            }).format(new Date(record.ishaSignInTime))
-          : "Not Signed In",
+        empName(rec.employeeId),
+        empDesignation(rec.employeeId),
+        fmtTimeOrDash(rec.fathisSignInTime),
+        fmtTimeOrDash(rec.mendhuruSignInTime),
+        fmtTimeOrDash(rec.asuruSignInTime),
+        fmtTimeOrDash(rec.maqribSignInTime),
+        fmtTimeOrDash(rec.ishaSignInTime),
       ];
     });
 
-    // Convert to CSV
-    const csvContent = [
-      headers.join(","),
-      ...rows.map((row) => row.join(",")),
-    ].join("\n");
-
-    // Trigger download
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `Attendance_Report_${selectedMonth}_${employeeName}.csv`;
-    link.click();
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `Attendance_Report_${selectedMonth}_${employeeName}.csv`;
+    a.click();
   };
-
-  useEffect(() => {
-    fetchEmployees();
-  }, []);
 
   return (
     <div className="max-w-7xl mx-auto p-8">
@@ -195,7 +313,7 @@ const MosqueMonthlyReportsPage = () => {
           />
         </div>
 
-        {/* Employee Filter Dropdown */}
+        {/* Employee Filter */}
         <div>
           <label className="text-sm font-medium text-gray-600 mb-2">
             Select Employee
@@ -214,23 +332,8 @@ const MosqueMonthlyReportsPage = () => {
           </select>
         </div>
 
-        {/* Download CSV Button */}
-        <div className="flex items-end">
-          <button
-            onClick={downloadCSV}
-            disabled={attendanceData.length === 0} // Disable if no data
-            className={`custom-button h-12 w-full lg:w-auto ${
-              attendanceData.length === 0
-                ? "bg-gray-300 cursor-not-allowed"
-                : ""
-            }`}
-          >
-            Download CSV
-          </button>
-        </div>
-
-        {/* Generate Report Button */}
-        <div className="flex items-end">
+        {/* Buttons */}
+        <div className="flex items-end gap-3">
           <button
             onClick={() => fetchMonthlyReport(selectedMonth)}
             disabled={!selectedEmployee}
@@ -239,6 +342,17 @@ const MosqueMonthlyReportsPage = () => {
             }`}
           >
             Generate Report
+          </button>
+          <button
+            onClick={downloadCSV}
+            disabled={attendanceData.length === 0}
+            className={`custom-button h-12 w-full lg:w-auto ${
+              attendanceData.length === 0
+                ? "bg-gray-300 cursor-not-allowed"
+                : ""
+            }`}
+          >
+            Download CSV
           </button>
         </div>
       </div>
@@ -264,95 +378,66 @@ const MosqueMonthlyReportsPage = () => {
               </TableRow>
             </TableHeader>
             <TableBody className="border border-gray-400">
-              {attendanceData.map((record, index) => {
-                const date = record.date.slice(0, 10); // Format YYYY-MM-DD
-                const times = prayerTimes[date] || {};
+              {attendanceData.map((rec, idx) => {
+                const date = rec.date.slice(0, 10);
+                const times = prayerTimes[date];
 
                 return (
-                  <TableRow key={index}>
-                    <TableCell>{index + 1}</TableCell>
-                    <TableCell>{record.employeeId.name}</TableCell>
-                    <TableCell>{record.employeeId.designation}</TableCell>
+                  <TableRow key={rec.$id}>
+                    <TableCell>{idx + 1}</TableCell>
+                    <TableCell>{empName(rec.employeeId)}</TableCell>
+                    <TableCell>{empDesignation(rec.employeeId)}</TableCell>
                     <TableCell>{date}</TableCell>
+
                     <TableCell
-                      className={`${
-                        isLate(record.fathisSignInTime, times.fathisTime)
+                      className={
+                        times && isLate(rec.fathisSignInTime, times.fathisTime)
                           ? "text-red-500"
                           : ""
-                      }`}
+                      }
                     >
-                      {record.fathisSignInTime
-                        ? new Intl.DateTimeFormat("en-US", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            hour12: true,
-                            timeZone: "UTC",
-                          }).format(new Date(record.fathisSignInTime))
-                        : "Not Signed In"}
+                      {fmtTimeOrDash(rec.fathisSignInTime)}
                     </TableCell>
+
                     <TableCell
-                      className={`${
-                        isLate(record.mendhuruSignInTime, times.mendhuruTime)
+                      className={
+                        times &&
+                        isLate(rec.mendhuruSignInTime, times.mendhuruTime)
                           ? "text-red-500"
                           : ""
-                      }`}
+                      }
                     >
-                      {record.mendhuruSignInTime
-                        ? new Intl.DateTimeFormat("en-US", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            hour12: true,
-                            timeZone: "UTC",
-                          }).format(new Date(record.mendhuruSignInTime))
-                        : "Not Signed In"}
+                      {fmtTimeOrDash(rec.mendhuruSignInTime)}
                     </TableCell>
+
                     <TableCell
-                      className={`${
-                        isLate(record.asuruSignInTime, times.asuruTime)
+                      className={
+                        times && isLate(rec.asuruSignInTime, times.asuruTime)
                           ? "text-red-500"
                           : ""
-                      }`}
+                      }
                     >
-                      {record.asuruSignInTime
-                        ? new Intl.DateTimeFormat("en-US", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            hour12: true,
-                            timeZone: "UTC",
-                          }).format(new Date(record.asuruSignInTime))
-                        : "Not Signed In"}
+                      {fmtTimeOrDash(rec.asuruSignInTime)}
                     </TableCell>
+
                     <TableCell
-                      className={`${
-                        isLate(record.maqribSignInTime, times.maqribTime)
+                      className={
+                        times && isLate(rec.maqribSignInTime, times.maqribTime)
                           ? "text-red-500"
                           : ""
-                      }`}
+                      }
                     >
-                      {record.maqribSignInTime
-                        ? new Intl.DateTimeFormat("en-US", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            hour12: true,
-                            timeZone: "UTC",
-                          }).format(new Date(record.maqribSignInTime))
-                        : "Not Signed In"}
+                      {fmtTimeOrDash(rec.maqribSignInTime)}
                     </TableCell>
+
                     <TableCell
-                      className={`${
-                        isLate(record.ishaSignInTime, times.ishaTime)
+                      className={
+                        times && isLate(rec.ishaSignInTime, times.ishaTime)
                           ? "text-red-500"
                           : ""
-                      }`}
+                      }
                     >
-                      {record.ishaSignInTime
-                        ? new Intl.DateTimeFormat("en-US", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            hour12: true,
-                            timeZone: "UTC",
-                          }).format(new Date(record.ishaSignInTime))
-                        : "Not Signed In"}
+                      {fmtTimeOrDash(rec.ishaSignInTime)}
                     </TableCell>
                   </TableRow>
                 );

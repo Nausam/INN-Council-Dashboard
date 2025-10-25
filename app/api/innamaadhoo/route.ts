@@ -7,7 +7,7 @@ const ATOLL = "ރ";
 const ISLAND = "އިންނަމާދޫ";
 const TZ = "Indian/Maldives";
 
-// --- NEW: row types from SQLite
+// --- row types in salat.db ---
 type IslandRow = {
   Atoll: string;
   Island: string;
@@ -27,30 +27,39 @@ type TimesRow = {
 function pad(n: number) {
   return String(n).padStart(2, "0");
 }
+
+/** Normalize minutes to 0..1439 then render HH:mm */
 function fmtHHMM(total: number): string {
-  const h = Math.floor(total / 60);
-  const m = total % 60;
+  const DAY = 24 * 60;
+  const norm = ((total % DAY) + DAY) % DAY;
+  const h = Math.floor(norm / 60);
+  const m = norm % 60;
   return `${pad(h)}:${pad(m)}`;
 }
 
-// Robust island resolver with explicit typing
+function isIsoDate(s: string): boolean {
+  // yyyy-mm-dd (no time)
+  return /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
+
+/** Resolve Innamaadhoo row from Island table */
 function getIslandRow(db: ReturnType<typeof getDb>): IslandRow | null {
   const exact = db
-    .prepare(
+    .prepare<unknown[], IslandRow>(
       `
       SELECT "Atoll","Island","CategoryId","Minutes"
       FROM "Island"
-      WHERE UPPER(TRIM("Atoll")) = UPPER(?) 
+      WHERE UPPER(TRIM("Atoll")) = UPPER(?)
         AND UPPER(TRIM("Island")) = UPPER(?)
       LIMIT 1
     `
     )
-    .get(ATOLL, ISLAND) as IslandRow | undefined;
+    .get(ATOLL, ISLAND);
 
   if (exact) return exact;
 
   const like = db
-    .prepare(
+    .prepare<unknown[], IslandRow>(
       `
       SELECT "Atoll","Island","CategoryId","Minutes"
       FROM "Island"
@@ -60,7 +69,7 @@ function getIslandRow(db: ReturnType<typeof getDb>): IslandRow | null {
       LIMIT 1
     `
     )
-    .get(ATOLL, `${ISLAND}%`) as IslandRow | undefined;
+    .get(ATOLL, `${ISLAND}%`);
 
   return like ?? null;
 }
@@ -68,10 +77,11 @@ function getIslandRow(db: ReturnType<typeof getDb>): IslandRow | null {
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const dateISO =
-      searchParams.get("date") || new Date().toISOString().slice(0, 10);
+    const raw = searchParams.get("date");
+    const todayISO = new Date().toISOString().slice(0, 10);
+    const dateISO = raw && isIsoDate(raw) ? raw : todayISO;
 
-    const db = getDb();
+    const db = getDb(); // returns a better-sqlite3 Database
 
     const island = getIslandRow(db);
     if (!island) {
@@ -84,14 +94,14 @@ export async function GET(req: Request) {
     const dayIdx = dayIndexFromISO(dateISO);
 
     const row = db
-      .prepare(
+      .prepare<[number, number], TimesRow>(
         `
         SELECT "Fajuru","Sunrise","Dhuhr","Asr","Maghrib","Isha"
         FROM "PrayerTimes"
         WHERE "CategoryId" = ? AND "Date" = ?
       `
       )
-      .get(island.CategoryId, dayIdx) as TimesRow | undefined;
+      .get(island.CategoryId, dayIdx);
 
     if (!row) {
       return NextResponse.json(
@@ -100,7 +110,7 @@ export async function GET(req: Request) {
       );
     }
 
-    const adj = Number(island.Minutes) || 0;
+    const adj = Number.isFinite(island.Minutes) ? island.Minutes : 0;
 
     const payload: InnamaadhooTimes = {
       island: {
@@ -121,10 +131,8 @@ export async function GET(req: Request) {
     };
 
     return NextResponse.json(payload);
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: String(e?.message || e) },
-      { status: 500 }
-    );
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

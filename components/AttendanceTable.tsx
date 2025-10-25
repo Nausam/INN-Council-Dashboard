@@ -53,7 +53,7 @@ interface AttendanceTableProps {
   data: AttendanceRecord[];
 }
 
-/* ---------------- Leave mappings (aligned with your Employees schema) ---------------- */
+/* ---------------- Leave mappings ---------------- */
 const leaveTypes = [
   "Sick Leave",
   "Certificate Leave",
@@ -64,9 +64,11 @@ const leaveTypes = [
   "Paternity Leave",
   "No Pay Leave",
   "Official Leave",
-];
+] as const;
 
-const leaveTypeMapping: Record<string, string> = {
+type LeaveLabel = (typeof leaveTypes)[number];
+
+const leaveTypeMapping: Record<LeaveLabel, string> = {
   "Sick Leave": "sickLeave",
   "Certificate Leave": "certificateSickLeave",
   "Annual Leave": "annualLeave",
@@ -78,9 +80,11 @@ const leaveTypeMapping: Record<string, string> = {
   "Official Leave": "officialLeave",
 };
 
-const reverseLeaveTypeMapping = Object.fromEntries(
-  Object.entries(leaveTypeMapping).map(([label, value]) => [value, label])
-);
+const reverseLeaveTypeMapping: Record<string, LeaveLabel> = Object.fromEntries(
+  (Object.entries(leaveTypeMapping) as Array<[LeaveLabel, string]>).map(
+    ([label, value]) => [value, label]
+  )
+) as Record<string, LeaveLabel>;
 
 /* ---------------- Time helpers ---------------- */
 const formatTimeForInput = (dateTime: string | null) => {
@@ -90,6 +94,7 @@ const formatTimeForInput = (dateTime: string | null) => {
   const mm = String(d.getUTCMinutes()).padStart(2, "0");
   return `${hh}:${mm}`;
 };
+
 const convertTimeToDateTime = (time: string, date: string) => {
   const [hh, mm] = time.split(":");
   const d = new Date(date);
@@ -106,7 +111,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
   const { isAdmin } = useUser();
   const { toast } = useToast();
 
-  // Cache of employee docs to resolve names/sections when employeeId is only a string
+  // Cache for resolving names/sections when employeeId is a string
   const [employeeCache, setEmployeeCache] = useState<
     Record<string, { name: string; section?: string }>
   >({});
@@ -116,7 +121,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     typeof ref === "object" ? ref.$id : ref;
 
   const nameFromRecord = (r: AttendanceRecord) => {
-    if (typeof r.employeeId === "object") return r.employeeId.name;
+    if (typeof r.employeeId === "object") return r.employeeId.name ?? "Unknown";
     const id = r.employeeId;
     return (id && employeeCache[id]?.name) || "Unknown";
   };
@@ -126,6 +131,11 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     const id = r.employeeId;
     return (id && employeeCache[id]?.section) || "";
   };
+
+  // Keep local state in sync with prop
+  useEffect(() => {
+    setAttendanceUpdates(data);
+  }, [data]);
 
   // Which IDs do we need to resolve?
   const unresolvedIds = useMemo(() => {
@@ -150,8 +160,8 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
               const doc = await fetchEmployeeById(id);
               return {
                 id,
-                name: doc.name as string,
-                section: (doc.section as string) || "",
+                name: String((doc as { name?: string }).name ?? "Unknown"),
+                section: String((doc as { section?: string }).section ?? ""),
               };
             } catch {
               return { id, name: "Unknown", section: "" };
@@ -165,12 +175,12 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
           return next;
         });
       } catch {
-        // ignore; rows will continue to show 'Unknown' if any fetch fails
+        /* ignore */
       }
     })();
   }, [unresolvedIds]);
 
-  // Your preferred display order
+  // Preferred display order
   const employeeOrder = [
     "Ahmed Azmeen",
     "Ahmed Ruzaan",
@@ -218,7 +228,8 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
   };
 
   const handleLeaveChange = (attendanceId: string, leaveTypeLabel: string) => {
-    const leaveTypeValue = leaveTypeMapping[leaveTypeLabel] || null;
+    const leaveTypeValue =
+      leaveTypeMapping[leaveTypeLabel as LeaveLabel] ?? null;
     setAttendanceUpdates((prev) =>
       prev.map((r) => {
         if (r.$id !== attendanceId) return r;
@@ -269,10 +280,12 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
           const empId = idFromRef(r.employeeId);
           const employee = await fetchEmployeeById(empId);
 
-          const leaveType = r.leaveType || "";
+          const leaveType = r.leaveType ?? "";
           if (leaveType) {
-            const available = (employee as any)?.[leaveType] ?? 0;
-            if (available <= 0) {
+            const available = (employee as Record<string, unknown>)[
+              leaveType
+            ] as number | undefined;
+            if (!available || available <= 0) {
               throw new Error(
                 `${nameFromRecord(r)} does not have any ${leaveType} left.`
               );
@@ -291,10 +304,10 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
 
           await updateAttendanceRecord(r.$id, {
             signInTime: r.signInTime,
-            leaveType: r.leaveType || null,
-            minutesLate: r.minutesLate || 0,
-            previousLeaveType: r.leaveType || null,
-            leaveDeducted: !!r.leaveType,
+            leaveType: r.leaveType ?? null,
+            minutesLate: r.minutesLate ?? 0,
+            previousLeaveType: r.leaveType ?? null,
+            leaveDeducted: Boolean(r.leaveType),
           });
         })
       );
@@ -377,7 +390,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
                 <select
                   value={
                     record.leaveType
-                      ? (reverseLeaveTypeMapping as any)[record.leaveType] || ""
+                      ? reverseLeaveTypeMapping[record.leaveType] ?? ""
                       : ""
                   }
                   onChange={(e) =>

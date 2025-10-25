@@ -1,6 +1,6 @@
 "use client";
-import React, { useState, useEffect } from "react";
-import { fetchMosqueAttendanceForMonth } from "@/lib/appwrite/appwrite";
+
+import SkeletonReportsTable from "@/components/skeletons/SkeletonReportsTable";
 import {
   Table,
   TableBody,
@@ -9,9 +9,32 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import SkeletonReportsTable from "@/components/skeletons/SkeletonReportsTable";
+import { fetchMosqueAttendanceForMonth } from "@/lib/appwrite/appwrite";
+import React, { useState } from "react";
 
-interface PrayerLateReport {
+/* ======================= Types ======================= */
+
+type EmployeeRef =
+  | string
+  | {
+      $id: string;
+      name: string;
+      designation?: string;
+      joinedDate?: string;
+      section?: string;
+    };
+
+type MosqueAttendanceDoc = {
+  date: string; // ISO string
+  employeeId: EmployeeRef;
+  fathisMinutesLate: number;
+  mendhuruMinutesLate: number;
+  asuruMinutesLate: number;
+  maqribMinutesLate: number;
+  ishaMinutesLate: number;
+};
+
+type PrayerLateReport = {
   fathisMinutesLate: number;
   mendhuruMinutesLate: number;
   asuruMinutesLate: number;
@@ -19,99 +42,178 @@ interface PrayerLateReport {
   ishaMinutesLate: number;
   totalMinutesLate: number;
   totalHoursLate: number;
-}
+};
 
-interface EmployeeDetails {
+type EmployeeDetails = {
   name: string;
   designation: string;
   joinedDate: string;
   section: string;
+};
+
+type ReportEntry = PrayerLateReport & EmployeeDetails;
+
+/* ======================= Normalizers (no any) ======================= */
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
 }
 
-interface MosqueReport {
-  [employeeId: string]: PrayerLateReport & EmployeeDetails;
+function getString(o: Record<string, unknown>, key: string): string {
+  const v = o[key];
+  return typeof v === "string" ? v : "";
 }
 
-const MosqueMonthlyReportsPage = () => {
+function getNumber(o: Record<string, unknown>, key: string): number {
+  const v = o[key];
+  if (typeof v === "number") return v;
+  if (typeof v === "string") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+}
+
+function getEmployeeRef(o: Record<string, unknown>, key: string): EmployeeRef {
+  const v = o[key];
+  if (typeof v === "string") return v;
+
+  if (isRecord(v)) {
+    const $id = "$id" in v && typeof v.$id === "string" ? v.$id : "";
+    const name = "name" in v && typeof v.name === "string" ? v.name : "";
+    const designation =
+      "designation" in v && typeof v.designation === "string"
+        ? v.designation
+        : undefined;
+    const joinedDate =
+      "joinedDate" in v && typeof v.joinedDate === "string"
+        ? v.joinedDate
+        : undefined;
+    const section =
+      "section" in v && typeof v.section === "string" ? v.section : undefined;
+
+    if ($id || name || designation || joinedDate || section) {
+      return { $id, name, designation, joinedDate, section };
+    }
+  }
+  return ""; // fallback: unresolved ref
+}
+
+function normalizeAttendance(raw: unknown): MosqueAttendanceDoc[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((item): MosqueAttendanceDoc => {
+    const o = isRecord(item) ? item : {};
+    return {
+      date: getString(o, "date"),
+      employeeId: getEmployeeRef(o, "employeeId"),
+      fathisMinutesLate: getNumber(o, "fathisMinutesLate"),
+      mendhuruMinutesLate: getNumber(o, "mendhuruMinutesLate"),
+      asuruMinutesLate: getNumber(o, "asuruMinutesLate"),
+      maqribMinutesLate: getNumber(o, "maqribMinutesLate"),
+      ishaMinutesLate: getNumber(o, "ishaMinutesLate"),
+    };
+  });
+}
+
+/* ======================= Component ======================= */
+
+const MosqueMonthlyReportsPage: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState<string>(
     new Date().toISOString().slice(0, 7)
   );
   const [loading, setLoading] = useState<boolean>(false);
   const [reportAvailable, setReportAvailable] = useState<boolean>(false);
-  const [reportData, setReportData] = useState<any[]>([]);
+  const [reportData, setReportData] = useState<Array<[string, ReportEntry]>>(
+    []
+  );
 
-  const generateReport = async (month: string) => {
+  const generateReport = async (month: string): Promise<void> => {
     setLoading(true);
     try {
-      const attendanceRecords = await fetchMosqueAttendanceForMonth(month);
+      const raw = await fetchMosqueAttendanceForMonth(month);
+      const attendanceRecords = normalizeAttendance(raw);
 
+      // Keep only records in the chosen month (YYYY-MM)
       const monthRecords = attendanceRecords.filter((record) => {
-        const recordDate = new Date(record.date);
-        const recordMonth = recordDate.toISOString().slice(0, 7);
+        const recordMonth = new Date(record.date).toISOString().slice(0, 7);
         return recordMonth === month;
       });
 
       if (monthRecords.length === 0) {
         setReportAvailable(false);
         setReportData([]);
-      } else {
-        const report: MosqueReport = {};
-
-        monthRecords.forEach((record) => {
-          const employeeId = record.employeeId.name;
-
-          if (!report[employeeId]) {
-            report[employeeId] = {
-              fathisMinutesLate: 0,
-              mendhuruMinutesLate: 0,
-              asuruMinutesLate: 0,
-              maqribMinutesLate: 0,
-              ishaMinutesLate: 0,
-              totalMinutesLate: 0,
-              totalHoursLate: 0,
-              name: record.employeeId.name,
-              designation: record.employeeId.designation,
-              joinedDate: record.employeeId.joinedDate,
-              section: record.employeeId.section,
-            };
-          }
-
-          // Sum late minutes for each prayer
-          const prayers = [
-            "fathisMinutesLate",
-            "mendhuruMinutesLate",
-            "asuruMinutesLate",
-            "maqribMinutesLate",
-            "ishaMinutesLate",
-          ] as const;
-
-          prayers.forEach((prayerKey) => {
-            if (record[prayerKey]) {
-              report[employeeId][prayerKey] += record[prayerKey];
-              report[employeeId].totalMinutesLate += record[prayerKey];
-            }
-          });
-
-          // Calculate total hours late
-          report[employeeId].totalHoursLate = Math.floor(
-            report[employeeId].totalMinutesLate / 60
-          );
-        });
-
-        setReportData(Object.entries(report));
-        setReportAvailable(true);
+        setLoading(false);
+        return;
       }
-    } catch (error) {
-      console.error("Error generating mosque report:", error);
+
+      // Aggregate by employee (use embedded name if available; fallback to id)
+      const reportMap = new Map<string, ReportEntry>();
+
+      for (const r of monthRecords) {
+        // Resolve details
+        let name = "Unknown";
+        let designation = "";
+        let joinedDate = "";
+        let section = "";
+
+        if (typeof r.employeeId === "string") {
+          name = r.employeeId; // fallback to id as name
+        } else {
+          name = r.employeeId.name || r.employeeId.$id || "Unknown";
+          designation = r.employeeId.designation ?? "";
+          joinedDate = r.employeeId.joinedDate ?? "";
+          section = r.employeeId.section ?? "";
+        }
+
+        // Key by name (you can change to $id if you prefer)
+        const key = name;
+
+        const current: ReportEntry = reportMap.get(key) ?? {
+          name,
+          designation,
+          joinedDate,
+          section,
+          fathisMinutesLate: 0,
+          mendhuruMinutesLate: 0,
+          asuruMinutesLate: 0,
+          maqribMinutesLate: 0,
+          ishaMinutesLate: 0,
+          totalMinutesLate: 0,
+          totalHoursLate: 0,
+        };
+
+        current.fathisMinutesLate += r.fathisMinutesLate;
+        current.mendhuruMinutesLate += r.mendhuruMinutesLate;
+        current.asuruMinutesLate += r.asuruMinutesLate;
+        current.maqribMinutesLate += r.maqribMinutesLate;
+        current.ishaMinutesLate += r.ishaMinutesLate;
+
+        current.totalMinutesLate =
+          current.fathisMinutesLate +
+          current.mendhuruMinutesLate +
+          current.asuruMinutesLate +
+          current.maqribMinutesLate +
+          current.ishaMinutesLate;
+
+        current.totalHoursLate = Math.floor(current.totalMinutesLate / 60);
+
+        reportMap.set(key, current);
+      }
+
+      setReportData(Array.from(reportMap.entries()));
+      setReportAvailable(true);
+    } catch (err) {
+      console.error("Error generating mosque report:", err);
       setReportAvailable(false);
+      setReportData([]);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const downloadCSV = () => {
+  const downloadCSV = (): void => {
     if (reportData.length === 0) return;
 
-    // Prepare CSV headers
     const headers = [
       "Employee Name",
       "Designation",
@@ -124,26 +226,23 @@ const MosqueMonthlyReportsPage = () => {
       "Total Late (hrs)",
     ];
 
-    // Prepare CSV rows
-    const rows = reportData.map(([employeeId, stats]) => [
+    const rows = reportData.map(([, stats]) => [
       stats.name,
       stats.designation,
-      stats.fathisMinutesLate,
-      stats.mendhuruMinutesLate,
-      stats.asuruMinutesLate,
-      stats.maqribMinutesLate,
-      stats.ishaMinutesLate,
-      stats.totalMinutesLate,
-      stats.totalHoursLate,
+      String(stats.fathisMinutesLate),
+      String(stats.mendhuruMinutesLate),
+      String(stats.asuruMinutesLate),
+      String(stats.maqribMinutesLate),
+      String(stats.ishaMinutesLate),
+      String(stats.totalMinutesLate),
+      String(stats.totalHoursLate),
     ]);
 
-    // Convert to CSV format
     const csvContent = [
       headers.join(","),
-      ...rows.map((row) => row.join(",")),
+      ...rows.map((r) => r.join(",")),
     ].join("\n");
 
-    // Trigger download
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
@@ -158,7 +257,6 @@ const MosqueMonthlyReportsPage = () => {
       </h1>
 
       <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Select Month */}
         <div>
           <p className="text-sm font-medium text-gray-600 mb-2">Select Month</p>
           <input
@@ -169,7 +267,6 @@ const MosqueMonthlyReportsPage = () => {
           />
         </div>
 
-        {/* Generate Report Button */}
         <div className="flex items-end gap-4">
           <button
             onClick={() => generateReport(selectedMonth)}
@@ -179,7 +276,7 @@ const MosqueMonthlyReportsPage = () => {
           </button>
           <button
             onClick={downloadCSV}
-            disabled={!reportAvailable} // Disable button if no report is available
+            disabled={!reportAvailable}
             className={`custom-button h-12 w-full lg:w-auto ${
               !reportAvailable ? "bg-gray-300 cursor-not-allowed" : ""
             }`}
@@ -219,8 +316,8 @@ const MosqueMonthlyReportsPage = () => {
               </TableRow>
             </TableHeader>
             <TableBody className="border border-gray-400">
-              {reportData.map(([employeeId, stats], index) => (
-                <TableRow key={index}>
+              {reportData.map(([, stats], index) => (
+                <TableRow key={stats.name + index}>
                   <TableCell className="table-cell">{index + 1}</TableCell>
                   <TableCell className="table-cell">{stats.name}</TableCell>
                   <TableCell className="table-cell">

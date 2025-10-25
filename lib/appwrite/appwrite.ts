@@ -1,13 +1,7 @@
 import { MosqueAttendanceRecord } from "@/types";
-import {
-  Account,
-  Avatars,
-  Client,
-  Databases,
-  ID,
-  Models,
-  Query,
-} from "appwrite";
+import { Account, Client, Databases, ID, Models, Query } from "appwrite";
+
+/* =============================== Config =============================== */
 
 export const appwriteConfig = {
   endpoint: "https://cloud.appwrite.io/v1",
@@ -28,32 +22,81 @@ const {
   employeesCollectionId,
   attendanceCollectionId,
   mosqueAttendanceCollectionId,
-  leaveRequestsCollectionId,
-  wasteManagementFormsId,
 } = appwriteConfig;
 
 const client = new Client();
-
 client.setEndpoint(endpoint).setProject(projectId);
 
 const account = new Account(client);
-const avatars = new Avatars(client);
 const databases = new Databases(client);
 
-type LeaveRequest = Models.Document & {
+/* =============================== Types =============================== */
+
+// Leave request doc
+export type LeaveRequest = Models.Document & {
   fullName: string;
   leaveType: string;
   reason: string;
   totalDays: number;
-  startDate: string;
-  endDate: string;
+  startDate: string; // ISO
+  endDate: string; // ISO
   approvalStatus: string;
+  createdAt?: string; // you set this on create
 };
 
+// Employee doc (common fields + known leave balances)
+export type EmployeeDoc = Models.Document & {
+  name: string;
+  designation?: string;
+  section?: string;
+
+  // known leave counters (optional – not all employees will have all keys)
+  sickLeave?: number;
+  certificateSickLeave?: number;
+  annualLeave?: number;
+  familyRelatedLeave?: number;
+  maternityLeave?: number;
+  preMaternityLeave?: number;
+  paternityLeave?: number;
+  noPayLeave?: number;
+  officialLeave?: number;
+
+  // allow extra custom numeric leave fields without using any
+  [key: string]: unknown;
+};
+
+// Office attendance doc
+export type AttendanceDoc = Models.Document & {
+  employeeId: string; // FK to employee $id
+  date: string; // ISO date (YYYY-MM-DD or ISO datetime)
+  signInTime: string | null; // ISO datetime (UTC)
+  leaveType: string | null;
+  minutesLate: number;
+  previousLeaveType?: string | null;
+  leaveDeducted?: boolean;
+};
+
+// Mosque attendance doc (merge your UI type with Document)
+export type MosqueAttendanceDoc = Models.Document & MosqueAttendanceRecord;
+
+// Prayer times doc
+export type PrayerTimesDoc = Models.Document & {
+  date: string; // ISO YYYY-MM-DD
+  fathisTime: string; // "HH:mm"
+  mendhuruTime: string;
+  asuruTime: string;
+  maqribTime: string;
+  ishaTime: string;
+};
+
+/* =============================== Attendance (Office) =============================== */
+
 // Fetch attendance for a given date
-export const fetchAttendanceForDate = async (date: string) => {
+export const fetchAttendanceForDate = async (
+  date: string
+): Promise<AttendanceDoc[]> => {
   try {
-    const response = await databases.listDocuments(
+    const response = await databases.listDocuments<AttendanceDoc>(
       appwriteConfig.databaseId,
       appwriteConfig.attendanceCollectionId,
       [Query.equal("date", date)]
@@ -66,9 +109,9 @@ export const fetchAttendanceForDate = async (date: string) => {
 };
 
 // Fetch all employees
-export const fetchAllEmployees = async () => {
+export const fetchAllEmployees = async (): Promise<EmployeeDoc[]> => {
   try {
-    const employeesResponse = await databases.listDocuments(
+    const employeesResponse = await databases.listDocuments<EmployeeDoc>(
       appwriteConfig.databaseId,
       appwriteConfig.employeesCollectionId
     );
@@ -79,36 +122,38 @@ export const fetchAllEmployees = async () => {
   }
 };
 
-// Create attendance for all employees
+// Create attendance for all employees (excluding mosque assistants)
 export const createAttendanceForEmployees = async (
   date: string,
-  employees: any[]
-) => {
+  employees: EmployeeDoc[]
+): Promise<Array<Omit<AttendanceDoc, keyof Models.Document>>> => {
   try {
     const defaultSignInTime = new Date(`${date}T08:00:00Z`).toISOString();
 
-    // Filter out employees with the designation "Mosque Assistant"
     const filteredEmployees = employees.filter(
       (employee) => employee.designation !== "Mosque Assistant"
     );
 
-    const attendanceEntries = filteredEmployees.map((employee: any) => ({
-      employeeId: employee.$id,
-      date,
-      signInTime: defaultSignInTime,
-      leaveType: null,
-      minutesLate: 0,
-    }));
+    const attendanceEntries: Array<Omit<AttendanceDoc, keyof Models.Document>> =
+      filteredEmployees.map((employee) => ({
+        employeeId: employee.$id,
+        date,
+        signInTime: defaultSignInTime,
+        leaveType: null,
+        minutesLate: 0,
+        previousLeaveType: null,
+        leaveDeducted: false,
+      }));
 
     await Promise.all(
-      attendanceEntries.map(async (entry) => {
-        await databases.createDocument(
+      attendanceEntries.map((entry) =>
+        databases.createDocument(
           appwriteConfig.databaseId,
           appwriteConfig.attendanceCollectionId,
           ID.unique(),
           entry
-        );
-      })
+        )
+      )
     );
 
     return attendanceEntries;
@@ -121,21 +166,23 @@ export const createAttendanceForEmployees = async (
 // Update attendance record
 export const updateAttendanceRecord = async (
   attendanceId: string,
-  updates: any
-) => {
+  updates: Partial<
+    Pick<
+      AttendanceDoc,
+      | "signInTime"
+      | "leaveType"
+      | "minutesLate"
+      | "leaveDeducted"
+      | "previousLeaveType"
+    >
+  >
+): Promise<void> => {
   try {
     await databases.updateDocument(
       appwriteConfig.databaseId,
       appwriteConfig.attendanceCollectionId,
       attendanceId,
-      {
-        // Send only the updated fields, avoid unnecessary fields
-        signInTime: updates.signInTime,
-        leaveType: updates.leaveType,
-        minutesLate: updates.minutesLate,
-        leaveDeducted: updates.leaveDeducted,
-        previousLeaveType: updates.previousLeaveType,
-      }
+      updates
     );
   } catch (error) {
     console.error("Error updating attendance:", error);
@@ -144,7 +191,9 @@ export const updateAttendanceRecord = async (
 };
 
 // Fetch attendance for the month
-export const fetchAttendanceForMonth = async (month: string) => {
+export const fetchAttendanceForMonth = async (
+  month: string
+): Promise<AttendanceDoc[]> => {
   const startOfMonth = new Date(`${month}-01T00:00:00Z`).toISOString();
   const endOfMonth = new Date(
     new Date(`${month}-01T00:00:00Z`).setMonth(
@@ -152,15 +201,14 @@ export const fetchAttendanceForMonth = async (month: string) => {
     )
   ).toISOString();
 
-  let allAttendanceRecords: any[] = [];
+  const results: AttendanceDoc[] = [];
   let hasMore = true;
   let offset = 0;
-
-  const limit = 100; // Appwrite limit for pagination
+  const limit = 100;
 
   try {
     while (hasMore) {
-      const response = await databases.listDocuments(
+      const response = await databases.listDocuments<AttendanceDoc>(
         appwriteConfig.databaseId,
         appwriteConfig.attendanceCollectionId,
         [
@@ -171,33 +219,33 @@ export const fetchAttendanceForMonth = async (month: string) => {
         ]
       );
 
-      allAttendanceRecords = allAttendanceRecords.concat(response.documents);
-
-      // If we get fewer documents than the limit, it means we're done
-      if (response.documents.length < limit) {
-        hasMore = false;
-      } else {
-        offset += limit; // Move to the next batch
-      }
+      results.push(...response.documents);
+      hasMore = response.documents.length === limit;
+      offset += hasMore ? limit : 0;
     }
 
-    return allAttendanceRecords;
+    return results;
   } catch (error) {
     console.error("Error fetching attendance for the month:", error);
     throw error;
   }
 };
 
+/* =============================== Employees =============================== */
+
 // Create employee record
-export const createEmployeeRecord = async (employeeData: any) => {
+export const createEmployeeRecord = async (
+  employeeData: Partial<Omit<EmployeeDoc, keyof Models.Document>> & {
+    name: string;
+  }
+): Promise<EmployeeDoc> => {
   try {
-    const response = await databases.createDocument(
+    const response = await databases.createDocument<EmployeeDoc>(
       databaseId,
       employeesCollectionId,
       ID.unique(),
       employeeData
     );
-
     return response;
   } catch (error) {
     console.error("Error creating employee:", error);
@@ -206,9 +254,11 @@ export const createEmployeeRecord = async (employeeData: any) => {
 };
 
 // Fetch employee by ID
-export const fetchEmployeeById = async (employeeId: string) => {
+export const fetchEmployeeById = async (
+  employeeId: string
+): Promise<EmployeeDoc> => {
   try {
-    const response = await databases.getDocument(
+    const response = await databases.getDocument<EmployeeDoc>(
       appwriteConfig.databaseId,
       appwriteConfig.employeesCollectionId,
       employeeId
@@ -220,37 +270,32 @@ export const fetchEmployeeById = async (employeeId: string) => {
   }
 };
 
-// Fetch the employee's current leave and update it by deducting one
+// Fetch the employee's current leave and update it by deducting/restoring one
 export const deductLeave = async (
   employeeId: string,
   leaveType: string,
-  restore: boolean = false
-) => {
+  restore = false
+): Promise<void> => {
   try {
-    // Fetch the employee document
     const employee = await fetchEmployeeById(employeeId);
 
-    // Determine the leave balance for the leave type
-    const leaveBalance = employee[leaveType];
+    const current = employee[leaveType as keyof EmployeeDoc];
+    if (typeof current !== "number") {
+      throw new Error(
+        `Leave field "${leaveType}" is not a number on employee.`
+      );
+    }
 
-    // Adjust the leave count (restore or deduct)
-    const updatedLeaveBalance = restore ? leaveBalance + 1 : leaveBalance - 1;
-
-    // Ensure leave count doesn't drop below zero
+    const updatedLeaveBalance = restore ? current + 1 : current - 1;
     if (updatedLeaveBalance < 0 && !restore) {
       throw new Error("Insufficient leave balance");
     }
-
-    // Only pass necessary fields to update
-    const updates = {
-      [leaveType]: updatedLeaveBalance, // Only pass the leave type being updated
-    };
 
     await databases.updateDocument(
       databaseId,
       employeesCollectionId,
       employeeId,
-      updates
+      { [leaveType]: updatedLeaveBalance }
     );
   } catch (error) {
     console.error("Error updating employee leave:", error);
@@ -261,8 +306,8 @@ export const deductLeave = async (
 // Update employee's leave balance
 export const updateEmployeeLeaveBalance = async (
   employeeId: string,
-  updatedLeaveData: any
-) => {
+  updatedLeaveData: Partial<Omit<EmployeeDoc, keyof Models.Document>>
+): Promise<void> => {
   try {
     await databases.updateDocument(
       databaseId,
@@ -272,22 +317,22 @@ export const updateEmployeeLeaveBalance = async (
     );
   } catch (error) {
     console.error("Error updating employee leave:", error);
+    throw error;
   }
 };
 
 // Update Employee
 export const updateEmployeeRecord = async (
   employeeId: string,
-  formData: any
-) => {
+  formData: Partial<Omit<EmployeeDoc, keyof Models.Document>>
+): Promise<EmployeeDoc> => {
   try {
-    const updatedEmployee = await databases.updateDocument(
+    const updatedEmployee = await databases.updateDocument<EmployeeDoc>(
       databaseId,
       employeesCollectionId,
       employeeId,
       formData
     );
-
     return updatedEmployee;
   } catch (error) {
     console.error("Error updating employee record:", error);
@@ -298,39 +343,33 @@ export const updateEmployeeRecord = async (
 // Delete all attendances for a specific date
 export const deleteAttendancesByDate = async (date: string): Promise<void> => {
   try {
-    // Query the documents by date field
-    const response = await databases.listDocuments(
+    const response = await databases.listDocuments<AttendanceDoc>(
       databaseId,
       attendanceCollectionId,
       [Query.equal("date", date)]
     );
 
-    const attendanceRecords = response.documents;
+    if (response.documents.length === 0) return;
 
-    if (attendanceRecords.length === 0) {
-      console.log(`No attendance records found for date: ${date}`);
-      return; // No records to delete
-    }
-
-    // Delete each attendance record
-    const deletePromises = attendanceRecords.map((record) =>
-      databases.deleteDocument(databaseId, attendanceCollectionId, record.$id)
+    await Promise.all(
+      response.documents.map((record) =>
+        databases.deleteDocument(databaseId, attendanceCollectionId, record.$id)
+      )
     );
-
-    // Wait for all delete operations to complete
-    await Promise.all(deletePromises);
   } catch (error) {
     console.error(`Error deleting attendance records for ${date}:`, error);
     throw new Error(`Failed to delete attendance records for ${date}`);
   }
 };
 
-// MOSQUE ASSISTANTS ATTENDANCE
+/* =============================== Mosque Assistants =============================== */
 
-// Fetch employees by designation
-export const fetchMosqueAttendanceForDate = async (date: string) => {
+// Fetch mosque attendance for a date
+export const fetchMosqueAttendanceForDate = async (
+  date: string
+): Promise<MosqueAttendanceDoc[]> => {
   try {
-    const response = await databases.listDocuments(
+    const response = await databases.listDocuments<MosqueAttendanceDoc>(
       appwriteConfig.databaseId,
       appwriteConfig.mosqueAttendanceCollectionId,
       [Query.equal("date", date)]
@@ -342,48 +381,50 @@ export const fetchMosqueAttendanceForDate = async (date: string) => {
   }
 };
 
-// Create attendance for mosque assistants
+// Create attendance rows for mosque assistants
 export const createMosqueAttendanceForEmployees = async (
   date: string,
-  employees: any[]
-) => {
+  employees: EmployeeDoc[]
+): Promise<Array<Omit<MosqueAttendanceDoc, keyof Models.Document>>> => {
   try {
-    const attendanceEntries = employees.map((employee: any) => ({
-      employeeId: employee.$id,
-      date,
-      fathisSignInTime: null,
-      mendhuruSignInTime: null,
-      asuruSignInTime: null,
-      maqribSignInTime: null,
-      ishaSignInTime: null,
-      leaveType: null,
-    }));
+    const entries: Array<Omit<MosqueAttendanceDoc, keyof Models.Document>> =
+      employees.map((employee) => ({
+        employeeId: employee.$id, // your collection uses string id
+        date,
+        fathisSignInTime: null,
+        mendhuruSignInTime: null,
+        asuruSignInTime: null,
+        maqribSignInTime: null,
+        ishaSignInTime: null,
+        leaveType: null,
+        // minutesLate fields are usually computed later; omit here
+      }));
 
     await Promise.all(
-      attendanceEntries.map(async (entry) => {
-        await databases.createDocument(
+      entries.map((entry) =>
+        databases.createDocument(
           appwriteConfig.databaseId,
           appwriteConfig.mosqueAttendanceCollectionId,
           ID.unique(),
           entry
-        );
-      })
+        )
+      )
     );
 
-    return attendanceEntries;
+    return entries;
   } catch (error) {
     console.error("Error creating mosque attendance:", error);
     throw error;
   }
 };
 
-// Update attendance record for mosque assistants
+// Update mosque attendance record
 export const updateMosqueAttendanceRecord = async (
   attendanceId: string,
   updates: Partial<MosqueAttendanceRecord>
-) => {
+): Promise<MosqueAttendanceDoc> => {
   try {
-    const response = await databases.updateDocument(
+    const response = await databases.updateDocument<MosqueAttendanceDoc>(
       appwriteConfig.databaseId,
       appwriteConfig.mosqueAttendanceCollectionId,
       attendanceId,
@@ -396,17 +437,14 @@ export const updateMosqueAttendanceRecord = async (
   }
 };
 
+/* =============================== Prayer Times =============================== */
+
 // Save prayer times
-export const savePrayerTimes = async (prayerTimes: {
-  date: string;
-  fathisTime: string;
-  mendhuruTime: string;
-  asuruTime: string;
-  maqribTime: string;
-  ishaTime: string;
-}) => {
+export const savePrayerTimes = async (
+  prayerTimes: Omit<PrayerTimesDoc, keyof Models.Document>
+): Promise<PrayerTimesDoc> => {
   try {
-    const response = await databases.createDocument(
+    const response = await databases.createDocument<PrayerTimesDoc>(
       appwriteConfig.databaseId,
       appwriteConfig.prayerTimesCollectionId,
       ID.unique(),
@@ -422,16 +460,15 @@ export const savePrayerTimes = async (prayerTimes: {
 // Update prayer times
 export const updatePrayerTimes = async (
   recordId: string,
-  updatedTimes: {
-    fathisTime?: string;
-    mendhuruTime?: string;
-    asuruTime?: string;
-    maqribTime?: string;
-    ishaTime?: string;
-  }
-) => {
+  updatedTimes: Partial<
+    Pick<
+      PrayerTimesDoc,
+      "fathisTime" | "mendhuruTime" | "asuruTime" | "maqribTime" | "ishaTime"
+    >
+  >
+): Promise<PrayerTimesDoc> => {
   try {
-    const response = await databases.updateDocument(
+    const response = await databases.updateDocument<PrayerTimesDoc>(
       appwriteConfig.databaseId,
       appwriteConfig.prayerTimesCollectionId,
       recordId,
@@ -445,9 +482,11 @@ export const updatePrayerTimes = async (
 };
 
 // Get prayer times by date
-export const fetchPrayerTimesByDate = async (date: string) => {
+export const fetchPrayerTimesByDate = async (
+  date: string
+): Promise<PrayerTimesDoc | null> => {
   try {
-    const response = await databases.listDocuments(
+    const response = await databases.listDocuments<PrayerTimesDoc>(
       appwriteConfig.databaseId,
       appwriteConfig.prayerTimesCollectionId,
       [Query.equal("date", date)]
@@ -460,14 +499,16 @@ export const fetchPrayerTimesByDate = async (date: string) => {
 };
 
 // Get prayer times by month
-export const fetchPrayerTimesForMonth = async (month: string) => {
+export const fetchPrayerTimesForMonth = async (
+  month: string
+): Promise<PrayerTimesDoc[]> => {
   try {
     const startOfMonth = new Date(`${month}-01T00:00:00Z`).toISOString();
     const endOfMonth = new Date(
       new Date(startOfMonth).setMonth(new Date(startOfMonth).getMonth() + 1)
     ).toISOString();
 
-    const response = await databases.listDocuments(
+    const response = await databases.listDocuments<PrayerTimesDoc>(
       appwriteConfig.databaseId,
       appwriteConfig.prayerTimesCollectionId,
       [
@@ -476,15 +517,18 @@ export const fetchPrayerTimesForMonth = async (month: string) => {
       ]
     );
 
-    return response.documents; // Return all prayer times for the month
+    return response.documents;
   } catch (error) {
     console.error("Error fetching prayer times for the month:", error);
     throw error;
   }
 };
 
-// Get mosque attendance for the month
-export const fetchMosqueAttendanceForMonth = async (month: string) => {
+/* =============================== Mosque Attendance – Month =============================== */
+
+export const fetchMosqueAttendanceForMonth = async (
+  month: string
+): Promise<MosqueAttendanceDoc[]> => {
   const startOfMonth = new Date(`${month}-01T00:00:00Z`).toISOString();
   const endOfMonth = new Date(
     new Date(`${month}-01T00:00:00Z`).setMonth(
@@ -492,15 +536,14 @@ export const fetchMosqueAttendanceForMonth = async (month: string) => {
     )
   ).toISOString();
 
-  let allAttendanceRecords: any[] = [];
+  const results: MosqueAttendanceDoc[] = [];
   let hasMore = true;
   let offset = 0;
-
-  const limit = 100; // Appwrite limit for pagination
+  const limit = 100;
 
   try {
     while (hasMore) {
-      const response = await databases.listDocuments(
+      const response = await databases.listDocuments<MosqueAttendanceDoc>(
         appwriteConfig.databaseId,
         appwriteConfig.mosqueAttendanceCollectionId,
         [
@@ -511,27 +554,22 @@ export const fetchMosqueAttendanceForMonth = async (month: string) => {
         ]
       );
 
-      allAttendanceRecords = allAttendanceRecords.concat(response.documents);
-
-      // If we get fewer documents than the limit, it means we're done
-      if (response.documents.length < limit) {
-        hasMore = false;
-      } else {
-        offset += limit; // Move to the next batch
-      }
+      results.push(...response.documents);
+      hasMore = response.documents.length === limit;
+      offset += hasMore ? limit : 0;
     }
-    return allAttendanceRecords;
+    return results;
   } catch (error) {
     console.error("Error fetching attendance for the month:", error);
     throw error;
   }
 };
 
-// Get daily mosque attendance
+// Get daily mosque attendance for a month (single employee)
 export const fetchMosqueDailyAttendanceForMonth = async (
   month: string,
   employeeId: string
-) => {
+): Promise<MosqueAttendanceDoc[]> => {
   try {
     const startOfMonth = `${month}-01T00:00:00Z`;
     const endOfMonth = new Date(
@@ -540,13 +578,13 @@ export const fetchMosqueDailyAttendanceForMonth = async (
       )
     ).toISOString();
 
-    const response = await databases.listDocuments(
+    const response = await databases.listDocuments<MosqueAttendanceDoc>(
       appwriteConfig.databaseId,
       appwriteConfig.mosqueAttendanceCollectionId,
       [
         Query.greaterThanEqual("date", startOfMonth),
         Query.lessThanEqual("date", endOfMonth),
-        Query.equal("employeeId", employeeId), // Filter by employee ID
+        Query.equal("employeeId", employeeId),
       ]
     );
 
@@ -558,14 +596,14 @@ export const fetchMosqueDailyAttendanceForMonth = async (
 };
 
 // Get mosque assistants
-export const fetchMosqueAssistants = async () => {
+export const fetchMosqueAssistants = async (): Promise<EmployeeDoc[]> => {
   try {
-    const response = await databases.listDocuments(
+    const response = await databases.listDocuments<EmployeeDoc>(
       appwriteConfig.databaseId,
       appwriteConfig.employeesCollectionId,
-      [Query.equal("designation", "Mosque Assistant")] // Filter employees by designation
+      [Query.equal("designation", "Mosque Assistant")]
     );
-    return response.documents; // Return filtered employees
+    return response.documents;
   } catch (error) {
     console.error("Error fetching mosque assistants:", error);
     throw error;
@@ -577,44 +615,34 @@ export const deleteMosqueAttendancesByDate = async (
   date: string
 ): Promise<void> => {
   try {
-    // Query the documents by date field
-    const response = await databases.listDocuments(
+    const response = await databases.listDocuments<MosqueAttendanceDoc>(
       databaseId,
       mosqueAttendanceCollectionId,
       [Query.equal("date", date)]
     );
 
-    const attendanceRecords = response.documents;
+    if (response.documents.length === 0) return;
 
-    if (attendanceRecords.length === 0) {
-      console.log(`No attendance records found for date: ${date}`);
-      return; // No records to delete
-    }
-
-    // Delete each attendance record
-    const deletePromises = attendanceRecords.map((record) =>
-      databases.deleteDocument(
-        databaseId,
-        mosqueAttendanceCollectionId,
-        record.$id
+    await Promise.all(
+      response.documents.map((record) =>
+        databases.deleteDocument(
+          databaseId,
+          mosqueAttendanceCollectionId,
+          record.$id
+        )
       )
     );
-
-    // Wait for all delete operations to complete
-    await Promise.all(deletePromises);
   } catch (error) {
     console.error(`Error deleting attendance records for ${date}:`, error);
     throw new Error(`Failed to delete attendance records for ${date}`);
   }
 };
 
-// AUTHENTICATION
+/* =============================== Auth =============================== */
 
-// Create email and password session
 export const createEmailSession = async (email: string, password: string) => {
   try {
     const response = await account.createEmailPasswordSession(email, password);
-
     return response;
   } catch (error) {
     console.error("Error creating email session:", error);
@@ -622,9 +650,9 @@ export const createEmailSession = async (email: string, password: string) => {
   }
 };
 
-// LEAVE REQUESTS
+/* =============================== Leave Requests =============================== */
 
-// Create leave requests
+// Create leave request
 export const createLeaveRequest = async (leaveRequestData: {
   fullName: string;
   leaveType: string;
@@ -632,21 +660,21 @@ export const createLeaveRequest = async (leaveRequestData: {
   totalDays: number;
   startDate: string;
   endDate: string;
-}) => {
+}): Promise<LeaveRequest> => {
   try {
     const currentDateTime = new Date().toISOString();
 
-    const response = await databases.createDocument(
+    const response = await databases.createDocument<LeaveRequest>(
       appwriteConfig.databaseId,
       appwriteConfig.leaveRequestsCollectionId,
       ID.unique(),
       {
         ...leaveRequestData,
         createdAt: currentDateTime,
+        approvalStatus: "Pending",
       }
     );
 
-    console.log("Leave request created:", response);
     return response;
   } catch (error) {
     console.error("Error creating leave request:", error);
@@ -657,19 +685,22 @@ export const createLeaveRequest = async (leaveRequestData: {
 // Get leave requests for admin
 export const fetchLeaveRequests = async (
   limit = 10,
-  offset = 0
-): Promise<{ requests: any[]; totalCount: number }> => {
+  offsetVal = 0
+): Promise<{ requests: LeaveRequest[]; totalCount: number }> => {
   try {
-    // Fetch leave requests with pagination
-    const response = await databases.listDocuments(
+    const response = await databases.listDocuments<LeaveRequest>(
       appwriteConfig.databaseId,
       appwriteConfig.leaveRequestsCollectionId,
-      [Query.orderDesc("createdAt"), Query.limit(limit), Query.offset(offset)]
+      [
+        Query.orderDesc("createdAt"),
+        Query.limit(limit),
+        Query.offset(offsetVal),
+      ]
     );
 
     return {
-      requests: response.documents, // The leave requests
-      totalCount: response.total, // Total number of documents in the collection
+      requests: response.documents,
+      totalCount: response.total,
     };
   } catch (error) {
     console.error("Error fetching leave requests:", error);
@@ -677,11 +708,11 @@ export const fetchLeaveRequests = async (
   }
 };
 
-// Update leave requests
+// Update leave request
 export const updateLeaveRequest = async (
   requestId: string,
   data: { approvalStatus: string; actionBy?: string }
-) => {
+): Promise<void> => {
   try {
     await databases.updateDocument(
       appwriteConfig.databaseId,
@@ -695,11 +726,11 @@ export const updateLeaveRequest = async (
   }
 };
 
-// Get leave requests for users
+// Get leave requests for a user (optionally filtered by status)
 export const fetchUserLeaveRequests = async (
   status?: string,
   limit = 10,
-  offset = 0
+  offsetVal = 0
 ): Promise<{ requests: LeaveRequest[]; totalCount: number }> => {
   try {
     const filters = status ? [Query.equal("approvalStatus", status)] : [];
@@ -710,10 +741,11 @@ export const fetchUserLeaveRequests = async (
       [
         ...filters,
         Query.limit(limit),
-        Query.offset(offset),
+        Query.offset(offsetVal),
         Query.orderDesc("createdAt"),
       ]
     );
+
     return {
       requests: response.documents,
       totalCount: response.total,

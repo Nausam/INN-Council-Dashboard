@@ -1,38 +1,49 @@
 "use client";
 
-import React from "react";
-import LeaveRequestForm from "@/components/LeaveRequestForm ";
+import LeaveRequestForm from "../LeaveRequestForm ";
+
+type LeaveFormData = {
+  fullName: string;
+  reason: string;
+  totalDays: number;
+  startDate: string;
+  endDate: string;
+  leaveType: string;
+};
+
+type CurrentUser = {
+  fullName?: string;
+  email?: string;
+  $id?: string;
+} | null;
 
 interface LeaveRequestModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (formData: {
-    fullName: string;
-    reason: string;
-    totalDays: number;
-    startDate: string;
-    endDate: string;
-    leaveType: string;
-  }) => void;
-  currentUser: any | null;
+  onSubmit: (formData: LeaveFormData) => void;
+  currentUser?: CurrentUser;
 }
 
-const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({
+function LeaveRequestModal({
   isOpen,
   onClose,
   onSubmit,
   currentUser,
-}) => {
+}: LeaveRequestModalProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/40 backdrop-blur-sm overflow-y-auto">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-xl mx-4 md:mx-auto p-6">
-        <h2 className="text-2xl font-semibold text-gray-800 mb-4 text-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm overflow-y-auto">
+      <div className="mx-4 w-full max-w-xl rounded-lg bg-white p-6 shadow-lg md:mx-auto">
+        <h2 className="mb-4 text-center text-2xl font-semibold text-gray-800">
           Request for Leave
         </h2>
-        {/* LeaveRequestForm Component */}
-        <LeaveRequestForm onSubmit={onSubmit} currentUser={currentUser} />
+
+        <LeaveRequestForm
+          onSubmit={onSubmit}
+          currentUser={currentUser ?? null}
+        />
+
         <div className="mt-4 flex justify-end">
           <button type="button" onClick={onClose} className="close-button">
             Close
@@ -41,6 +52,6 @@ const LeaveRequestModal: React.FC<LeaveRequestModalProps> = ({
       </div>
     </div>
   );
-};
+}
 
 export default LeaveRequestModal;

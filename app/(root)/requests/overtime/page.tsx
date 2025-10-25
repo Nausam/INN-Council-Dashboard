@@ -1,8 +1,4 @@
-import React from "react";
-
-type Props = {};
-
-const OvertimeRequestPage = (props: Props) => {
+const OvertimeRequestPage = () => {
   return <div>OvertimeRequestPage</div>;
 };
 

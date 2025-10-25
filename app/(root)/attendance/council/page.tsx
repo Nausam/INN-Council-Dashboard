@@ -1,13 +1,14 @@
 "use client";
-import { useEffect, useState } from "react";
 import AttendanceTable from "@/components/AttendanceTable";
+import SkeletonAttendanceTable from "@/components/skeletons/SkeletonAttendanceTable";
+import { toast } from "@/hooks/use-toast";
+import type { EmployeeDoc } from "@/lib/appwrite/appwrite";
 import {
   createAttendanceForEmployees,
   fetchAllEmployees,
   fetchAttendanceForDate,
 } from "@/lib/appwrite/appwrite";
-import SkeletonAttendanceTable from "@/components/skeletons/SkeletonAttendanceTable";
-import { toast } from "@/hooks/use-toast";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -16,30 +17,48 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Calendar as CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import { useUser } from "@/Providers/UserProvider";
+import { Calendar as CalendarIcon } from "lucide-react";
+
+/* ---------- Types (match AttendanceTable's expectations) ---------- */
+type EmployeeRef =
+  | string
+  | {
+      $id: string;
+      name: string;
+      section?: string;
+    };
+
+type Row = {
+  $id: string;
+  employeeId: EmployeeRef;
+  signInTime: string | null;
+  leaveType: string | null;
+  minutesLate: number | null;
+  previousLeaveType: string | null;
+  leaveDeducted: boolean;
+  changed: boolean; // REQUIRED
+};
 
 const AdminAttendancePage = () => {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(
     new Date()
   );
-  const [attendanceData, setAttendanceData] = useState<any[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [attendanceData, setAttendanceData] = useState<Row[]>([]);
+  const [loading, setLoading] = useState(false);
   const [isAttendanceGenerated, setIsAttendanceGenerated] = useState(false);
   const [showGenerateButton, setShowGenerateButton] = useState(false);
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
-  const { currentUser, isAdmin, loading: userLoading } = useUser();
-
-  const formattedSelectedDate = selectedDate
-    ? new Date(
-        selectedDate.getTime() - selectedDate.getTimezoneOffset() * 60000
-      )
-        .toISOString()
-        .split("T")[0]
-    : "";
+  const formattedSelectedDate = useMemo(() => {
+    if (!selectedDate) return "";
+    return new Date(
+      selectedDate.getTime() - selectedDate.getTimezoneOffset() * 60000
+    )
+      .toISOString()
+      .split("T")[0];
+  }, [selectedDate]);
 
   const handleDateSelect = (date: Date | undefined) => {
     setSelectedDate(date);
@@ -49,61 +68,84 @@ const AdminAttendancePage = () => {
   useEffect(() => {
     setAttendanceData([]);
     setShowGenerateButton(false);
+    setIsAttendanceGenerated(false);
   }, [selectedDate]);
+
+  // Normalize raw docs into table rows with `changed: false`
+  const normalize = (docs: unknown[]): Row[] =>
+    docs.map((d) => {
+      const r = d as Omit<Row, "changed"> & Partial<Pick<Row, "changed">>;
+      return { ...r, changed: r.changed ?? false };
+    });
 
   // Fetch attendance for the selected date
   const fetchAttendanceData = async (date: string) => {
+    if (!date) return;
     setLoading(true);
     try {
-      const attendance = await fetchAttendanceForDate(date);
-      if (attendance.length > 0) {
-        setAttendanceData(attendance);
+      const raw = (await fetchAttendanceForDate(date)) as unknown[];
+      if (raw.length > 0) {
+        setAttendanceData(normalize(raw));
         setIsAttendanceGenerated(true);
-        date;
       } else {
         setAttendanceData([]);
         setIsAttendanceGenerated(false);
         setShowGenerateButton(true);
       }
     } catch (error) {
-      console.error("Error:", error);
+      console.error("Error loading attendance:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load attendance for the selected date.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  // Handle generating attendance for a date if it doesn't exist
+  // Generate attendance for date if it doesn't exist
   const handleGenerateAttendance = async () => {
+    if (!formattedSelectedDate) return;
     setLoading(true);
     try {
-      const attendance = await fetchAttendanceForDate(formattedSelectedDate);
+      const existing = (await fetchAttendanceForDate(
+        formattedSelectedDate
+      )) as unknown[];
 
-      if (attendance.length > 0) {
+      if (existing.length > 0) {
         toast({
-          title: "Success",
-          description: "Attendance already created for this date",
+          title: "Already exists",
+          description: "Attendance already created for this date.",
           variant: "destructive",
         });
-
-        setAttendanceData(attendance);
+        setAttendanceData(normalize(existing));
       } else {
-        const employees = await fetchAllEmployees();
-        const newAttendance = await createAttendanceForEmployees(
+        const employees = (await fetchAllEmployees()) as EmployeeDoc[];
+        const created = (await createAttendanceForEmployees(
           formattedSelectedDate,
           employees
-        );
-        setAttendanceData(newAttendance);
+        )) as unknown[]; // your helper returns plain objects
+
+        setAttendanceData(normalize(created));
         setShowGenerateButton(false);
         toast({
           title: "Success",
-          description: "Attendance sheet created for today",
+          description: "Attendance sheet created.",
           variant: "success",
         });
       }
     } catch (error) {
-      console.error("Error:", error);
+      console.error("Error creating attendance:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create attendance.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+      fetchAttendanceData(formattedSelectedDate);
     }
-    setLoading(false);
-    fetchAttendanceData(formattedSelectedDate);
   };
 
   return (
@@ -117,7 +159,7 @@ const AdminAttendancePage = () => {
           <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
             <PopoverTrigger asChild>
               <Button
-                variant={"outline"}
+                variant="outline"
                 className={cn(
                   "w-full lg:w-auto h-12 justify-start text-left font-normal",
                   !selectedDate && "text-muted-foreground"
@@ -144,7 +186,7 @@ const AdminAttendancePage = () => {
 
         <div className="flex items-end">
           <button
-            className="custom-button w-full  h-12"
+            className="custom-button w-full h-12"
             onClick={() => fetchAttendanceData(formattedSelectedDate)}
             disabled={loading}
           >

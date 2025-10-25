@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import {
   Table,
   TableBody,
@@ -9,23 +8,31 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import React from "react";
 
-interface LeaveRequest {
+export interface LeaveRequest {
   $id: string;
   fullName: string;
   leaveType: string;
   reason: string;
   totalDays: number;
-  startDate: string;
-  endDate: string;
-  approvalStatus: string;
+  startDate: string; // ISO date string
+  endDate: string; // ISO date string
+  approvalStatus: "Pending" | "Approved" | "Rejected";
+  actionBy?: string; // who took the action (optional)
 }
 
-const LeaveRequestsTable: React.FC<{
-  leaveRequests: any[];
+interface LeaveRequestsTableProps {
+  leaveRequests: LeaveRequest[];
   onApprove: (requestId: string) => void;
   onReject: (requestId: string) => void;
-}> = ({ leaveRequests, onApprove, onReject }) => {
+}
+
+const LeaveRequestsTable: React.FC<LeaveRequestsTableProps> = ({
+  leaveRequests,
+  onApprove,
+  onReject,
+}) => {
   return (
     <Table>
       <TableHeader>
@@ -41,6 +48,7 @@ const LeaveRequestsTable: React.FC<{
           <TableHead>Action taken by</TableHead>
         </TableRow>
       </TableHeader>
+
       <TableBody>
         {leaveRequests.map((request) => (
           <TableRow key={request.$id}>
@@ -48,6 +56,7 @@ const LeaveRequestsTable: React.FC<{
             <TableCell>{request.leaveType}</TableCell>
             <TableCell>{request.reason}</TableCell>
             <TableCell>{request.totalDays}</TableCell>
+
             <TableCell>
               {new Date(request.startDate).toLocaleDateString("en-US", {
                 year: "numeric",
@@ -55,6 +64,7 @@ const LeaveRequestsTable: React.FC<{
                 day: "numeric",
               })}
             </TableCell>
+
             <TableCell>
               {new Date(request.endDate).toLocaleDateString("en-US", {
                 year: "numeric",
@@ -62,6 +72,7 @@ const LeaveRequestsTable: React.FC<{
                 day: "numeric",
               })}
             </TableCell>
+
             <TableCell>
               <span
                 className={`px-3 py-1 rounded ${
@@ -75,25 +86,27 @@ const LeaveRequestsTable: React.FC<{
                 {request.approvalStatus}
               </span>
             </TableCell>
+
             <TableCell>
               {request.approvalStatus === "Pending" ? (
                 <div className="flex space-x-2">
                   <button
                     onClick={() => onApprove(request.$id)}
-                    className="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600"
+                    className="rounded bg-green-500 px-3 py-1 text-white hover:bg-green-600"
                   >
                     Approve
                   </button>
                   <button
                     onClick={() => onReject(request.$id)}
-                    className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
+                    className="rounded bg-red-500 px-3 py-1 text-white hover:bg-red-600"
                   >
                     Reject
                   </button>
                 </div>
               ) : null}
             </TableCell>
-            <TableCell>{request.actionBy}</TableCell>
+
+            <TableCell>{request.actionBy ?? "—"}</TableCell>
           </TableRow>
         ))}
       </TableBody>

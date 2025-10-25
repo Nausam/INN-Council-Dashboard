@@ -1,41 +1,59 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import AdminLeaveRequestCard from "@/components/Leave/AdminLeaveRequestCard";
+import Pagination from "@/components/shared/Pagination";
+import ShowDropdown from "@/components/shared/ShowDropdown";
+import SkeletonAdminLeaveRequestCard from "@/components/skeletons/SkeletonAdminLeaveRequestCard";
+import { useCurrentUser } from "@/hooks/getCurrentUser";
 import {
   fetchLeaveRequests,
   updateLeaveRequest,
 } from "@/lib/appwrite/appwrite";
-import LeaveRequestsTable from "@/components/Leave/LeaveRequestTable";
-import { useCurrentUser } from "@/hooks/getCurrentUser";
-import AdminLeaveRequestCard from "@/components/Leave/AdminLeaveRequestCard";
-import SkeletonAdminLeaveRequestCard from "@/components/skeletons/SkeletonAdminLeaveRequestCard";
-import { toast } from "@/hooks/use-toast";
-import ShowDropdown from "@/components/shared/ShowDropdown";
-import Pagination from "@/components/shared/Pagination";
+import React, { useEffect, useState } from "react";
 
-const AdminLeaveApprovalPage = () => {
-  const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const { currentUser } = useCurrentUser();
+/* ---------- Types ---------- */
+
+export type LeaveRequest = {
+  $id: string;
+  fullName: string;
+  leaveType: string;
+  reason: string;
+  totalDays: number;
+  startDate: string; // ISO
+  endDate: string; // ISO
+  approvalStatus: "Approved" | "Rejected" | "Pending";
+  actionBy?: string;
+};
+
+type FetchLeaveRequestsResult = {
+  requests: LeaveRequest[];
+  totalCount: number;
+};
+
+/* ---------- Component ---------- */
+
+const AdminLeaveApprovalPage: React.FC = () => {
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
   // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(4);
-  const [totalRequests, setTotalRequests] = useState(0);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [itemsPerPage, setItemsPerPage] = useState<number>(4);
+  const [totalRequests, setTotalRequests] = useState<number>(0);
 
-  const fetchRequests = async () => {
+  const { currentUser } = useCurrentUser();
+
+  const fetchRequests = async (): Promise<void> => {
     setLoading(true);
     try {
       const offset = (currentPage - 1) * itemsPerPage;
-      const { requests, totalCount } = await fetchLeaveRequests(
+      const { requests, totalCount } = (await fetchLeaveRequests(
         itemsPerPage,
         offset
-      );
+      )) as FetchLeaveRequestsResult;
 
       setLeaveRequests(requests);
       setTotalRequests(totalCount);
-    } catch (error) {
-      console.error("Error fetching leave requests:", error);
     } finally {
       setLoading(false);
     }
@@ -44,35 +62,37 @@ const AdminLeaveApprovalPage = () => {
   const handleApproval = async (
     requestId: string,
     status: "Approved" | "Rejected"
-  ) => {
-    if (!currentUser || !currentUser.fullName) {
-      alert("Current user information is missing. Cannot update request.");
+  ): Promise<void> => {
+    if (!currentUser?.fullName) {
+      alert("Your user info is missing; cannot update this request.");
       return;
     }
+
     try {
-      // Update the status of the leave request in the database
       await updateLeaveRequest(requestId, {
         approvalStatus: status,
         actionBy: currentUser.fullName,
       });
 
-      // Update the status in the local state without refetching
-      setLeaveRequests((prevRequests) =>
-        prevRequests.map((request) =>
-          request.$id === requestId
-            ? { ...request, approvalStatus: status }
-            : request
+      // Optimistic UI update
+      setLeaveRequests((prev) =>
+        prev.map((r) =>
+          r.$id === requestId
+            ? { ...r, approvalStatus: status, actionBy: currentUser.fullName }
+            : r
         )
       );
+
+      // Re-fetch to stay in sync with server totals/pagination
       fetchRequests();
-    } catch (error) {
-      console.error("Error updating leave request:", error);
+    } catch {
       alert("Failed to update leave request.");
     }
   };
 
   useEffect(() => {
     fetchRequests();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, itemsPerPage]);
 
   return (
@@ -80,7 +100,6 @@ const AdminLeaveApprovalPage = () => {
       <div className="flex justify-between items-center mb-5 mt-10">
         <h1 className="text-3xl font-bold">Leave Requests</h1>
 
-        {/* Items Per Page Dropdown */}
         <ShowDropdown
           label="Show:"
           options={[4, 6, 8]}
@@ -91,28 +110,29 @@ const AdminLeaveApprovalPage = () => {
           }}
         />
       </div>
+
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 mt-10">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <SkeletonAdminLeaveRequestCard key={index} />
+          {Array.from({ length: 4 }).map((_, idx) => (
+            <SkeletonAdminLeaveRequestCard key={idx} />
           ))}
         </div>
       ) : leaveRequests.length === 0 ? (
         <p>No leave requests found.</p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-1 lg:grid-cols-2 gap-4 mt-10">
-          {leaveRequests.map((request) => (
+          {leaveRequests.map((req) => (
             <AdminLeaveRequestCard
-              key={request.$id}
-              requestId={request.$id}
-              fullName={request.fullName}
-              leaveType={request.leaveType}
-              reason={request.reason}
-              totalDays={request.totalDays}
-              startDate={request.startDate}
-              endDate={request.endDate}
-              status={request.approvalStatus}
-              actionBy={request.actionBy}
+              key={req.$id}
+              requestId={req.$id}
+              fullName={req.fullName}
+              leaveType={req.leaveType}
+              reason={req.reason}
+              totalDays={req.totalDays}
+              startDate={req.startDate}
+              endDate={req.endDate}
+              status={req.approvalStatus}
+              actionBy={req.actionBy}
               onApprove={(id) => handleApproval(id, "Approved")}
               onReject={(id) => handleApproval(id, "Rejected")}
             />
@@ -120,7 +140,6 @@ const AdminLeaveApprovalPage = () => {
         </div>
       )}
 
-      {/* Pagination */}
       <div className="mt-6 flex justify-center">
         <Pagination
           currentPage={currentPage}
