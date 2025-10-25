@@ -32,6 +32,11 @@ function LeaveRequestModal({
 }: LeaveRequestModalProps) {
   if (!isOpen) return null;
 
+  // Normalize to exactly what the form expects (avoid excess/optional prop issues)
+  const currentUserForForm = currentUser
+    ? { fullName: currentUser.fullName ?? "" }
+    : null;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm overflow-y-auto">
       <div className="mx-4 w-full max-w-xl rounded-lg bg-white p-6 shadow-lg md:mx-auto">
@@ -41,7 +46,7 @@ function LeaveRequestModal({
 
         <LeaveRequestForm
           onSubmit={onSubmit}
-          currentUser={currentUser ?? null}
+          currentUser={currentUserForForm}
         />
 
         <div className="mt-4 flex justify-end">
