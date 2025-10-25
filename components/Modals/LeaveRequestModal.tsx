@@ -41,7 +41,7 @@ function LeaveRequestModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm overflow-y-auto">
       <div className="mx-4 w-full max-w-xl rounded-lg bg-white p-6 shadow-lg md:mx-auto">
         <h2 className="mb-4 text-center text-2xl font-semibold text-gray-800">
-          Request for Leave
+          Request for a Leave
         </h2>
 
         <LeaveRequestForm
