@@ -212,12 +212,12 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
               </option>
               <option value="Council Member">Council Member</option>
               <option value="Council Executive">Council Executive</option>
+              <option value="A. Council Executive">A. Council Executive</option>
               <option value="Finance Officer">Finance Officer</option>
               <option value="Council Officer">Council Officer</option>
               <option value="A. Council Officer">A. Council Officer</option>
               <option value="Council Assistant">Council Assistant</option>
               <option value="Imam">Imam</option>
-              <option value="Mosque Assistant">Mosque Assistant</option>
             </select>
           </div>
         </div>
@@ -239,8 +239,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
               <option value="">Select Section</option>
               <option value="Councillor">Councillor</option>
               <option value="Admin">Admin</option>
-              <option value="Imam">Imam</option>
-              <option value="Mosque Assistant">Mosque Assistant</option>
+              <option value="Mosque">Mosque</option>
+              <option value="Waste Management">Waste Management</option>
             </select>
           </div>
 

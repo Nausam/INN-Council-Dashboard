@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 import {
   AlertDialog,
@@ -120,16 +121,37 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
   const idFromRef = (ref: EmployeeRef) =>
     typeof ref === "object" ? ref.$id : ref;
 
+  const normalize = (s?: string) => (s ?? "").toLowerCase().trim();
+  const clean = (s?: string) => normalize(s).replace(/[^a-z]/g, "");
+
+  // robust section extraction (looks at several possible fields/variants)
+  const sectionFromRecord = (r: AttendanceRecord) => {
+    if (typeof r.employeeId === "object") {
+      const s = r.employeeId.section ?? "";
+      return s || "";
+    }
+    const id = r.employeeId;
+    const cache = id ? employeeCache[id] : undefined;
+    // try common alternative fields if your employee doc uses different keys
+
+    const raw =
+      cache?.section ||
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (cache as any)?.Section ||
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (cache as any)?.department ||
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (cache as any)?.Department ||
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (cache as any)?.role ||
+      "";
+    return raw || "";
+  };
+
   const nameFromRecord = (r: AttendanceRecord) => {
     if (typeof r.employeeId === "object") return r.employeeId.name ?? "Unknown";
     const id = r.employeeId;
     return (id && employeeCache[id]?.name) || "Unknown";
-  };
-
-  const sectionFromRecord = (r: AttendanceRecord) => {
-    if (typeof r.employeeId === "object") return r.employeeId.section ?? "";
-    const id = r.employeeId;
-    return (id && employeeCache[id]?.section) || "";
   };
 
   // Keep local state in sync with prop
@@ -158,11 +180,25 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
           unresolvedIds.map(async (id) => {
             try {
               const doc = await fetchEmployeeById(id);
-              return {
-                id,
-                name: String((doc as { name?: string }).name ?? "Unknown"),
-                section: String((doc as { section?: string }).section ?? ""),
-              };
+              // read name/section defensively
+              const anyDoc = doc as Record<string, unknown>;
+              const name =
+                String(
+                  (anyDoc.name as string) ??
+                    (anyDoc["fullName"] as string) ??
+                    (anyDoc["displayName"] as string) ??
+                    ""
+                ) || "Unknown";
+              const section =
+                String(
+                  (anyDoc.section as string) ??
+                    (anyDoc["Section"] as string) ??
+                    (anyDoc["department"] as string) ??
+                    (anyDoc["Department"] as string) ??
+                    (anyDoc["role"] as string) ??
+                    ""
+                ) || "";
+              return { id, name, section };
             } catch {
               return { id, name: "Unknown", section: "" };
             }
@@ -180,14 +216,16 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     })();
   }, [unresolvedIds]);
 
-  // Preferred display order
+  /* ---------------- Custom order + section-first sort ---------------- */
+
+  // Your requested fixed order (we'll compare case-insensitively)
   const employeeOrder = [
     "Ahmed Azmeen",
     "Ahmed Ruzaan",
     "Ibrahim Nuhan",
     "Aminath Samaha",
     "Aishath Samaha",
-    "Imraan Shareef",
+    "Imran Shareef",
     "Aminath Shazuly",
     "Fazeel Ahmed",
     "Hussain Sazeen",
@@ -202,18 +240,76 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     "Aishath Shaila",
     "Azlifa Saleem",
     "Aishath Shabaana",
+    "Aishath Naahidha",
+    "Aishath Simaana",
+    "Fazeela Naseer",
+    "Buruhan",
+    "Ubaidh",
   ];
 
-  const sortedAttendance = [...attendanceUpdates].sort((a, b) => {
-    const aName = nameFromRecord(a);
-    const bName = nameFromRecord(b);
-    const ai = employeeOrder.indexOf(aName);
-    const bi = employeeOrder.indexOf(bName);
-    const aa = ai === -1 ? Number.MAX_SAFE_INTEGER : ai;
-    const bb = bi === -1 ? Number.MAX_SAFE_INTEGER : bi;
-    if (aa !== bb) return aa - bb;
-    return aName.localeCompare(bName);
-  });
+  // Build a fast index map with normalized keys
+  const orderIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    employeeOrder.forEach((n, i) => map.set(normalize(n), i));
+    return map;
+  }, []);
+
+  // map noisy section strings to canonical groups
+  type CanonicalSection = "Councillor" | "Admin" | "Waste Management" | "Other";
+  const getCanonicalSection = (raw?: string): CanonicalSection => {
+    const n = clean(raw);
+    if (["councillor", "councilor", "council", "counciler"].includes(n))
+      return "Councillor";
+    if (
+      [
+        "admin",
+        "administrator",
+        "administration",
+        "office",
+        "officeadmin",
+      ].includes(n)
+    )
+      return "Admin";
+    if (
+      [
+        "wastemanagement",
+        "waste",
+        "wastemgmt",
+        "wm",
+        "wastecollection",
+        "waste-collection",
+      ].includes(n)
+    )
+      return "Waste Management";
+    return "Other";
+  };
+
+  // split into groups by canonical section
+  const grouped = useMemo(() => {
+    const g: Record<CanonicalSection, AttendanceRecord[]> = {
+      Councillor: [],
+      Admin: [],
+      "Waste Management": [],
+      Other: [],
+    };
+    for (const r of attendanceUpdates) {
+      const sec = getCanonicalSection(sectionFromRecord(r));
+      g[sec].push(r);
+    }
+    return g;
+  }, [attendanceUpdates, employeeCache]);
+
+  // sort within group by your fixed order (case-insensitive), then by name
+  const sortWithin = (arr: AttendanceRecord[]) => {
+    return [...arr].sort((a, b) => {
+      const an = nameFromRecord(a);
+      const bn = nameFromRecord(b);
+      const ai = orderIndex.get(normalize(an)) ?? Number.MAX_SAFE_INTEGER;
+      const bi = orderIndex.get(normalize(bn)) ?? Number.MAX_SAFE_INTEGER;
+      if (ai !== bi) return ai - bi;
+      return an.localeCompare(bn);
+    });
+  };
 
   /* ---------------- Handlers ---------------- */
   const handleSignInChange = (attendanceId: string, newSignInTime: string) => {
@@ -252,8 +348,8 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     // compute lateness first
     const withLateness = attendanceUpdates.map((r) => {
       if (!r.signInTime) return r;
-      const required =
-        sectionFromRecord(r) === "Councillor" ? "08:30" : "08:00";
+      const sec = getCanonicalSection(sectionFromRecord(r));
+      const required = sec === "Councillor" ? "08:30" : "08:00";
       const requiredTime = new Date(`${date}T${required}Z`);
       const actual = new Date(r.signInTime);
       const minutesLate = Math.max(
@@ -354,21 +450,27 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
   };
 
   /* ---------------- UI ---------------- */
-  return (
-    <div>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="py-2 px-4">#</TableHead>
-            <TableHead className="py-2 px-4">Employee Name</TableHead>
-            <TableHead className="py-2 px-4">Sign in Time</TableHead>
-            <TableHead className="py-2 px-4">Attendance</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {sortedAttendance.map((record, index) => (
-            <TableRow key={record.$id || index}>
-              <TableCell className="py-2 px-4">{index + 1}</TableCell>
+  let rowCounter = 0;
+
+  const SectionHeadingRow = ({ title }: { title: string }) => (
+    <TableRow>
+      <TableCell colSpan={4} className="bg-muted/60 text-sm font-medium">
+        <div className="py-2 px-3">{title}</div>
+      </TableCell>
+    </TableRow>
+  );
+
+  const renderSection = (title: string, rows: AttendanceRecord[]) => {
+    if (!rows.length) return null;
+    const sorted = sortWithin(rows);
+    return (
+      <>
+        <SectionHeadingRow title={title} />
+        {sorted.map((record) => {
+          rowCounter += 1;
+          return (
+            <TableRow key={record.$id}>
+              <TableCell className="py-2 px-4">{rowCounter}</TableCell>
               <TableCell className="py-2 px-4">
                 {nameFromRecord(record)}
               </TableCell>
@@ -376,7 +478,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
                 {!record.leaveType ? (
                   <input
                     type="time"
-                    className="border p-2"
+                    className="border p-2 rounded-md"
                     value={formatTimeForInput(record.signInTime)}
                     onChange={(e) =>
                       handleSignInChange(record.$id, e.target.value)
@@ -396,7 +498,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
                   onChange={(e) =>
                     handleLeaveChange(record.$id, e.target.value)
                   }
-                  className="border p-2"
+                  className="border p-2 rounded-md"
                 >
                   <option value="">Present</option>
                   {leaveTypes.map((type) => (
@@ -407,7 +509,33 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
                 </select>
               </TableCell>
             </TableRow>
-          ))}
+          );
+        })}
+      </>
+    );
+  };
+
+  const councillor = grouped["Councillor"];
+  const admin = grouped["Admin"];
+  const waste = grouped["Waste Management"];
+  const other = grouped["Other"];
+
+  return (
+    <div>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="py-2 px-4">#</TableHead>
+            <TableHead className="py-2 px-4">Employee Name</TableHead>
+            <TableHead className="py-2 px-4">Sign in Time</TableHead>
+            <TableHead className="py-2 px-4">Attendance</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {renderSection("Council", councillor)}
+          {renderSection("Admin", admin)}
+          {renderSection("Waste Management", waste)}
+          {renderSection("Other", sortWithin(other))}
         </TableBody>
       </Table>
 

@@ -9,8 +9,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { fetchMosqueAttendanceForMonth } from "@/lib/appwrite/appwrite";
-import React, { useState } from "react";
+import {
+  EmployeeDoc,
+  fetchMosqueAssistants,
+  fetchMosqueAttendanceForMonth,
+} from "@/lib/appwrite/appwrite";
+import React, { useEffect, useMemo, useState } from "react";
 
 /* ======================= Types ======================= */
 
@@ -126,6 +130,31 @@ const MosqueMonthlyReportsPage: React.FC = () => {
   const [reportData, setReportData] = useState<Array<[string, ReportEntry]>>(
     []
   );
+  const [assistants, setAssistants] = useState<EmployeeDoc[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const list = await fetchMosqueAssistants();
+        setAssistants(Array.isArray(list) ? list : []);
+      } catch (e) {
+        console.error("Failed to load mosque assistants:", e);
+      }
+    })();
+  }, []);
+
+  const assistantsById = useMemo(() => {
+    // Map: employee $id -> { name, designation }
+    return new Map<string, { name: string; designation: string }>(
+      assistants.map((e) => [
+        e.$id,
+        {
+          name: e.name,
+          designation: typeof e.designation === "string" ? e.designation : "",
+        },
+      ])
+    );
+  }, [assistants]);
 
   const generateReport = async (month: string): Promise<void> => {
     setLoading(true);
@@ -157,7 +186,9 @@ const MosqueMonthlyReportsPage: React.FC = () => {
         let section = "";
 
         if (typeof r.employeeId === "string") {
-          name = r.employeeId; // fallback to id as name
+          const found = assistantsById.get(r.employeeId);
+          name = found ? found.name : "(Unknown)";
+          designation = found ? found.designation : "";
         } else {
           name = r.employeeId.name || r.employeeId.$id || "Unknown";
           designation = r.employeeId.designation ?? "";
@@ -166,7 +197,10 @@ const MosqueMonthlyReportsPage: React.FC = () => {
         }
 
         // Key by name (you can change to $id if you prefer)
-        const key = name;
+        const key =
+          typeof r.employeeId === "string"
+            ? r.employeeId
+            : r.employeeId.$id || r.employeeId.name;
 
         const current: ReportEntry = reportMap.get(key) ?? {
           name,

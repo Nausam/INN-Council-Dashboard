@@ -14,7 +14,7 @@ import {
   fetchMosqueDailyAttendanceForMonth,
   fetchPrayerTimesForMonth,
 } from "@/lib/appwrite/appwrite";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 /* ========================= Types ========================= */
 
@@ -124,8 +124,12 @@ function isPrayerTimesDoc(v: unknown): v is PrayerTimesDoc {
 
 /* ========================= Helpers ========================= */
 
-function empName(emp: EmployeeRef): string {
-  return typeof emp === "string" ? emp : emp.name || emp.$id || "Unknown";
+function empName(emp: EmployeeRef, byId: Map<string, MosqueAssistant>): string {
+  if (typeof emp === "string") {
+    const found = byId.get(emp);
+    return found ? found.name : "(Unknown)";
+  }
+  return emp.name;
 }
 
 function empDesignation(emp: EmployeeRef): string {
@@ -162,6 +166,10 @@ const MosqueMonthlyReportsPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [attendanceData, setAttendanceData] = useState<AttRow[]>([]);
   const [prayerTimes, setPrayerTimes] = useState<PrayerTimesMap>({});
+
+  const employeesById = useMemo(() => {
+    return new Map<string, MosqueAssistant>(employees.map((e) => [e.$id, e]));
+  }, [employees]);
 
   // Fetch employees with designation "Mosque Assistant"
   useEffect(() => {
@@ -275,7 +283,7 @@ const MosqueMonthlyReportsPage: React.FC = () => {
       const date = rec.date.slice(0, 10);
       return [
         date,
-        empName(rec.employeeId),
+        empName(rec.employeeId, employeesById),
         empDesignation(rec.employeeId),
         fmtTimeOrDash(rec.fathisSignInTime),
         fmtTimeOrDash(rec.mendhuruSignInTime),
@@ -385,7 +393,10 @@ const MosqueMonthlyReportsPage: React.FC = () => {
                 return (
                   <TableRow key={rec.$id}>
                     <TableCell>{idx + 1}</TableCell>
-                    <TableCell>{empName(rec.employeeId)}</TableCell>
+                    <TableCell>
+                      {empName(rec.employeeId, employeesById)}
+                    </TableCell>
+
                     <TableCell>{empDesignation(rec.employeeId)}</TableCell>
                     <TableCell>{date}</TableCell>
 

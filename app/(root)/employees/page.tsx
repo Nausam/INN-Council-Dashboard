@@ -56,7 +56,7 @@ const EmployeesPage: React.FC = () => {
     "Ibrahim Nuhan",
     "Aminath Samaha",
     "Aishath Samaha",
-    "Imraan Shareef",
+    "Imran Shareef",
     "Aminath Shazuly",
     "Fazeel Ahmed",
     "Hussain Sazeen",
@@ -71,6 +71,11 @@ const EmployeesPage: React.FC = () => {
     "Aishath Shaila",
     "Azlifa Saleem",
     "Aishath Shabaana",
+    "Aishath Naahidha",
+    "Aishath Simaana",
+    "Fazeela Naseer",
+    "Buruhan",
+    "Ubaidh",
   ];
 
   // Sort employees based on the desired order
@@ -158,11 +163,11 @@ const EmployeesPage: React.FC = () => {
           <option value="Council Vice President">Council Vice President</option>
           <option value="Council Member">Council Member</option>
           <option value="Council Executive">Council Executive</option>
+          <option value="A. Council Executive">A. Council Executive</option>
           <option value="Finance Officer">Finance Officer</option>
           <option value="Council Officer">Council Officer</option>
           <option value="A. Council Officer">A. Council Officer</option>
           <option value="Council Assistant">Council Assistant</option>
-          <option value="Mosque Assistant">Mosque Assistant</option>
         </select>
 
         {/* Filter by Section */}
@@ -174,8 +179,8 @@ const EmployeesPage: React.FC = () => {
           <option value="All">All Sections</option>
           <option value="Councillor">Councillor</option>
           <option value="Admin">Admin</option>
-          <option value="Imam">Imam</option>
-          <option value="Mosque Assistant">Mosque Assistant</option>
+          <option value="Mosque">Mosque</option>
+          <option value="Waste Management">Waste Management</option>
         </select>
       </div>
 

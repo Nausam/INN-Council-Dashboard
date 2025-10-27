@@ -1,17 +1,14 @@
 import { UserProvider } from "@/Providers/UserProvider";
 import type { Metadata } from "next";
-import localFont from "next/font/local";
 import "./globals.css";
 
-const geistSans = localFont({
-  src: "./fonts/GeistVF.woff",
-  variable: "--font-geist-sans",
-  weight: "100 900",
-});
-const geistMono = localFont({
-  src: "./fonts/GeistMonoVF.woff",
-  variable: "--font-geist-mono",
-  weight: "100 900",
+import { Plus_Jakarta_Sans } from "next/font/google";
+
+export const plusJakarta = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+  variable: "--font-plus-jakarta",
 });
 
 export const metadata: Metadata = {
@@ -26,7 +23,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={geistSans.className}>
+      <body className={plusJakarta.className}>
         <UserProvider>
           <main>{children}</main>
         </UserProvider>

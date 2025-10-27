@@ -6,7 +6,7 @@ export const EMPLOYEE_NAMES = [
   "Ibrahim Nuhan",
   "Aminath Samaha",
   "Aishath Samaha",
-  "Imraan Shareef",
+  "Imran Shareef",
   "Aminath Shazuly",
   "Fazeel Ahmed",
   "Hussain Sazeen",
@@ -19,8 +19,13 @@ export const EMPLOYEE_NAMES = [
   "Fathimath Usaira",
   "Mohamed Waheedh",
   "Aishath Shaila",
-  "Azlifa Saleem",
+  "Azlifa Mohamed Saleem",
   "Aishath Shabaana",
+  "Aishath Naahidha",
+  "Aishath Simaana",
+  "Fazeela Naseer",
+  "Buruhan",
+  "Ubaidh",
 ];
 
 // Reverse mapping to display the correct label for the backend value

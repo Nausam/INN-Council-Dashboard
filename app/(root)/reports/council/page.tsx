@@ -10,7 +10,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { EMPLOYEE_NAMES } from "@/constants";
-import { fetchAttendanceForMonth } from "@/lib/appwrite/appwrite";
+import {
+  EmployeeDoc,
+  fetchAllEmployees,
+  fetchAttendanceForMonth,
+} from "@/lib/appwrite/appwrite";
 import React, { useEffect, useState } from "react";
 
 /* ======================= Types ======================= */
@@ -99,21 +103,50 @@ function isAttendanceDoc(v: unknown): v is AttendanceDoc {
 
 /* ======================= Utilities ======================= */
 
-function normalizeEmployee(ref: EmployeeRef): EmployeeDetails | null {
+function normalizeEmployee(
+  ref: EmployeeRef,
+  map?: Map<string, EmployeeDetails>
+): EmployeeDetails | null {
   if (typeof ref === "string") {
-    // We can’t produce a full details record from a string id; skip those rows
-    return null;
+    const found = map?.get(ref);
+    return found ? found : null;
   }
-  // Default empty strings to keep CSV/view consistent
   return {
     name: ref.name,
     address: ref.address ?? "",
     designation: ref.designation ?? "",
     recordCardNumber: ref.recordCardNumber ?? "",
     joinedDate: ref.joinedDate ?? "",
-    section: ref.section ?? "",
+    section: (ref.section ?? "").trim(), // keep raw but trimmed
   };
 }
+
+function asString(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+const norm = (s: string) => s.trim().toLowerCase();
+const ALLOWED_SECTIONS = new Set(["councillor", "admin", "waste management"]);
+
+// Lowercase, strip non-letters, collapse repeated letters (Imran/Imraan both match)
+const nameKey = (s: string) =>
+  s
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z]/g, "")
+    .replace(/(.)\1+/g, "$1");
+
+const ORDER_INDEX = new Map(EMPLOYEE_NAMES.map((n, i) => [nameKey(n), i]));
+
+// Sort tuples by fixed order; unknown names go to the end (then A→Z)
+const cmpByEmployeeOrder = (a: ReportTuple, b: ReportTuple) => {
+  const an = a[1].name ?? "";
+  const bn = b[1].name ?? "";
+  const ai = ORDER_INDEX.get(nameKey(an)) ?? Number.MAX_SAFE_INTEGER;
+  const bi = ORDER_INDEX.get(nameKey(bn)) ?? Number.MAX_SAFE_INTEGER;
+  if (ai !== bi) return ai - bi;
+  return an.localeCompare(bn);
+};
 
 /* ======================= Component ======================= */
 
@@ -135,23 +168,43 @@ const CouncilReportsPage: React.FC = () => {
   const generateReport = async (month: string) => {
     setLoading(true);
     try {
+      // 1) get raw attendance rows (now correctly fetched for the month)
       const raw = await fetchAttendanceForMonth(month);
+
+      // 2) build an employee map to resolve string ids
+      const employees: EmployeeDoc[] = await fetchAllEmployees();
+      const employeeMap = new Map<string, EmployeeDetails>(
+        employees.map((e) => [
+          e.$id,
+          {
+            name: e.name,
+            address: asString(e["address"]), // unknown -> string safely
+            designation: asString(e.designation), // string | undefined -> string
+            recordCardNumber: asString(e["recordCardNumber"]),
+            joinedDate: asString(e["joinedDate"]),
+            section: asString(e.section), // string | undefined -> string
+          },
+        ])
+      );
 
       const docs: AttendanceDoc[] = Array.isArray(raw)
         ? raw.filter(isAttendanceDoc)
         : [];
 
-      // Filter to chosen month + (employee/section) *when present in the row*
+      // filter by month and selected filters (using resolved employee)
       const monthRecords = docs.filter((record) => {
         const recordMonth = new Date(record.date).toISOString().slice(0, 7);
-
         if (recordMonth !== month) return false;
 
-        const emp = normalizeEmployee(record.employeeId);
-        if (!emp) return false; // cannot use rows without full employee details
+        const emp = normalizeEmployee(record.employeeId, employeeMap);
+        if (!emp) return false;
+
+        // Only Councillor/Admin
+        if (!ALLOWED_SECTIONS.has(norm(emp.section))) return false;
 
         const sectionMatches =
-          selectedSection === "All" || emp.section === selectedSection;
+          selectedSection === "All" ||
+          norm(emp.section) === norm(selectedSection);
 
         const employeeMatches =
           selectedEmployee === "All" || emp.name === selectedEmployee;
@@ -159,22 +212,13 @@ const CouncilReportsPage: React.FC = () => {
         return sectionMatches && employeeMatches;
       });
 
-      if (monthRecords.length === 0) {
-        setReportAvailable(false);
-        setFullReportData([]);
-        setReportData([]);
-        setLoading(false);
-        return;
-      }
-
-      // Build report keyed by employee name
+      // aggregate
       const reportMap = new Map<string, ReportEntry>();
 
       monthRecords.forEach((record) => {
-        const emp = normalizeEmployee(record.employeeId);
+        const emp = normalizeEmployee(record.employeeId, employeeMap);
         if (!emp) return;
 
-        // Initialize entry if not present
         if (!reportMap.has(emp.name)) {
           reportMap.set(emp.name, {
             sickLeave: 0,
@@ -193,21 +237,20 @@ const CouncilReportsPage: React.FC = () => {
 
         const entry = reportMap.get(emp.name)!;
 
-        // Count leave
-        const leave = record.leaveType ?? "";
-        const leaveKey = leave as keyof LeaveReport;
-        if (leave && leaveKey in entry) {
-          (entry[leaveKey] as number) += 1;
+        const leave = (record.leaveType ?? "") as keyof LeaveReport;
+        if (leave && leave in entry) {
+          (entry[leave] as number) += 1;
           entry.totalAbsent += 1;
         }
 
-        // Sum minutes late
         if (typeof record.minutesLate === "number") {
           entry.minutesLate += record.minutesLate;
         }
       });
 
-      const tuples: ReportTuple[] = Array.from(reportMap.entries());
+      const tuples: ReportTuple[] = Array.from(reportMap.entries()).sort(
+        cmpByEmployeeOrder
+      );
       setFullReportData(tuples);
       setReportData(tuples);
       setReportAvailable(true);
@@ -225,15 +268,17 @@ const CouncilReportsPage: React.FC = () => {
   useEffect(() => {
     if (fullReportData.length === 0) return;
 
-    const filtered = fullReportData.filter(([, stats]) => {
-      const sectionMatches =
-        selectedSection === "All" || stats.section === selectedSection;
+    const filtered = fullReportData
+      .filter(([, stats]) => {
+        const sectionMatches =
+          selectedSection === "All" || stats.section === selectedSection;
 
-      const employeeMatches =
-        selectedEmployee === "All" || stats.name === selectedEmployee;
+        const employeeMatches =
+          selectedEmployee === "All" || stats.name === selectedEmployee;
 
-      return sectionMatches && employeeMatches;
-    });
+        return sectionMatches && employeeMatches;
+      })
+      .sort(cmpByEmployeeOrder);
 
     setReportData(filtered);
   }, [selectedSection, selectedEmployee, fullReportData]);
@@ -357,8 +402,8 @@ const CouncilReportsPage: React.FC = () => {
             className="border p-2 rounded-md w-full h-12"
           >
             <option value="All">All Sections</option>
-            <option value="Admin">Admin</option>
             <option value="Councillor">Councillor</option>
+            <option value="Admin">Admin</option>
           </select>
         </div>
 

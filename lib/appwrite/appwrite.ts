@@ -110,15 +110,28 @@ export const fetchAttendanceForDate = async (
 
 // Fetch all employees
 export const fetchAllEmployees = async (): Promise<EmployeeDoc[]> => {
+  const results: EmployeeDoc[] = [];
+  const pageSize = 100; // Appwrite max per page
+  let offset = 0;
+  let hasMore = true;
+
   try {
-    const employeesResponse = await databases.listDocuments<EmployeeDoc>(
-      appwriteConfig.databaseId,
-      appwriteConfig.employeesCollectionId
-    );
-    return employeesResponse.documents;
-  } catch (error) {
-    console.error("Error fetching employees:", error);
-    throw error;
+    while (hasMore) {
+      const res = await databases.listDocuments<EmployeeDoc>(
+        appwriteConfig.databaseId,
+        appwriteConfig.employeesCollectionId,
+        [Query.limit(pageSize), Query.offset(offset)]
+      );
+
+      results.push(...res.documents);
+      hasMore = res.documents.length === pageSize;
+      offset += pageSize;
+    }
+
+    return results;
+  } catch (err) {
+    console.error("Error fetching employees:", err);
+    throw err;
   }
 };
 
@@ -130,9 +143,12 @@ export const createAttendanceForEmployees = async (
   try {
     const defaultSignInTime = new Date(`${date}T08:00:00Z`).toISOString();
 
-    const filteredEmployees = employees.filter(
-      (employee) => employee.designation !== "Mosque Assistant"
-    );
+    // ✅ exclude whole Mosque section (case-insensitive)
+    const filteredEmployees = employees.filter((e) => {
+      const sec =
+        typeof e.section === "string" ? e.section.trim().toLowerCase() : "";
+      return sec !== "mosque";
+    });
 
     const attendanceEntries: Array<Omit<AttendanceDoc, keyof Models.Document>> =
       filteredEmployees.map((employee) => ({
@@ -194,12 +210,14 @@ export const updateAttendanceRecord = async (
 export const fetchAttendanceForMonth = async (
   month: string
 ): Promise<AttendanceDoc[]> => {
-  const startOfMonth = new Date(`${month}-01T00:00:00Z`).toISOString();
-  const endOfMonth = new Date(
-    new Date(`${month}-01T00:00:00Z`).setMonth(
-      new Date(`${month}-01`).getMonth() + 1
-    )
-  ).toISOString();
+  // month is "YYYY-MM"
+  const start = `${month}-01`; // same format as stored in documents
+  // build end as the first day of next month in the same "YYYY-MM-DD" format
+  const [y, m] = month.split("-").map(Number);
+  const next = new Date(Date.UTC(y, m, 1)); // next month, day 1
+  const end = `${next.getUTCFullYear()}-${String(
+    next.getUTCMonth() + 1
+  ).padStart(2, "0")}-01`;
 
   const results: AttendanceDoc[] = [];
   let hasMore = true;
@@ -208,26 +226,24 @@ export const fetchAttendanceForMonth = async (
 
   try {
     while (hasMore) {
-      const response = await databases.listDocuments<AttendanceDoc>(
+      const resp = await databases.listDocuments<AttendanceDoc>(
         appwriteConfig.databaseId,
         appwriteConfig.attendanceCollectionId,
         [
-          Query.greaterThanEqual("date", startOfMonth),
-          Query.lessThanEqual("date", endOfMonth),
+          Query.greaterThanEqual("date", start),
+          Query.lessThan("date", end), // strictly less than first day of next month
           Query.limit(limit),
           Query.offset(offset),
         ]
       );
-
-      results.push(...response.documents);
-      hasMore = response.documents.length === limit;
+      results.push(...resp.documents);
+      hasMore = resp.documents.length === limit;
       offset += hasMore ? limit : 0;
     }
-
     return results;
-  } catch (error) {
-    console.error("Error fetching attendance for the month:", error);
-    throw error;
+  } catch (err) {
+    console.error("Error fetching attendance for the month:", err);
+    throw err;
   }
 };
 
