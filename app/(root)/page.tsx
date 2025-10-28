@@ -1,7 +1,6 @@
 "use client";
 
 import DashboardCard from "@/components/Dashboard/DashboardCard";
-
 import EmployeeListCard from "@/components/Dashboard/EmployeeListCard";
 import ProgressSection from "@/components/Dashboard/Progressbar";
 import SkeletonDashboardCard from "@/components/skeletons/SkeletonDashboardCard";
@@ -29,11 +28,7 @@ import { Calendar as CalendarIcon } from "lucide-react";
 
 /* ===================== Minimal types + guards ===================== */
 
-type EmployeeDoc = {
-  $id?: string;
-  id?: string;
-  name?: string;
-};
+type EmployeeDoc = { $id?: string; id?: string; name?: string };
 
 type EmployeeRef =
   | string
@@ -62,7 +57,6 @@ type MosqueAttendanceDoc = {
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
-
 function isEmployeeDoc(v: unknown): v is EmployeeDoc {
   return (
     isObject(v) &&
@@ -71,11 +65,9 @@ function isEmployeeDoc(v: unknown): v is EmployeeDoc {
     (typeof v.name === "string" || typeof v.name === "undefined")
   );
 }
-
 function isOfficeAttendanceDoc(v: unknown): v is OfficeAttendanceDoc {
   return isObject(v) && "employeeId" in v;
 }
-
 function isMosqueAttendanceDoc(v: unknown): v is MosqueAttendanceDoc {
   return isObject(v) && "employeeId" in v;
 }
@@ -103,6 +95,7 @@ const Dashboard: React.FC = () => {
     new Date()
   );
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const [hasAttendance, setHasAttendance] = useState<boolean>(false);
 
   const formattedSelectedDate = selectedDate
     ? new Date(
@@ -124,7 +117,6 @@ const Dashboard: React.FC = () => {
       try {
         setLoading(true);
 
-        // Pull everything we need
         const [employeesRaw, officeRaw, mosqueRaw] = await Promise.all([
           fetchAllEmployees(),
           fetchAttendanceForDate(formattedSelectedDate),
@@ -137,50 +129,55 @@ const Dashboard: React.FC = () => {
           : [];
         const totalEmployees = employees.length;
 
-        // Build an id -> name map (supports $id or id)
+        // id -> name map
         const idToName = new Map<string, string>();
         for (const e of employees) {
           const id = e.$id ?? e.id;
           if (id) idToName.set(String(id), String(e.name ?? "Unknown"));
         }
 
-        // Helper to always return a human name
         const resolveName = (
           rec: OfficeAttendanceDoc | MosqueAttendanceDoc
         ) => {
-          // prefer already-denormalized name
-          if (typeof rec.employeeName === "string" && rec.employeeName.trim()) {
+          if (typeof rec.employeeName === "string" && rec.employeeName.trim())
             return rec.employeeName;
-          }
-
           const ref = rec.employeeId;
-
           if (!ref) return "Unknown";
-
-          if (typeof ref === "string") {
-            return idToName.get(ref) ?? ref;
-          }
-
+          if (typeof ref === "string") return idToName.get(ref) ?? ref;
           const objName = ref.name;
           if (typeof objName === "string" && objName.trim()) return objName;
-
           const objId = ref.$id;
-          if (typeof objId === "string") {
-            return idToName.get(objId) ?? objId;
-          }
-
+          if (typeof objId === "string") return idToName.get(objId) ?? objId;
           return "Unknown";
         };
 
-        // Office attendance
         const officeAttendance: OfficeAttendanceDoc[] = Array.isArray(officeRaw)
           ? officeRaw.filter(isOfficeAttendanceDoc)
           : [];
-
-        // Mosque attendance
         const mosqueAttendance: MosqueAttendanceDoc[] = Array.isArray(mosqueRaw)
           ? mosqueRaw.filter(isMosqueAttendanceDoc)
           : [];
+
+        // Any attendance created for this date?
+        const anyAttendance =
+          (officeAttendance?.length ?? 0) > 0 ||
+          (mosqueAttendance?.length ?? 0) > 0;
+
+        if (!anyAttendance) {
+          // Keep the employee count, but force all metrics to 0
+          setHasAttendance(false);
+          setDashboardData({
+            totalEmployees,
+            onTime: 0,
+            late: 0,
+            absent: 0,
+          });
+          setAbsentEmployees([]);
+          setLateEmployees([]);
+          return;
+        }
+
+        setHasAttendance(true);
 
         // ---------- ABSENT (office) ----------
         const absentSet = new Set<string>();
@@ -198,17 +195,13 @@ const Dashboard: React.FC = () => {
         // ---------- LATE (office OR mosque) ----------
         const lateSet = new Set<string>();
 
-        // Office: minutesLate > 0
         for (const rec of officeAttendance) {
           const nm = resolveName(rec);
           const mins =
             typeof rec.minutesLate === "number" ? rec.minutesLate : 0;
-          if (!absentSet.has(nm) && mins > 0) {
-            lateSet.add(nm);
-          }
+          if (!absentSet.has(nm) && mins > 0) lateSet.add(nm);
         }
 
-        // Mosque: any prayer minutesLate > 0
         for (const rec of mosqueAttendance) {
           const nm = resolveName(rec);
           const f =
@@ -228,16 +221,14 @@ const Dashboard: React.FC = () => {
           const i =
             typeof rec.ishaMinutesLate === "number" ? rec.ishaMinutesLate : 0;
           const anyLate = f > 0 || m > 0 || a > 0 || q > 0 || i > 0;
-
-          if (!absentSet.has(nm) && anyLate) {
-            lateSet.add(nm);
-          }
+          if (!absentSet.has(nm) && anyLate) lateSet.add(nm);
         }
 
         const lateList = Array.from(lateSet);
-
         const absentCount = absentSet.size;
         const lateCount = lateSet.size;
+
+        // IMPORTANT: onTime is not inferred when there's attendance—still compute normally.
         const onTimeCount = Math.max(
           0,
           totalEmployees - absentCount - lateCount
@@ -253,14 +244,16 @@ const Dashboard: React.FC = () => {
         setLateEmployees(lateList);
       } catch (error) {
         console.error("Error fetching data:", error);
+        setHasAttendance(false);
+        setDashboardData({ totalEmployees: 0, onTime: 0, late: 0, absent: 0 });
+        setAbsentEmployees([]);
+        setLateEmployees([]);
       } finally {
         setLoading(false);
       }
     };
 
-    if (formattedSelectedDate) {
-      fetchData();
-    }
+    if (formattedSelectedDate) fetchData();
   }, [formattedSelectedDate]);
 
   const { totalEmployees, onTime, late, absent } = dashboardData;
@@ -296,51 +289,49 @@ const Dashboard: React.FC = () => {
         </Popover>
       </div>
 
+      {!loading && !hasAttendance ? (
+        <div className="mt-4 rounded-xl border border-dashed text-gray-600 text-sm px-4 py-3 mb-4">
+          No attendance created for this date.
+        </div>
+      ) : null}
       <DashboardHeader />
 
+      {/* Always show the four cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {loading ? (
-          <SkeletonDashboardCard />
+          <>
+            <SkeletonDashboardCard />
+            <SkeletonDashboardCard />
+            <SkeletonDashboardCard />
+            <SkeletonDashboardCard />
+          </>
         ) : (
-          <DashboardCard
-            icon={<FaUsers />}
-            title="Employees"
-            value={totalEmployees}
-            gradient="linear-gradient(135deg, #6DD5FA, #2980B9)"
-          />
-        )}
-
-        {loading ? (
-          <SkeletonDashboardCard />
-        ) : (
-          <DashboardCard
-            icon={<FaClock />}
-            title="On Time"
-            value={onTime}
-            gradient="linear-gradient(135deg, #A8E063, #56AB2F)"
-          />
-        )}
-
-        {loading ? (
-          <SkeletonDashboardCard />
-        ) : (
-          <DashboardCard
-            icon={<FaRunning />}
-            title="Late"
-            value={late}
-            gradient="linear-gradient(135deg, #F2C94C,  #F2994A)"
-          />
-        )}
-
-        {loading ? (
-          <SkeletonDashboardCard />
-        ) : (
-          <DashboardCard
-            icon={<FaTimes />}
-            title="On Leave"
-            value={absent}
-            gradient="linear-gradient(135deg, #F2994A, #EB5757)"
-          />
+          <>
+            <DashboardCard
+              icon={<FaUsers />}
+              title="Employees"
+              value={totalEmployees}
+              gradient="linear-gradient(135deg, #6DD5FA, #2980B9)"
+            />
+            <DashboardCard
+              icon={<FaClock />}
+              title="On Time"
+              value={onTime}
+              gradient="linear-gradient(135deg, #A8E063, #56AB2F)"
+            />
+            <DashboardCard
+              icon={<FaRunning />}
+              title="Late"
+              value={late}
+              gradient="linear-gradient(135deg, #F2C94C,  #F2994A)"
+            />
+            <DashboardCard
+              icon={<FaTimes />}
+              title="On Leave"
+              value={absent}
+              gradient="linear-gradient(135deg, #F2994A, #EB5757)"
+            />
+          </>
         )}
       </div>
 
@@ -359,27 +350,27 @@ const Dashboard: React.FC = () => {
 
         <div className="flex flex-col lg:flex-row gap-4 w-full mt-10">
           {loading ? (
-            <SkeletonListCard />
+            <>
+              <SkeletonListCard />
+              <SkeletonListCard />
+            </>
           ) : (
-            <EmployeeListCard
-              title="On Leave"
-              employees={absentEmployees}
-              bgColor="#EB5757"
-              emptyMessage="No employees are absent today."
-              gradient="linear-gradient(to right, #fa6e28,  #fa6e28)"
-            />
-          )}
-
-          {loading ? (
-            <SkeletonListCard />
-          ) : (
-            <EmployeeListCard
-              title="Late Employees"
-              employees={lateEmployees}
-              bgColor="#fa6e28"
-              emptyMessage="No employees are late today."
-              gradient="linear-gradient(to right, #EB5757,  #EB5757)"
-            />
+            <>
+              <EmployeeListCard
+                title="On Leave"
+                employees={absentEmployees}
+                bgColor="#EB5757"
+                emptyMessage="No employees are absent today."
+                gradient="linear-gradient(to right, #fa6e28,  #fa6e28)"
+              />
+              <EmployeeListCard
+                title="Late Employees"
+                employees={lateEmployees}
+                bgColor="#fa6e28"
+                emptyMessage="No employees are late today."
+                gradient="linear-gradient(to right, #EB5757,  #EB5757)"
+              />
+            </>
           )}
         </div>
       </div>
