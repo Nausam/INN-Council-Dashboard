@@ -10,6 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  fetchAllEmployees,
   fetchMosqueAssistants,
   fetchMosqueDailyAttendanceForMonth,
   fetchPrayerTimesForMonth,
@@ -62,10 +63,31 @@ type PrayerTimesMap = Record<
   }
 >;
 
-/* ========================= Type Guards ========================= */
+/* For normalizing many possible shapes coming from Appwrite */
+type RawRow = {
+  $id?: unknown;
+  id?: unknown;
+  name?: unknown;
+  employeeName?: unknown;
+  section?: unknown;
+  designation?: unknown;
+  documents?: unknown;
+};
 
+type WithDocuments = { documents: unknown[] };
+
+/* ========================= Type Guards ========================= */
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
+}
+
+function hasDocuments(v: unknown): v is WithDocuments {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    "documents" in v &&
+    Array.isArray((v as { documents?: unknown[] }).documents)
+  );
 }
 
 function isMosqueAssistant(v: unknown): v is MosqueAssistant {
@@ -122,6 +144,63 @@ function isPrayerTimesDoc(v: unknown): v is PrayerTimesDoc {
   );
 }
 
+/* ========================= Normalizers ========================= */
+
+function normalizeAssistantFromAny(row: unknown): MosqueAssistant | null {
+  if (!isObject(row)) return null;
+  const r = row as RawRow;
+
+  const id =
+    typeof r.$id === "string" ? r.$id : typeof r.id === "string" ? r.id : null;
+
+  const name =
+    typeof r.name === "string" && r.name.trim()
+      ? r.name
+      : typeof r.employeeName === "string" && r.employeeName.trim()
+      ? r.employeeName
+      : null;
+
+  // Optional filters (if present, enforce them; if missing, accept)
+  const section =
+    typeof r.section === "string" ? r.section.trim().toLowerCase() : "";
+  const desig =
+    typeof r.designation === "string" ? r.designation.trim().toLowerCase() : "";
+
+  const okSection = !section || section === "mosque";
+  const okDesig = !desig || desig === "imam" || desig === "council assistant";
+
+  return id && name && okSection && okDesig ? { $id: id, name } : null;
+}
+
+/** Fallback: convert a generic employee row to assistant when it's Mosque + Imam/Council Assistant */
+function normalizeEmployeeToAssistant(row: unknown): MosqueAssistant | null {
+  if (!isObject(row)) return null;
+  const r = row as RawRow;
+
+  const id =
+    typeof r.$id === "string" ? r.$id : typeof r.id === "string" ? r.id : null;
+
+  const name =
+    typeof r.name === "string" && r.name.trim()
+      ? r.name
+      : typeof r.employeeName === "string" && r.employeeName.trim()
+      ? r.employeeName
+      : null;
+
+  const section =
+    typeof r.section === "string" ? r.section.trim().toLowerCase() : "";
+  const desig =
+    typeof r.designation === "string" ? r.designation.trim().toLowerCase() : "";
+
+  const ok =
+    id &&
+    name &&
+    section === "mosque" &&
+    (desig === "imam" || desig === "council assistant");
+
+  return ok ? { $id: id, name } : null;
+}
+
 /* ========================= Helpers ========================= */
 
 function empName(emp: EmployeeRef, byId: Map<string, MosqueAssistant>): string {
@@ -167,43 +246,73 @@ const MosqueMonthlyReportsPage: React.FC = () => {
   const [attendanceData, setAttendanceData] = useState<AttRow[]>([]);
   const [prayerTimes, setPrayerTimes] = useState<PrayerTimesMap>({});
 
-  const employeesById = useMemo(() => {
-    return new Map<string, MosqueAssistant>(employees.map((e) => [e.$id, e]));
-  }, [employees]);
+  const employeesById = useMemo(
+    () => new Map<string, MosqueAssistant>(employees.map((e) => [e.$id, e])),
+    [employees]
+  );
 
-  // Fetch employees with designation "Mosque Assistant"
+  /* --------- Populate the dropdown ---------- */
   useEffect(() => {
     (async () => {
       try {
         const res = await fetchMosqueAssistants();
-        const list: MosqueAssistant[] = Array.isArray(res)
-          ? res.filter(isMosqueAssistant)
-          : [];
+
+        let rows: unknown[] = [];
+        if (Array.isArray(res)) rows = res;
+        else {
+          const maybe = res as unknown;
+          if (hasDocuments(maybe)) rows = maybe.documents;
+        }
+
+        let list: MosqueAssistant[] = rows
+          .map(normalizeAssistantFromAny)
+          .filter((x): x is MosqueAssistant => x !== null);
+
+        // Fallback if helper returns empty
+        if (list.length === 0) {
+          const all = await fetchAllEmployees();
+
+          // ✅ Narrow on a fresh variable so the guard sticks
+          let allRows: unknown[] = [];
+          if (Array.isArray(all)) {
+            allRows = all;
+          } else {
+            const maybeAll: unknown = all;
+            if (hasDocuments(maybeAll)) {
+              allRows = (maybeAll as WithDocuments).documents;
+            }
+          }
+
+          list = allRows
+            .map(normalizeEmployeeToAssistant)
+            .filter((x): x is MosqueAssistant => x !== null);
+        }
+
         setEmployees(list);
+        // optionally preselect the first employee:
+        // if (!selectedEmployee && list[0]) setSelectedEmployee(list[0].$id);
       } catch (err) {
         console.error("Error fetching employees:", err);
+        setEmployees([]);
       }
     })();
   }, []);
 
-  // Fetch attendance & prayer-times for the selected assistant/month
+  /* --------- Fetch attendance & prayer-times ---------- */
   const fetchMonthlyReport = async (month: string) => {
     if (!selectedEmployee) return;
     setLoading(true);
     try {
-      // Attendance for the chosen employee
       const attRaw = await fetchMosqueDailyAttendanceForMonth(
         month,
         selectedEmployee
       );
 
-      // Build strongly-typed AttRow[] from unknown input without casts
       const att: AttRow[] = Array.isArray(attRaw)
         ? attRaw.reduce<AttRow[]>((acc, row) => {
             if (!isAttendanceLike(row)) return acc;
             if (!isEmployeeRef(row.employeeId)) return acc;
 
-            // Narrow each sign-in field to string | null
             const f = row.fathisSignInTime;
             const m1 = row.mendhuruSignInTime;
             const a = row.asuruSignInTime;
@@ -236,7 +345,6 @@ const MosqueMonthlyReportsPage: React.FC = () => {
 
       setAttendanceData(att);
 
-      // All prayer times for the month, mapped by date
       const ptRaw = await fetchPrayerTimesForMonth(month);
       const ptDocs: PrayerTimesDoc[] = Array.isArray(ptRaw)
         ? ptRaw.filter(isPrayerTimesDoc)
@@ -261,7 +369,7 @@ const MosqueMonthlyReportsPage: React.FC = () => {
     }
   };
 
-  // CSV export
+  /* --------- CSV ---------- */
   const downloadCSV = () => {
     if (attendanceData.length === 0) return;
 

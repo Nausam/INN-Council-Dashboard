@@ -11,10 +11,20 @@ import {
 } from "@/components/ui/table";
 import {
   EmployeeDoc,
+  fetchEmployeeById,
   fetchMosqueAssistants,
   fetchMosqueAttendanceForMonth,
 } from "@/lib/appwrite/appwrite";
 import React, { useEffect, useMemo, useState } from "react";
+
+/* ======================= Helpers ======================= */
+function toHoursMinutes(total: number) {
+  const safe = Math.max(0, Math.floor(total)); // guard
+  return {
+    hours: Math.floor(safe / 60),
+    minutes: safe % 60,
+  };
+}
 
 /* ======================= Types ======================= */
 
@@ -139,12 +149,13 @@ const MosqueMonthlyReportsPage: React.FC = () => {
         setAssistants(Array.isArray(list) ? list : []);
       } catch (e) {
         console.error("Failed to load mosque assistants:", e);
+        setAssistants([]);
       }
     })();
   }, []);
 
   const assistantsById = useMemo(() => {
-    // Map: employee $id -> { name, designation }
+    // Base map from assistants query
     return new Map<string, { name: string; designation: string }>(
       assistants.map((e) => [
         e.$id,
@@ -175,32 +186,77 @@ const MosqueMonthlyReportsPage: React.FC = () => {
         return;
       }
 
-      // Aggregate by employee (use embedded name if available; fallback to id)
+      // ---- Build/extend id->name map so string ids resolve properly ----
+      const idToInfo = new Map(assistantsById); // start with assistants
+      const missingIds = new Set<string>();
+
+      for (const r of monthRecords) {
+        if (typeof r.employeeId === "string") {
+          if (!idToInfo.has(r.employeeId)) missingIds.add(r.employeeId);
+        } else {
+          // If we have an embedded object, keep that too
+          const emb = r.employeeId;
+          if (emb.$id && (emb.name || emb.designation)) {
+            idToInfo.set(emb.$id, {
+              name: emb.name || emb.$id,
+              designation: emb.designation ?? "",
+            });
+          }
+        }
+      }
+
+      if (missingIds.size > 0) {
+        const results = await Promise.allSettled(
+          Array.from(missingIds).map((id) => fetchEmployeeById(id))
+        );
+        results.forEach((res, i) => {
+          const id = Array.from(missingIds)[i];
+          if (
+            res.status === "fulfilled" &&
+            res.value &&
+            typeof res.value === "object"
+          ) {
+            const v = res.value as Partial<EmployeeDoc>;
+            const nm =
+              typeof v.name === "string" && v.name.trim() ? v.name : id;
+            const des = typeof v.designation === "string" ? v.designation : "";
+            idToInfo.set(id, { name: nm, designation: des });
+          } else {
+            // keep a readable fallback to avoid "(Unknown)"
+            if (!idToInfo.has(id))
+              idToInfo.set(id, { name: id, designation: "" });
+          }
+        });
+      }
+      // -----------------------------------------------------------------
+
+      // Aggregate by employee id (prefer stable key)
       const reportMap = new Map<string, ReportEntry>();
 
       for (const r of monthRecords) {
         // Resolve details
+        let key = "";
         let name = "Unknown";
         let designation = "";
         let joinedDate = "";
         let section = "";
 
         if (typeof r.employeeId === "string") {
-          const found = assistantsById.get(r.employeeId);
-          name = found ? found.name : "(Unknown)";
-          designation = found ? found.designation : "";
+          key = r.employeeId;
+          const info = idToInfo.get(r.employeeId);
+          if (info) {
+            name = info.name;
+            designation = info.designation;
+          } else {
+            name = "(Unknown)";
+          }
         } else {
+          key = r.employeeId.$id || r.employeeId.name;
           name = r.employeeId.name || r.employeeId.$id || "Unknown";
           designation = r.employeeId.designation ?? "";
           joinedDate = r.employeeId.joinedDate ?? "";
           section = r.employeeId.section ?? "";
         }
-
-        // Key by name (you can change to $id if you prefer)
-        const key =
-          typeof r.employeeId === "string"
-            ? r.employeeId
-            : r.employeeId.$id || r.employeeId.name;
 
         const current: ReportEntry = reportMap.get(key) ?? {
           name,
@@ -222,14 +278,18 @@ const MosqueMonthlyReportsPage: React.FC = () => {
         current.maqribMinutesLate += r.maqribMinutesLate;
         current.ishaMinutesLate += r.ishaMinutesLate;
 
-        current.totalMinutesLate =
+        const total =
           current.fathisMinutesLate +
           current.mendhuruMinutesLate +
           current.asuruMinutesLate +
           current.maqribMinutesLate +
           current.ishaMinutesLate;
 
-        current.totalHoursLate = Math.floor(current.totalMinutesLate / 60);
+        const { hours, minutes } = toHoursMinutes(total);
+
+        // minutes column shows ONLY the remainder (0..59)
+        current.totalMinutesLate = minutes;
+        current.totalHoursLate = hours;
 
         reportMap.set(key, current);
       }
@@ -256,8 +316,8 @@ const MosqueMonthlyReportsPage: React.FC = () => {
       "Asr Late (mins)",
       "Maghrib Late (mins)",
       "Isha Late (mins)",
-      "Total Late (mins)",
       "Total Late (hrs)",
+      "Total Late (mins)",
     ];
 
     const rows = reportData.map(([, stats]) => [
@@ -351,7 +411,7 @@ const MosqueMonthlyReportsPage: React.FC = () => {
             </TableHeader>
             <TableBody className="border border-gray-400">
               {reportData.map(([, stats], index) => (
-                <TableRow key={stats.name + index}>
+                <TableRow key={String(index) + stats.name}>
                   <TableCell className="table-cell">{index + 1}</TableCell>
                   <TableCell className="table-cell">{stats.name}</TableCell>
                   <TableCell className="table-cell">

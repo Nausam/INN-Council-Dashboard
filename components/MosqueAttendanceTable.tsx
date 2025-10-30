@@ -51,6 +51,7 @@ type EmployeeRef =
       $id?: string;
       id?: string;
       name?: string;
+      designation?: string;
     };
 
 /** Parse "HH:MM" -> minutes since midnight */
@@ -62,13 +63,15 @@ function toMinutes(hhmm: string): number {
 /** Lateness in minutes using LOCAL clock math (ignores TZ/UTC). */
 function latenessMinutes(
   requiredHHMM: string,
-  actualISO?: string | null
+  actualISO?: string | null,
+  graceMin = 0
 ): number {
   if (!actualISO) return 0;
-  const actualHHMM = formatTimeForInput(actualISO); // returns "HH:MM" locally
+  const actualHHMM = formatTimeForInput(actualISO);
   if (!actualHHMM) return 0;
-  const diff = toMinutes(actualHHMM) - toMinutes(requiredHHMM);
-  return Math.max(0, Math.round(diff));
+  const actual = toMinutes(actualHHMM);
+  const requiredMinusGrace = Math.max(0, toMinutes(requiredHHMM) - graceMin);
+  return Math.max(0, Math.round(actual - requiredMinusGrace));
 }
 
 /** Normalize employee id from either embedded object or string */
@@ -83,11 +86,20 @@ function resolveEmployeeId(emp: EmployeeRef | null | undefined): string | null {
 /** Get display name from EmployeeRef */
 function nameFromRef(
   emp: EmployeeRef | null | undefined,
-  cache: Record<string, string>
+  cache: Record<string, { name: string }>
 ): string {
   if (!emp) return "Unknown";
-  if (typeof emp === "string") return cache[emp] ?? emp;
+  if (typeof emp === "string") return cache[emp]?.name ?? emp;
   return emp.name || emp.$id || emp.id || "Unknown";
+}
+
+function designationFromRef(
+  emp: EmployeeRef | null | undefined,
+  cache: Record<string, { name: string; designation?: string }>
+): string {
+  if (!emp) return "";
+  if (typeof emp !== "string") return emp.designation ?? "";
+  return cache[emp]?.designation ?? "";
 }
 
 /* ======================= Component ======================= */
@@ -102,6 +114,10 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
 
   const { toast } = useToast();
   const { isAdmin } = useUser();
+
+  const [empInfoMap, setEmpInfoMap] = useState<
+    Record<string, { name: string; designation?: string }>
+  >({});
 
   useEffect(() => {
     setAttendanceRecords(data);
@@ -118,30 +134,36 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
   }, [data, nameMap]);
 
   useEffect(() => {
-    if (unresolvedIds.length === 0) return;
+    const ids = new Set<string>();
+    for (const r of data) {
+      const emp = r.employeeId;
+      if (typeof emp === "string" && !empInfoMap[emp]) ids.add(emp);
+    }
+    const unresolved = Array.from(ids);
+    if (unresolved.length === 0) return;
 
     let cancelled = false;
     (async () => {
       const results = await Promise.allSettled(
-        unresolvedIds.map((id) => fetchEmployeeById(id))
+        unresolved.map((id) => fetchEmployeeById(id))
       );
-      const additions: Record<string, string> = {};
+      const add: Record<string, { name: string; designation?: string }> = {};
       results.forEach((res, i) => {
-        const id = unresolvedIds[i];
+        const id = unresolved[i];
         if (res.status === "fulfilled" && res.value) {
-          const doc = res.value as { name?: string };
-          additions[id] = doc?.name ?? id;
+          const doc = res.value as { name?: string; designation?: string };
+          add[id] = { name: doc?.name ?? id, designation: doc?.designation };
         } else {
-          additions[id] = id;
+          add[id] = { name: id };
         }
       });
-      if (!cancelled) setNameMap((prev) => ({ ...prev, ...additions }));
+      if (!cancelled) setEmpInfoMap((prev) => ({ ...prev, ...add }));
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [unresolvedIds]);
+  }, [data, empInfoMap]);
 
   const handleSignInChange = (
     attendanceId: string,
@@ -228,17 +250,29 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
     // apply lateness per prayer (clamped to schema range 0..64)
     const updatedAttendance = attendanceRecords.map((record) => {
       const copy: MosqueAttendanceRecord = { ...record };
+
+      // figure out grace by designation
+      const desig = designationFromRef(
+        record.employeeId as EmployeeRef,
+        empInfoMap
+      )
+        .toLowerCase()
+        .trim();
+      const grace =
+        desig === "imam" ? 5 : desig === "council assistant" ? 15 : 0; // default if something unexpected
+
       (Object.keys(prayerTimes!) as PrayerKey[]).forEach((key) => {
-        const required = prayerTimes![key];
+        const required = prayerTimes![key]; // "HH:MM"
         const actualISO = record[key] as string | undefined;
-        const late = Math.min(64, latenessMinutes(required, actualISO));
+        const late = Math.min(64, latenessMinutes(required, actualISO, grace));
         const lateKey = key.replace(
           "SignInTime",
           "MinutesLate"
-        ) as unknown as keyof MosqueAttendanceRecord;
-        // @ts-expect-error – the dynamic key maps to the numeric late field in our record type
+        ) as keyof MosqueAttendanceRecord;
+        // @ts-expect-error dynamic key is a numeric field
         copy[lateKey] = late;
       });
+
       return copy;
     });
 
@@ -274,7 +308,7 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
                 title: "Leave Balance Error",
                 description: `${nameFromRef(
                   r.employeeId,
-                  nameMap
+                  empInfoMap
                 )} does not have any ${r.leaveType} left.`,
                 variant: "destructive",
               });
@@ -371,7 +405,7 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
             <TableRow key={record.$id}>
               <TableCell>{index + 1}</TableCell>
               <TableCell>
-                {nameFromRef(record.employeeId as EmployeeRef, nameMap)}
+                {nameFromRef(record.employeeId as EmployeeRef, empInfoMap)}
               </TableCell>
 
               {(

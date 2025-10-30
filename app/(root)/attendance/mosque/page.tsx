@@ -108,7 +108,10 @@ const MosqueAttendancePage = () => {
         // ✅ fetch as the exported EmployeeDoc[]
         const employees = (await fetchAllEmployees()) as EmployeeDoc[];
         const mosqueAssistants = employees.filter(
-          (e) => e.designation === "Mosque Assistant"
+          (e) =>
+            (e.designation === "Council Assistant" ||
+              e.designation === "Imam") &&
+            e.section === "Mosque"
         );
         await createMosqueAttendanceForEmployees(
           formattedSelectedDate,
