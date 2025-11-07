@@ -7,6 +7,7 @@ import {
   createAttendanceForEmployees,
   fetchAllEmployees,
   fetchAttendanceForDate,
+  syncAttendanceForDate,
 } from "@/lib/appwrite/appwrite";
 import { useEffect, useMemo, useState } from "react";
 
@@ -38,7 +39,7 @@ type Row = {
   minutesLate: number | null;
   previousLeaveType: string | null;
   leaveDeducted: boolean;
-  changed: boolean; // REQUIRED
+  changed: boolean;
 };
 
 const AdminAttendancePage = () => {
@@ -50,6 +51,7 @@ const AdminAttendancePage = () => {
   const [isAttendanceGenerated, setIsAttendanceGenerated] = useState(false);
   const [showGenerateButton, setShowGenerateButton] = useState(false);
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   const formattedSelectedDate = useMemo(() => {
     if (!selectedDate) return "";
@@ -79,7 +81,7 @@ const AdminAttendancePage = () => {
     });
 
   // Fetch attendance for the selected date
-  const fetchAttendanceData = async (date: string) => {
+  const fetchAttendanceData = async (date: string, doAutoSync = false) => {
     if (!date) return;
     setLoading(true);
     try {
@@ -87,6 +89,11 @@ const AdminAttendancePage = () => {
       if (raw.length > 0) {
         setAttendanceData(normalize(raw));
         setIsAttendanceGenerated(true);
+
+        // Auto-sync (refresh sign-ins) when requested
+        if (doAutoSync) {
+          await handleSync(true); // silent
+        }
       } else {
         setAttendanceData([]);
         setIsAttendanceGenerated(false);
@@ -101,6 +108,38 @@ const AdminAttendancePage = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSync = async (silent = false) => {
+    if (!formattedSelectedDate) return;
+    try {
+      setSyncing(true);
+      const updated = await syncAttendanceForDate(formattedSelectedDate);
+      if (!silent) {
+        toast({
+          title: updated ? "Attendance updated" : "No new punches",
+          description: updated
+            ? `${updated} row${
+                updated === 1 ? "" : "s"
+              } synced from device punches.`
+            : "Everything is already up to date.",
+          variant: updated ? "success" : "default",
+        });
+      }
+    } catch (err) {
+      console.error("Sync error:", err);
+      if (!silent) {
+        toast({
+          title: "Error",
+          description: "Failed to update from punches.",
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setSyncing(false);
+      // Re-fetch to reflect changes
+      await fetchAttendanceData(formattedSelectedDate);
     }
   };
 
@@ -144,9 +183,16 @@ const AdminAttendancePage = () => {
       });
     } finally {
       setLoading(false);
-      fetchAttendanceData(formattedSelectedDate);
+      await fetchAttendanceData(formattedSelectedDate, true);
     }
   };
+
+  useEffect(() => {
+    if (formattedSelectedDate) {
+      fetchAttendanceData(formattedSelectedDate, true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formattedSelectedDate]);
 
   return (
     <div className="max-w-7xl mx-auto p-8">
@@ -187,10 +233,11 @@ const AdminAttendancePage = () => {
         <div className="flex items-end">
           <button
             className="custom-button w-full h-12"
-            onClick={() => fetchAttendanceData(formattedSelectedDate)}
-            disabled={loading}
+            onClick={() => fetchAttendanceData(formattedSelectedDate, true)}
+            disabled={loading || syncing}
+            title="Search & update from punches"
           >
-            {loading ? "Loading..." : "Search"}
+            {loading || syncing ? "Updating..." : "Search"}
           </button>
         </div>
 
@@ -206,6 +253,19 @@ const AdminAttendancePage = () => {
             </button>
           </div>
         )}
+
+        {/* {isAttendanceGenerated && (
+          <div className="flex items-end">
+            <button
+              className="custom-button w-full lg:w-auto h-12"
+              onClick={() => handleSync(false)}
+              disabled={loading || syncing}
+              title="Refresh sign-in times from fingerprint punches"
+            >
+              {syncing ? "Updating..." : "Update from punches"}
+            </button>
+          </div>
+        )} */}
       </div>
 
       {/* Display Skeleton or Attendance Table based on loading state */}

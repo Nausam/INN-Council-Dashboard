@@ -23,11 +23,46 @@ import { useToast } from "@/hooks/use-toast";
 import {
   deductLeave,
   deleteAttendancesByDate,
+  EmployeeDoc,
   fetchEmployeeById,
   updateAttendanceRecord,
 } from "@/lib/appwrite/appwrite";
 import { useUser } from "@/Providers/UserProvider";
 import { useEffect, useMemo, useState } from "react";
+
+// --- HELPERS ---
+const ADDITIVE_LEAVES = [
+  "maternityLeave",
+  "preMaternityLeave",
+  "paternityLeave",
+  "noPayLeave",
+  "officialLeave",
+] as const;
+type AdditiveLeave = (typeof ADDITIVE_LEAVES)[number];
+
+const BALANCE_LEAVES = [
+  "sickLeave",
+  "certificateSickLeave",
+  "annualLeave",
+  "familyRelatedLeave",
+] as const;
+type BalanceLeave = (typeof BALANCE_LEAVES)[number];
+
+type NumericLeaveKey = AdditiveLeave | BalanceLeave;
+
+const isAdditiveLeave = (k: string): k is AdditiveLeave =>
+  (ADDITIVE_LEAVES as readonly string[]).includes(k);
+
+const isBalanceLeave = (k: string): k is BalanceLeave =>
+  (BALANCE_LEAVES as readonly string[]).includes(k);
+
+function getNumericLeave(emp: EmployeeDoc, key: string): number {
+  if (isAdditiveLeave(key) || isBalanceLeave(key)) {
+    const v = emp[key as keyof EmployeeDoc];
+    return typeof v === "number" && Number.isFinite(v) ? v : 0;
+  }
+  return 0;
+}
 
 /* ---------------- Types ---------------- */
 type EmployeeRef =
@@ -378,14 +413,15 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
 
           const leaveType = r.leaveType ?? "";
           if (leaveType) {
-            const available = (employee as Record<string, unknown>)[
-              leaveType
-            ] as number | undefined;
-            if (!available || available <= 0) {
-              throw new Error(
-                `${nameFromRecord(r)} does not have any ${leaveType} left.`
-              );
+            if (isBalanceLeave(leaveType)) {
+              const available = getNumericLeave(employee, leaveType);
+              if (available <= 0) {
+                throw new Error(
+                  `${nameFromRecord(r)} does not have any ${leaveType} left.`
+                );
+              }
             }
+            // if additive -> no blocking check
           }
 
           if (r.previousLeaveType && r.previousLeaveType !== r.leaveType) {

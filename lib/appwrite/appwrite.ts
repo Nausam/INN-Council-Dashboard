@@ -13,6 +13,8 @@ export const appwriteConfig = {
   prayerTimesCollectionId: "6749573400305f49417b",
   leaveRequestsCollectionId: "674ee238003517f3004d",
   wasteManagementFormsId: "6784e0610000e598d1e6",
+  punchLogsRawCollectionId:
+    process.env.NEXT_PUBLIC_APPWRITE_PUNCH_LOGS_RAW_COLLECTION ?? "",
 };
 
 const {
@@ -89,8 +91,138 @@ export type PrayerTimesDoc = Models.Document & {
   ishaTime: string;
 };
 
+const ADDITIVE_LEAVES = new Set([
+  "maternityLeave",
+  "preMaternityLeave",
+  "paternityLeave",
+  "noPayLeave",
+  "officialLeave",
+]);
+
+/* -------- Punch logs raw -------- */
+
+const normalizeHumanName = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+
+// Convert a local YYYY-MM-DD to UTC ISO range covering that local day.
+const localDayRangeToUtc = (yyyyMmDd: string) => {
+  const startLocal = new Date(`${yyyyMmDd}T00:00:00`);
+  const endLocal = new Date(startLocal.getTime() + 24 * 60 * 60 * 1000);
+  const startUtc = new Date(
+    startLocal.getTime() - startLocal.getTimezoneOffset() * 60000
+  ).toISOString();
+  const endUtc = new Date(
+    endLocal.getTime() - endLocal.getTimezoneOffset() * 60000
+  ).toISOString();
+  return { startUtc, endUtc };
+};
+
+type PunchLogRaw = Models.Document & {
+  empId?: string;
+  empName?: string;
+  empNameNorm?: string; // stored in your collector
+  timestamp?: string | null; // optional; we will rely on $createdAt
+  state?: number; // 0/1 from device (ignored for now)
+  deviceSn?: string;
+  deviceUserId?: string;
+  dedupeKey?: string;
+};
+
 /* =============================== Attendance (Office) =============================== */
 
+/** Earliest $createdAt for an employee on a given UTC date (YYYY-MM-DD). */
+const getFirstPunchCreatedAtForEmployee = async (
+  localDate: string,
+  employeeName: string
+): Promise<string | null> => {
+  const { startUtc, endUtc } = localDayRangeToUtc(localDate);
+  const nameNorm = normalizeHumanName(employeeName);
+
+  // 1) try strict match on normalized field
+  let res = await databases.listDocuments<PunchLogRaw>(
+    appwriteConfig.databaseId,
+    appwriteConfig.punchLogsRawCollectionId,
+    [
+      Query.equal("empNameNorm", nameNorm),
+      Query.greaterThanEqual("timestamp", startUtc),
+      Query.lessThan("timestamp", endUtc),
+      Query.orderAsc("timestamp"),
+      Query.limit(1),
+    ]
+  );
+  if (res.documents.length) return res.documents[0].timestamp!;
+
+  // 2) fall back to exact name on `timestamp`
+  res = await databases.listDocuments<PunchLogRaw>(
+    appwriteConfig.databaseId,
+    appwriteConfig.punchLogsRawCollectionId,
+    [
+      Query.equal("empName", employeeName),
+      Query.greaterThanEqual("timestamp", startUtc),
+      Query.lessThan("timestamp", endUtc),
+      Query.orderAsc("timestamp"),
+      Query.limit(1),
+    ]
+  );
+  if (res.documents.length) return res.documents[0].timestamp!;
+
+  // 3) last resort: use $createdAt window (in case timestamp was not set)
+  res = await databases.listDocuments<PunchLogRaw>(
+    appwriteConfig.databaseId,
+    appwriteConfig.punchLogsRawCollectionId,
+    [
+      Query.equal("empNameNorm", nameNorm),
+      Query.greaterThanEqual("$createdAt", startUtc),
+      Query.lessThan("$createdAt", endUtc),
+      Query.orderAsc("$createdAt"),
+      Query.limit(1),
+    ]
+  );
+  if (res.documents.length) return res.documents[0].$createdAt;
+
+  return null;
+};
+
+export const syncAttendanceForDate = async (date: string): Promise<number> => {
+  // 1) Get attendance rows for the day (paginate just in case)
+  const rows = await fetchAttendanceForDate(date);
+
+  if (rows.length === 0) return 0;
+
+  // 2) Build a map of employeeId -> name once
+  const employees = await fetchAllEmployees();
+  const nameById = new Map<string, string>();
+  for (const e of employees) nameById.set(e.$id, e.name);
+
+  // 3) For each row, resolve earliest punch and update if needed
+  let changed = 0;
+
+  await Promise.all(
+    rows.map(async (row) => {
+      const empName = nameById.get(row.employeeId);
+      if (!empName) return;
+
+      const earliest = await getFirstPunchCreatedAtForEmployee(date, empName);
+      if (!earliest) return;
+
+      const current = row.signInTime
+        ? new Date(row.signInTime).getTime()
+        : null;
+      const earliestMs = new Date(earliest).getTime();
+
+      if (current === null || earliestMs < current) {
+        await updateAttendanceRecord(row.$id, { signInTime: earliest });
+        changed += 1;
+      }
+    })
+  );
+
+  return changed;
+};
 // Fetch attendance for a given date
 export const fetchAttendanceForDate = async (
   date: string
@@ -141,26 +273,35 @@ export const createAttendanceForEmployees = async (
   employees: EmployeeDoc[]
 ): Promise<Array<Omit<AttendanceDoc, keyof Models.Document>>> => {
   try {
-    const defaultSignInTime = new Date(`${date}T08:00:00Z`).toISOString();
-
-    // ✅ exclude whole Mosque section (case-insensitive)
+    // exclude whole Mosque section (unchanged)
     const filteredEmployees = employees.filter((e) => {
       const sec =
         typeof e.section === "string" ? e.section.trim().toLowerCase() : "";
       return sec !== "mosque";
     });
 
+    // Build entries with real sign-in times
     const attendanceEntries: Array<Omit<AttendanceDoc, keyof Models.Document>> =
-      filteredEmployees.map((employee) => ({
-        employeeId: employee.$id,
-        date,
-        signInTime: defaultSignInTime,
-        leaveType: null,
-        minutesLate: 0,
-        previousLeaveType: null,
-        leaveDeducted: false,
-      }));
+      await Promise.all(
+        filteredEmployees.map(async (employee) => {
+          const firstPunch = await getFirstPunchCreatedAtForEmployee(
+            date,
+            employee.name
+          );
 
+          return {
+            employeeId: employee.$id,
+            date,
+            signInTime: firstPunch, // ← from $createdAt (or null if none)
+            leaveType: null,
+            minutesLate: 0, // keep your current calc pipeline
+            previousLeaveType: null,
+            leaveDeducted: false,
+          };
+        })
+      );
+
+    // Write all rows
     await Promise.all(
       attendanceEntries.map((entry) =>
         databases.createDocument(
@@ -292,33 +433,35 @@ export const deductLeave = async (
   leaveType: string,
   restore = false
 ): Promise<void> => {
-  try {
-    const employee = await fetchEmployeeById(employeeId);
+  const employee = await fetchEmployeeById(employeeId);
 
-    const current = employee[leaveType as keyof EmployeeDoc];
-    if (typeof current !== "number") {
-      throw new Error(
-        `Leave field "${leaveType}" is not a number on employee.`
-      );
-    }
+  // current value; treat undefined/null as 0
+  const raw = employee[leaveType as keyof EmployeeDoc];
+  const current =
+    typeof raw === "number" && Number.isFinite(raw) ? (raw as number) : 0;
 
-    const updatedLeaveBalance = restore ? current + 1 : current - 1;
-    if (updatedLeaveBalance < 0 && !restore) {
+  const isAdditive = ADDITIVE_LEAVES.has(leaveType);
+
+  let next: number;
+
+  if (isAdditive) {
+    // Counters: +1 when applying, -1 when restoring
+    next = restore ? Math.max(0, current - 1) : current + 1;
+  } else {
+    // Balances: -1 when applying, +1 when restoring
+    if (!restore && current <= 0) {
       throw new Error("Insufficient leave balance");
     }
-
-    await databases.updateDocument(
-      databaseId,
-      employeesCollectionId,
-      employeeId,
-      { [leaveType]: updatedLeaveBalance }
-    );
-  } catch (error) {
-    console.error("Error updating employee leave:", error);
-    throw error;
+    next = restore ? current + 1 : current - 1;
   }
-};
 
+  await databases.updateDocument(
+    databaseId,
+    employeesCollectionId,
+    employeeId,
+    { [leaveType]: next }
+  );
+};
 // Update employee's leave balance
 export const updateEmployeeLeaveBalance = async (
   employeeId: string,

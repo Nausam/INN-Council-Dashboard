@@ -1,70 +1,154 @@
 "use client";
 
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-
-import { Button } from "@/components/ui/button";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { useState } from "react";
-import Image from "next/image";
-import Link from "next/link";
+import { toast } from "@/hooks/use-toast";
 import { createAccount, signInUser } from "@/lib/actions/user.actions";
-import OtpModal from "@/components/OTPModal";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Check } from "lucide-react";
+import Image from "next/image";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
 
 type FormType = "sign-in" | "sign-up";
 
-const authFormSchema = (formType: FormType) => {
-  return z.object({
-    email: z.string().email(),
-    fullName:
-      formType === "sign-up"
-        ? z.string().min(2).max(50)
-        : z.string().optional(),
-  });
-};
+/* ================== Schema (Discriminated Union) ================== */
+
+const base = z.object({
+  email: z.string().email("Enter a valid email"),
+  password: z.string().min(8, "Min 8 characters"),
+});
+
+// Keep branches as plain objects (no .refine on a branch)
+const signUpObj = base.extend({
+  mode: z.literal("sign-up"),
+  fullName: z.string().min(2, "Name is too short").max(50),
+  confirmPassword: z.string().min(8, "Min 8 characters"),
+});
+
+const signInObj = base.extend({
+  mode: z.literal("sign-in"),
+});
+
+// Build union first, then refine union for password match
+const formSchema = z
+  .discriminatedUnion("mode", [signUpObj, signInObj])
+  .refine(
+    (data) => data.mode === "sign-in" || data.password === data.confirmPassword,
+    { message: "Passwords do not match", path: ["confirmPassword"] }
+  );
+
+type FormValues = z.infer<typeof formSchema>;
+
+/* ================== Component ================== */
 
 const AuthForm = ({ type }: { type: FormType }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [accountId, setAccountId] = useState(null);
+  const [status, setStatus] = useState<"idle" | "loading" | "success">("idle");
 
-  const formSchema = authFormSchema(type);
-  const form = useForm<z.infer<typeof formSchema>>({
+  const router = useRouter();
+
+  const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: {
-      fullName: "",
-      email: "",
-    },
+    defaultValues:
+      type === "sign-up"
+        ? {
+            mode: "sign-up",
+            fullName: "",
+            email: "",
+            password: "",
+            confirmPassword: "",
+          }
+        : {
+            mode: "sign-in",
+            email: "",
+            password: "",
+          },
   });
 
-  const onSubmit = async (values: z.infer<typeof formSchema>) => {
+  // Safe helper for field error text without using `any`
+  const errorOf = <K extends keyof FormValues>(name: K) => {
+    const errs = form.formState.errors as Partial<
+      Record<string, { message?: string }>
+    >;
+    return errs[name as string]?.message;
+  };
+
+  const onSubmit = async (values: FormValues) => {
     setIsLoading(true);
+    setStatus("loading");
     setErrorMessage("");
 
     try {
-      const user =
-        type === "sign-up"
-          ? await createAccount({
-              fullName: values.fullName || "",
-              email: values.email,
-            })
-          : await signInUser({ email: values.email });
-
-      setAccountId(user.accountId);
+      if (values.mode === "sign-up") {
+        const res = await createAccount({
+          fullName: values.fullName,
+          email: values.email,
+          password: values.password,
+        });
+        if (res?.error) {
+          setErrorMessage(res.error);
+          setStatus("idle");
+          toast({
+            title: "Sign up failed",
+            description: res.error,
+            variant: "destructive",
+          });
+          return;
+        }
+        if (res?.ok) {
+          toast({
+            title: "Account created",
+            description: "Welcome! You’re signed in.",
+          });
+          router.replace("/sign-in");
+        }
+      } else {
+        const res = await signInUser({
+          email: values.email,
+          password: values.password,
+        });
+        if (res?.error) {
+          setErrorMessage(res.error);
+          setStatus("idle");
+          toast({
+            title: "Sign in failed",
+            description: res.error,
+            variant: "destructive",
+          });
+          return;
+        }
+        if (res?.ok) {
+          setStatus("success");
+          toast({
+            title: "Signed in",
+            description: "Welcome back!",
+            variant: "success",
+          });
+          if (typeof window !== "undefined") {
+            window.location.replace("/");
+          }
+        }
+      }
     } catch {
-      setErrorMessage("Failed to create account. Please try again.");
+      setStatus("idle");
+      setErrorMessage("Something went wrong. Please try again.");
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const errorMsg = (
+    name: "email" | "password" | "fullName" | "confirmPassword"
+  ): string | undefined => {
+    const errs = form.formState.errors as {
+      email?: { message?: string };
+      password?: { message?: string };
+      fullName?: { message?: string };
+      confirmPassword?: { message?: string };
+    };
+    return errs[name]?.message;
   };
 
   return (
@@ -88,11 +172,11 @@ const AuthForm = ({ type }: { type: FormType }) => {
                 id="fullName"
                 type="text"
                 placeholder="Enter your full name"
-                className="w-full px-4 py-3 bg-gray-50 rounded-lg border border-gray-300 focus:outline-none focus:ring-0 focus:ring-cyan-500 focus:border-cyan-500"
+                className="w-full px-4 py-3 bg-gray-50 rounded-lg border border-gray-300 focus:outline-none focus:border-cyan-500"
               />
-              {form.formState.errors.fullName && (
+              {type === "sign-up" && errorMsg("fullName") && (
                 <p className="mt-2 text-sm text-red-500">
-                  {form.formState.errors.fullName.message}
+                  {errorMsg("fullName")}
                 </p>
               )}
             </div>
@@ -110,29 +194,79 @@ const AuthForm = ({ type }: { type: FormType }) => {
               id="email"
               type="email"
               placeholder="Enter your email"
-              className="w-full px-4 py-3 bg-gray-50 rounded-lg border border-gray-300 focus:outline-none focus:ring-0 focus:ring-cyan-500 focus:border-cyan-500"
+              className="w-full px-4 py-3 bg-gray-50 rounded-lg border border-gray-300 focus:outline-none focus:border-cyan-500"
             />
-            {form.formState.errors.email && (
-              <p className="mt-2 text-sm text-red-500">
-                {form.formState.errors.email.message}
-              </p>
+            {errorOf("email") && (
+              <p className="mt-2 text-sm text-red-500">{errorOf("email")}</p>
             )}
           </div>
 
+          <div>
+            <label
+              htmlFor="password"
+              className="block text-sm font-medium text-gray-600 mb-2"
+            >
+              Password
+            </label>
+            <input
+              {...form.register("password")}
+              id="password"
+              type="password"
+              placeholder="Enter your password"
+              className="w-full px-4 py-3 bg-gray-50 rounded-lg border border-gray-300 focus:outline-none focus:border-cyan-500"
+            />
+            {errorOf("password") && (
+              <p className="mt-2 text-sm text-red-500">{errorOf("password")}</p>
+            )}
+          </div>
+
+          {type === "sign-up" && (
+            <div>
+              <label
+                htmlFor="confirmPassword"
+                className="block text-sm font-medium text-gray-600 mb-2"
+              >
+                Confirm Password
+              </label>
+              <input
+                {...form.register("confirmPassword")}
+                id="confirmPassword"
+                type="password"
+                placeholder="Re-enter your password"
+                className="w-full px-4 py-3 bg-gray-50 rounded-lg border border-gray-300 focus:outline-none focus:border-cyan-500"
+              />
+              {type === "sign-up" && errorMsg("confirmPassword") && (
+                <p className="mt-2 text-sm text-red-500">
+                  {errorMsg("confirmPassword")}
+                </p>
+              )}
+            </div>
+          )}
+
           <button
             type="submit"
-            disabled={isLoading}
-            className="w-full px-4 py-3 text-white font-medium bg-cyan-500 rounded-full shadow-lg hover:bg-cyan-600 focus:outline-none focus:ring-0 focus:ring-cyan-500 flex items-center justify-center"
+            disabled={status !== "idle"}
+            className={`w-full h-12 rounded-full shadow-lg flex items-center justify-center
+    transition-all duration-200
+    ${
+      status === "success"
+        ? "bg-emerald-500 hover:bg-emerald-600"
+        : "bg-cyan-500 hover:bg-cyan-600"
+    }
+    text-white disabled:opacity-70 disabled:cursor-not-allowed`}
           >
-            <span>{type === "sign-in" ? "Sign In" : "Sign Up"}</span>
-            {isLoading && (
+            {status === "loading" ? (
               <Image
                 src="/assets/icons/loader.svg"
-                alt="loader"
-                width={24}
-                height={24}
-                className="ml-2 animate-spin"
+                alt="loading"
+                width={22}
+                height={22}
+                className="animate-spin"
               />
+            ) : status === "success" ? (
+              <Check className="w-7 h-7" />
+            ) : (
+              <span>{type === "sign-in" ? "Sign In" : "Sign Up"}</span>
             )}
           </button>
 
@@ -141,24 +275,8 @@ const AuthForm = ({ type }: { type: FormType }) => {
               {errorMessage}
             </p>
           )}
-
-          {/* <div className="text-center text-sm text-gray-600 mt-4">
-            {type === "sign-in"
-              ? "Don't have an account?"
-              : "Already have an account?"}
-            <Link
-              href={type === "sign-in" ? "/sign-up" : "/sign-in"}
-              className="ml-1 font-medium text-cyan-500 hover:underline"
-            >
-              {type === "sign-in" ? "Sign Up" : "Sign In"}
-            </Link>
-          </div> */}
         </form>
       </div>
-
-      {accountId && (
-        <OtpModal email={form.getValues("email")} accountId={accountId} />
-      )}
     </div>
   );
 };
