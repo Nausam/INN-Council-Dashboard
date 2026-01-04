@@ -1,22 +1,19 @@
 "use client";
 
-import * as React from "react";
 import {
   AudioWaveform,
+  Boxes,
+  Calendar,
   Command,
+  FileText,
   GalleryVerticalEnd,
   Home,
-  Users,
-  Calendar,
-  FileText,
-  Settings,
   Package,
-  Boxes,
-  UserCircle,
+  Users,
 } from "lucide-react";
+import * as React from "react";
 
 import { NavMain } from "@/components/nav-main";
-import { NavProjects } from "@/components/nav-projects";
 import { NavUser } from "@/components/nav-user";
 import { TeamSwitcher } from "@/components/team-switcher";
 import {
@@ -161,6 +158,30 @@ const data = {
         {
           title: "General",
           url: "#",
+        },
+      ],
+    },
+    {
+      title: "Waste Management",
+      url: "#",
+      icon: Boxes,
+      isActive: true,
+      items: [
+        {
+          title: "Customers",
+          url: "/wasteManagement/customers",
+        },
+        {
+          title: "Invoices",
+          url: "/wasteManagement/invoices",
+        },
+        {
+          title: "Payments",
+          url: "/wasteManagement/payments",
+        },
+        {
+          title: "Payment History",
+          url: "/wasteManagement/payments/history",
         },
       ],
     },
