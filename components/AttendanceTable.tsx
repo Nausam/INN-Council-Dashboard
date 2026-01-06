@@ -122,20 +122,35 @@ const reverseLeaveTypeMapping: Record<string, LeaveLabel> = Object.fromEntries(
   )
 ) as Record<string, LeaveLabel>;
 
+// --- Maldives timezone helpers (UTC+05:00, no DST) ---
+const MV_OFFSET_MIN = 5 * 60;
+
 /* ---------------- Time helpers ---------------- */
 const formatTimeForInput = (dateTime: string | null) => {
   if (!dateTime) return "";
-  const d = new Date(dateTime);
-  const hh = String(d.getUTCHours()).padStart(2, "0");
-  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  const d = new Date(dateTime); // UTC moment
+  // Convert to MV wall-clock minutes, then format HH:mm
+  const minsUtc = d.getUTCHours() * 60 + d.getUTCMinutes();
+  const minsMv = (minsUtc + MV_OFFSET_MIN + 24 * 60) % (24 * 60);
+  const hh = String(Math.floor(minsMv / 60)).padStart(2, "0");
+  const mm = String(minsMv % 60).padStart(2, "0");
   return `${hh}:${mm}`;
 };
 
 const convertTimeToDateTime = (time: string, date: string) => {
-  const [hh, mm] = time.split(":");
-  const d = new Date(date);
-  d.setUTCHours(parseInt(hh, 10), parseInt(mm, 10), 0, 0);
-  return d.toISOString();
+  const [hh, mm] = time.split(":").map((v) => parseInt(v, 10));
+  // Start at the UTC midnight of that calendar date
+  const utc = new Date(`${date}T00:00:00.000Z`);
+  // Set minutes so that the *local MV* wall-clock equals hh:mm
+  utc.setUTCMinutes(hh * 60 + mm - MV_OFFSET_MIN);
+  return utc.toISOString();
+};
+
+const mvLocalToUtcDate = (date: string, hhmm: string) => {
+  const [hh, mm] = hhmm.split(":").map((v) => parseInt(v, 10));
+  const utc = new Date(`${date}T00:00:00.000Z`);
+  utc.setUTCMinutes(hh * 60 + mm - MV_OFFSET_MIN);
+  return utc;
 };
 
 /* ===================================================================== */
@@ -385,8 +400,11 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
       if (!r.signInTime) return r;
       const sec = getCanonicalSection(sectionFromRecord(r));
       const required = sec === "Councillor" ? "08:30" : "08:00";
-      const requiredTime = new Date(`${date}T${required}Z`);
-      const actual = new Date(r.signInTime);
+
+      // required time treated as Maldives local, converted to UTC
+      const requiredTime = mvLocalToUtcDate(date, required);
+      const actual = new Date(r.signInTime); // already UTC ISO
+
       const minutesLate = Math.max(
         0,
         Math.round((actual.getTime() - requiredTime.getTime()) / 60000)
