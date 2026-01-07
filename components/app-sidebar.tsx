@@ -185,6 +185,18 @@ const data = {
         },
       ],
     },
+    {
+      title: "Land Rent",
+      url: "#",
+      icon: Boxes,
+      isActive: true,
+      items: [
+        {
+          title: "Rent Details",
+          url: "/landRent/details",
+        },
+      ],
+    },
   ],
 };
 

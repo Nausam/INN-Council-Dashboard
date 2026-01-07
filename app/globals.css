@@ -2,6 +2,30 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: "Faruma";
+  src: url("/fonts/Faruma.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "DAM_Madheeh";
+  src: url("/fonts/DAM_Madheeh.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "aammufkF";
+  src: url("/fonts/aammufkF.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 body {
   /* font-family: Arial, Helvetica, sans-serif; */
 }
@@ -22,6 +46,10 @@ body {
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+
+    --font-dhivehi-1: "aammufkF";
+    --font-dhivehi-2: "Faruma";
+    --font-dhivehi-3: "DAM_Madheeh";
 
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;

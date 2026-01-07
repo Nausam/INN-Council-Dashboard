@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 import type { Config } from "tailwindcss";
 
 const config: Config = {
@@ -9,6 +10,11 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        dh1: ["var(--font-dhivehi-1)", "system-ui", "sans-serif"],
+        dh2: ["var(--font-dhivehi-2)", "system-ui", "sans-serif"],
+        dh3: ["var(--font-dhivehi-3)", "system-ui", "sans-serif"],
+      },
       colors: {
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
