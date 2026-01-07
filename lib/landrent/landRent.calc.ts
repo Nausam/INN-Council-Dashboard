@@ -26,52 +26,74 @@ function diffDays(a: Date, b: Date) {
   return Math.max(0, Math.floor(ms / 86400000));
 }
 
-export function computeMonthlyLandRent(params: {
+export const computeMonthlyLandRent = (params: {
   monthKey: string; // YYYY-MM
   sizeSqft: number;
-  rateLariPerSqft: number; // e.g. 0.90
-  paymentDueDay: number; // default 10
-  fineLariPerDay: number; // can be 0
-  paidAtISO?: string | null; // latest payment date (any month)
-  paidForThisMonth?: boolean; // whether monthKey is already paid
+  rateLariPerSqft: number;
+  paymentDueDay: number;
+  fineLariPerDay: number;
+
   releasedDateISO?: string | null;
-}) {
+
+  latestPaymentISO?: string | null;
+  isPaidForThisMonth: boolean;
+}) => {
   const { y, m } = parseMonthKey(params.monthKey);
 
   const monthlyRent = round2(params.sizeSqft * params.rateLariPerSqft);
-  const dueDate = ymdUTC(y, m, params.paymentDueDay);
 
-  const today = (() => {
-    const t = todayYMDMaldives();
-    return ymdUTC(t.y, t.m, t.day);
-  })();
+  // ✅ Use LOCAL dates (browser time) to avoid UTC offset issues
+  const dateOnlyLocal = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate());
 
-  // If released date exists and is earlier than today, stop counting after release
-  const endCap = (() => {
+  const ymdLocal = (yy: number, mm: number, dd: number) =>
+    new Date(yy, mm - 1, dd);
+
+  const diffDaysLocal = (from: Date, to: Date) => {
+    const a = dateOnlyLocal(from).getTime();
+    const b = dateOnlyLocal(to).getTime();
+    return Math.max(0, Math.floor((b - a) / 86400000));
+  };
+
+  const monthStart = ymdLocal(y, m, 1);
+  const dueDate = ymdLocal(y, m, params.paymentDueDay);
+
+  const today = dateOnlyLocal(new Date());
+
+  const capDate = (() => {
     if (!params.releasedDateISO) return today;
     const rd = new Date(params.releasedDateISO);
-    const cap = ymdUTC(
-      rd.getUTCFullYear(),
-      rd.getUTCMonth() + 1,
-      rd.getUTCDate()
-    );
+    const cap = dateOnlyLocal(rd);
     return cap < today ? cap : today;
   })();
 
-  const daysUnpaid = params.paidForThisMonth ? 0 : diffDays(dueDate, endCap);
+  // ✅ If not paid, show days since month started (so it won't be 0)
+  const daysNotPaid = params.isPaidForThisMonth
+    ? 0
+    : diffDaysLocal(monthStart, capDate) + 1;
 
-  const fineDays = params.paidForThisMonth ? 0 : daysUnpaid;
+  // ✅ Fine only starts after due day
+  const fineDays =
+    params.isPaidForThisMonth || capDate <= dueDate
+      ? 0
+      : diffDaysLocal(
+          new Date(
+            dueDate.getFullYear(),
+            dueDate.getMonth(),
+            dueDate.getDate() + 1
+          ),
+          capDate
+        ) + 1;
+
   const fineAmount = round2(fineDays * params.fineLariPerDay);
-
   const totalMonthly = round2(monthlyRent + fineAmount);
 
   return {
-    monthlyRent: round2(monthlyRent),
-    dueDateISO: dueDate.toISOString(),
-    daysUnpaid,
+    monthlyRent,
+    daysNotPaid,
     fineDays,
-    fineAmount: round2(fineAmount),
-    totalMonthly: round2(totalMonthly),
-    latestPaymentDateISO: params.paidAtISO ?? null,
+    fineAmount,
+    totalMonthly,
+    latestPaymentISO: params.latestPaymentISO ?? null,
   };
-}
+};

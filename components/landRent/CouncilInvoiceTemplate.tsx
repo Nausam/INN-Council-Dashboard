@@ -7,13 +7,12 @@ type ContactInfo = {
   whatsapp?: string;
 };
 
-/** A text run that can optionally use the highlight font (aammufkF) */
 type TextRun =
   | string
   | {
       text: string;
-      highlight?: boolean; // if true => font-dh1
-      className?: string; // optional extra classes (e.g. bg-yellow-200)
+      highlight?: boolean;
+      className?: string;
     };
 
 type InfoBlock = {
@@ -34,7 +33,7 @@ type CellValue =
   | undefined
   | {
       value: string | number | null | undefined;
-      highlight?: boolean; // if true => font-dh1
+      highlight?: boolean;
       className?: string;
     };
 
@@ -67,15 +66,8 @@ function cx(...classes: Array<string | false | null | undefined>) {
 
 function renderText(run: TextRun, baseClass = "") {
   if (typeof run === "string") return <span className={baseClass}>{run}</span>;
-
   return (
-    <span
-      className={cx(
-        baseClass,
-        run.highlight && "font-dh1", // aammufkF
-        run.className
-      )}
-    >
+    <span className={cx(baseClass, run.highlight && "font-dh1", run.className)}>
       {run.text}
     </span>
   );
@@ -88,11 +80,14 @@ function renderCell(v: CellValue) {
   if (typeof v === "string" || typeof v === "number")
     return <span className={base}>{String(v)}</span>;
 
+  const value =
+    v.value === null || v.value === undefined || v.value === ""
+      ? "-"
+      : String(v.value);
+
   return (
     <span className={cx(base, v.highlight && "font-dh1", v.className)}>
-      {v.value === null || v.value === undefined || v.value === ""
-        ? "-"
-        : String(v.value)}
+      {value}
     </span>
   );
 }
@@ -119,6 +114,35 @@ function WhatsAppIcon(props: { className?: string }) {
   );
 }
 
+function ContactChip(props: {
+  value: string;
+  icon: React.ReactNode;
+  accent: "blue" | "indigo" | "emerald";
+}) {
+  const accentClass =
+    props.accent === "blue"
+      ? "bg-sky-600"
+      : props.accent === "indigo"
+      ? "bg-indigo-600"
+      : "bg-emerald-600";
+
+  return (
+    <div className="flex items-center gap-3 rounded-2xl bg-white/80 px-4 py-2 ring-1 ring-black/10">
+      <span className="text-[14px] font-semibold text-black">
+        {props.value}
+      </span>
+      <span
+        className={cx(
+          "inline-flex h-10 w-10 items-center justify-center rounded-2xl text-white",
+          accentClass
+        )}
+      >
+        {props.icon}
+      </span>
+    </div>
+  );
+}
+
 export default function CouncilInvoiceTemplate(
   props: CouncilInvoiceTemplateProps
 ) {
@@ -138,200 +162,213 @@ export default function CouncilInvoiceTemplate(
   } = props;
 
   return (
-    // Default = Faruma everywhere
-    <section className="w-full bg-white font-dh2">
+    <section className="w-full font-dh2 print:bg-white">
       <div className="mx-auto w-full max-w-[1157px] px-6 py-6">
-        {/* Header */}
-        <div className="grid grid-cols-[1fr_auto_1fr] items-start">
-          <div className="flex items-start gap-3">
-            {leftLogoSrc ? (
-              <Image
-                src={leftLogoSrc}
-                alt="Council logo"
-                width={170}
-                height={110}
-                priority
-                className="h-auto w-[170px] object-contain"
-              />
-            ) : (
-              <div className="h-[110px] w-[170px] rounded-md bg-black/5" />
-            )}
-          </div>
+        <div className="relative rounded-3xl p-[1px] bg-gradient-to-br from-black/10 via-black/5 to-black/10 print:bg-none print:p-0">
+          <div className="relative overflow-hidden rounded-3xl bg-white ring-1 ring-black/10 print:ring-0">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(1200px_520px_at_20%_-10%,rgba(15,75,69,.10),transparent_60%),radial-gradient(900px_420px_at_90%_0%,rgba(56,189,248,.08),transparent_55%)] print:hidden" />
 
-          <div className="flex flex-col items-center">
-            {crestSrc ? (
-              <Image
-                src={crestSrc}
-                alt="Crest"
-                width={70}
-                height={70}
-                priority
-                className="h-auto w-[70px] object-contain"
-              />
-            ) : (
-              <div className="h-[70px] w-[70px] rounded-full bg-black/5" />
-            )}
-
-            <div
-              className="mt-2 space-y-1 text-center text-[16px] leading-snug text-black"
-              dir="rtl"
-            >
-              {headerCenterLines.map((l, i) => (
-                <div key={i} className="font-semibold">
-                  {renderText(l)}
+            <div className="relative p-6">
+              {/* Header */}
+              <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-4">
+                <div className="flex items-start">
+                  {leftLogoSrc ? (
+                    <Image
+                      src={leftLogoSrc}
+                      alt="Council logo"
+                      width={170}
+                      height={110}
+                      priority
+                      className="h-auto w-[170px] object-contain"
+                    />
+                  ) : (
+                    <div className="h-[110px] w-[170px] rounded-xl bg-black/5 ring-1 ring-black/10" />
+                  )}
                 </div>
-              ))}
-            </div>
-          </div>
 
-          <div />
-        </div>
+                <div className="flex flex-col items-center">
+                  {crestSrc ? (
+                    <Image
+                      src={crestSrc}
+                      alt="Crest"
+                      width={72}
+                      height={72}
+                      priority
+                      className="h-auto w-[72px] object-contain"
+                    />
+                  ) : (
+                    <div className="h-[72px] w-[72px] rounded-2xl bg-black/5 ring-1 ring-black/10" />
+                  )}
 
-        {/* Title bar */}
-        <div className="mt-5 w-full" style={{ backgroundColor: GREEN }}>
-          <div
-            className="flex h-12 items-center justify-center px-4 text-center text-[22px] font-semibold text-white"
-            dir="rtl"
-          >
-            {renderText(title, "text-white")}
-          </div>
-        </div>
-
-        {/* Main info box */}
-        <div
-          className="mt-5 rounded-lg border-[3px] p-5"
-          style={{ borderColor: GREEN }}
-        >
-          <div className="grid grid-cols-2 gap-6">
-            <div
-              className="space-y-2 text-[16px] leading-relaxed text-black"
-              dir="rtl"
-            >
-              {leftInfo.lines.map((l, i) => (
-                <div key={i} className="font-semibold">
-                  {renderText(l)}
+                  <div
+                    className="mt-3 rounded-2xl bg-white/80 px-6 py-3 text-center text-[16px] leading-snug text-black ring-1 ring-black/10"
+                    dir="rtl"
+                  >
+                    <div className="space-y-1">
+                      {headerCenterLines.map((l, i) => (
+                        <div key={i} className="font-semibold">
+                          {renderText(l)}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              ))}
-              {leftInfo.amount ? (
-                <div className="pt-1 text-center text-[18px] font-semibold">
-                  {renderText(leftInfo.amount)}
-                </div>
-              ) : null}
-            </div>
 
-            <div
-              className="space-y-2 text-[16px] leading-relaxed text-black"
-              dir="rtl"
-            >
-              {rightInfo.lines.map((l, i) => (
-                <div key={i} className="font-semibold">
-                  {renderText(l)}
-                </div>
-              ))}
-              {rightInfo.amount ? (
-                <div className="pt-1 text-center text-[18px] font-semibold">
-                  {renderText(rightInfo.amount)}
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          {/* Contact */}
-          <div className="mt-6 flex items-center justify-center gap-10">
-            <div className="flex items-center gap-3">
-              <span className="text-[16px] font-semibold text-black">
-                {contact.email}
-              </span>
-              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-blue-700 text-white">
-                <MailIcon className="h-5 w-5" />
-              </span>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <span className="text-[18px] font-semibold text-black">
-                {contact.phone}
-              </span>
-              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-indigo-700 text-white">
-                <PhoneIcon className="h-5 w-5" />
-              </span>
-            </div>
-
-            {contact.whatsapp ? (
-              <div className="flex items-center gap-3">
-                <span className="text-[16px] font-semibold text-black">
-                  {contact.whatsapp}
-                </span>
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-purple-600 text-white">
-                  <WhatsAppIcon className="h-5 w-5" />
-                </span>
+                <div />
               </div>
-            ) : null}
-          </div>
-        </div>
 
-        {/* Table */}
-        <div className="mt-4">
-          <div className="overflow-hidden border border-black/40">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr style={{ backgroundColor: GREEN }} dir="rtl">
-                  {columns.map((c) => (
-                    <th
-                      key={c.key}
-                      className={cx(
-                        "border-r border-black/40 px-3 py-3 text-center text-[15px] font-semibold text-white",
-                        c.className
-                      )}
-                    >
-                      {renderText(c.label, "text-white")}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
+              {/* Title */}
+              <div className="mt-6 relative overflow-hidden rounded-2xl ring-1 ring-black/10">
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, rgba(15,75,69,1) 0%, rgba(15,75,69,.92) 45%, rgba(2,132,199,.28) 100%)",
+                  }}
+                />
+                <div className="relative flex items-center justify-center px-4 py-3">
+                  <div
+                    className="text-center text-[22px] font-semibold text-white"
+                    dir="rtl"
+                  >
+                    {renderText(title, "text-white")}
+                  </div>
+                </div>
+              </div>
 
-              <tbody dir="rtl">
-                {rows.map((r, idx) => (
-                  <tr key={idx} className="bg-white">
-                    {columns.map((c) => (
-                      <td
-                        key={c.key}
-                        className="border-t border-r border-black/40 px-3 py-3 text-center text-[16px] font-semibold text-black"
-                      >
-                        {renderCell(r[c.key])}
-                      </td>
+              {/* Info blocks */}
+              <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl bg-white/90 p-5 ring-1 ring-black/10">
+                  <div
+                    className="space-y-2 text-[16px] leading-relaxed text-black"
+                    dir="rtl"
+                  >
+                    {leftInfo.lines.map((l, i) => (
+                      <div key={i} className="font-semibold">
+                        {renderText(l)}
+                      </div>
                     ))}
-                  </tr>
-                ))}
-              </tbody>
+                    {leftInfo.amount ? (
+                      <div className="mt-3 rounded-2xl bg-black/[0.03] px-4 py-3 text-center text-[18px] font-semibold ring-1 ring-black/10">
+                        {renderText(leftInfo.amount)}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
 
-              <tfoot dir="rtl">
-                <tr className="bg-white">
-                  <td
-                    colSpan={2}
-                    className="border-t border-r border-black/40 px-3 py-3 text-center text-[18px] font-extrabold text-black"
+                <div className="rounded-2xl bg-white/90 p-5 ring-1 ring-black/10">
+                  <div
+                    className="space-y-2 text-[16px] leading-relaxed text-black"
+                    dir="rtl"
                   >
-                    {renderText(totalAmount)}
-                  </td>
+                    {rightInfo.lines.map((l, i) => (
+                      <div key={i} className="font-semibold">
+                        {renderText(l)}
+                      </div>
+                    ))}
+                    {rightInfo.amount ? (
+                      <div className="mt-3 rounded-2xl bg-black/[0.03] px-4 py-3 text-center text-[18px] font-semibold ring-1 ring-black/10">
+                        {renderText(rightInfo.amount)}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
 
-                  <td
-                    colSpan={Math.max(columns.length - 2, 1)}
-                    className="border-t border-black/40 px-4 py-3 text-right text-[16px] font-semibold text-black"
-                  >
-                    {renderText(totalLabel)}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+              {/* Contact */}
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+                <ContactChip
+                  value={contact.email}
+                  accent="blue"
+                  icon={<MailIcon className="h-5 w-5" />}
+                />
+                <ContactChip
+                  value={contact.phone}
+                  accent="indigo"
+                  icon={<PhoneIcon className="h-5 w-5" />}
+                />
+                {contact.whatsapp ? (
+                  <ContactChip
+                    value={contact.whatsapp}
+                    accent="emerald"
+                    icon={<WhatsAppIcon className="h-5 w-5" />}
+                  />
+                ) : null}
+              </div>
+
+              {/* Table */}
+              <div className="mt-5 overflow-hidden rounded-2xl ring-1 ring-black/15">
+                <table className="w-full border-collapse">
+                  <thead dir="rtl">
+                    <tr style={{ backgroundColor: GREEN }}>
+                      {columns.map((c) => (
+                        <th
+                          key={c.key}
+                          className={cx(
+                            "px-3 py-3 text-center text-[14px] font-semibold text-white",
+                            "border-r border-white/20 last:border-r-0",
+                            c.className
+                          )}
+                        >
+                          {renderText(c.label, "text-white")}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+
+                  <tbody dir="rtl">
+                    {rows.map((r, idx) => (
+                      <tr
+                        key={idx}
+                        className={cx(
+                          "text-center text-[15px] font-semibold text-black",
+                          idx % 2 === 0 ? "bg-white" : "bg-black/[0.015]"
+                        )}
+                      >
+                        {columns.map((c) => (
+                          <td
+                            key={c.key}
+                            className="px-3 py-3 border-t border-black/10 border-r border-black/10 last:border-r-0"
+                          >
+                            {renderCell(r[c.key])}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+
+                  <tfoot dir="rtl">
+                    <tr className="bg-black/[0.03]">
+                      <td
+                        colSpan={2}
+                        className="px-3 py-3 text-center text-[18px] font-extrabold text-black border-t border-black/15 border-r border-black/10"
+                      >
+                        {renderText(totalAmount)}
+                      </td>
+
+                      <td
+                        colSpan={Math.max(columns.length - 2, 1)}
+                        className="px-4 py-3 text-right text-[16px] font-semibold text-black border-t border-black/15"
+                      >
+                        {renderText(totalLabel)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Footer note */}
+              <div className="mt-6 flex justify-center">
+                <div
+                  className="max-w-3xl rounded-2xl bg-red-50 px-5 py-3 text-center text-[16px] font-semibold text-red-700 ring-1 ring-red-200"
+                  dir="rtl"
+                >
+                  {renderText(footerNote, "text-red-700")}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-
-        {/* Footer note */}
-        <p
-          className="mt-6 text-center text-[16px] font-semibold text-red-600"
-          dir="rtl"
-        >
-          {renderText(footerNote, "text-red-600")}
-        </p>
       </div>
     </section>
   );

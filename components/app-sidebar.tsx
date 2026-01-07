@@ -192,8 +192,8 @@ const data = {
       isActive: true,
       items: [
         {
-          title: "Rent Details",
-          url: "/landRent/details",
+          title: "Land Rent Leases",
+          url: "/landRent",
         },
       ],
     },
