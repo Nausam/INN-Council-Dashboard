@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
@@ -199,6 +200,11 @@ export default function Page() {
   const template = useMemo(() => {
     if (!details) return null;
 
+    const remainingOutstanding = Math.max(
+      0,
+      Number(details.totalRentPaymentMonthly ?? 0) - Number(paymentsTotal ?? 0)
+    );
+
     const rentDurationText = `${fmtDateShort(
       details.rentDuration.startDate
     )} އިން ${fmtDateShort(details.rentDuration.endDate)} އަށް`;
@@ -209,6 +215,19 @@ export default function Page() {
 
     const monthlyRent = fmtMoney(details.monthlyRentPaymentAmount);
     const totalMonthly = fmtMoney(details.totalRentPaymentMonthly);
+
+    // ✅ Payment record (from Payments history)
+    const latestPaymentRecord = payments.length
+      ? payments
+          .slice()
+          .sort(
+            (a, b) =>
+              new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime()
+          )[0]
+      : null;
+
+    const balanceAfterPayments =
+      Number(details.totalRentPaymentMonthly ?? 0) - Number(paymentsTotal ?? 0);
 
     return (
       <CouncilInvoiceTemplate
@@ -239,7 +258,6 @@ export default function Page() {
               text: `މަހަކު ދައްކަންޖެހޭ: ${monthlyRent}`,
               highlight: true,
             },
-
             {
               text: "ކުލި ފައިސާ އެކައުންޓަށް ޖަމާކުރާނަމަ ސްލިޕް މިއިދާރާއަށް 3 ދުވަސްތެރޭގައި ފޮނުވުން އެދެން.",
               highlight: true,
@@ -325,19 +343,133 @@ export default function Page() {
           )} ވަނަ ދުވަހުގެ ނިޔަލަށް އަރާފައިވާ ކުއްޔާއި ޖޫރިމަނާއެވެ.`,
           highlight: true,
         }}
-      />
+      >
+        {/* ✅ Payment record (RTL + statement style) */}
+        {/* Payment record (RTL) */}
+        <div
+          dir="rtl"
+          className="mt-4 rounded-2xl ring-1 ring-black/10 overflow-hidden font-dh1"
+        >
+          {/* Title bar */}
+          <div className="flex items-center justify-between px-4 py-3 bg-white">
+            <div className="text-md font-semibold tracking-tight font-dh1">
+              ދެއްކި ފައިސާގެ ރެކޯޑު
+            </div>
+          </div>
+
+          {/* Header */}
+          <div className="grid grid-cols-[140px_1fr_140px] bg-[#064E3B] text-white">
+            <div className="px-4 py-3 text-md font-semibold font-dh1 text-right">
+              ތާރީޚް
+            </div>
+            <div className="px-4 py-3 text-md font-semibold font-dh1 text-center">
+              ތަފްޞީލް
+            </div>
+            <div className="px-4 py-3 text-md font-semibold font-dh1 text-left">
+              އަދަދު
+            </div>
+          </div>
+
+          {/* Rows */}
+          <div className="bg-white">
+            {(payments ?? []).length === 0 ? (
+              <div className="px-4 py-6 text-sm text-black/60 font-dh1">
+                ޕޭމަންޓެއް ނޯޓުވެއެވެ.
+              </div>
+            ) : (
+              <div className="divide-y divide-black/10">
+                {(payments ?? [])
+                  .slice()
+                  .sort(
+                    (a, b) =>
+                      new Date(b.paidAt).getTime() -
+                      new Date(a.paidAt).getTime()
+                  )
+                  .map((p) => {
+                    const method = String((p as any).method ?? "").trim();
+                    const note = String((p as any).note ?? "").trim();
+                    const amount = Number((p as any).amount ?? 0);
+
+                    return (
+                      <div
+                        key={p.$id}
+                        className="grid grid-cols-[140px_1fr_140px] items-center"
+                      >
+                        {/* Date */}
+                        <div className="px-4 py-3 text-sm font-semibold tabular-nums text-right">
+                          {fmtDateShort(p.paidAt)}
+                        </div>
+
+                        {/* Details (one line, centered) */}
+                        <div className="px-4 py-3 min-w-0">
+                          <div className="flex flex-nowrap items-center justify-center gap-2 min-w-0 whitespace-nowrap">
+                            {note ? (
+                              <span className="min-w-0 truncate text-md text-black/60 max-w-[520px]">
+                                {note}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        {/* Amount */}
+                        <div className="px-4 py-3 text-left">
+                          <span className="inline-flex items-center rounded-full bg-black/[0.03] px-3 py-1.5 ring-1 ring-black/10">
+                            <span className="text-sm font-semibold tabular-nums">
+                              {fmtMoney(amount)}
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+
+            {/* Footer (2 rows, not wide, no placeholder) */}
+            <div className="border-t border-black/10 bg-black/[0.03] px-4 py-3">
+              <div className="mr-auto w-fit text-left">
+                <div className="flex items-baseline justify-between gap-8">
+                  <div className="text-md text-emerald-800 font-dh1">
+                    ޖުމްލަ ދެއްކި
+                  </div>
+                  <div className="text-md font-semibold tabular-nums text-emerald-800">
+                    {fmtMoney(paymentsTotal)}
+                  </div>
+                </div>
+
+                <div className="mt-2 flex items-baseline justify-between gap-8">
+                  <div className="text-md text-red-700 font-dh1">ބާކީ</div>
+                  <div className="text-md font-semibold tabular-nums text-red-700">
+                    {fmtMoney(remainingOutstanding)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </CouncilInvoiceTemplate>
     );
-  }, [details, monthKey]);
+  }, [details, monthKey, payments, paymentsTotal]);
 
-  async function refreshAll() {
+  const latestPaymentRecord = useMemo(() => {
+    if (!payments.length) return null;
+    return payments
+      .slice()
+      .sort(
+        (a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime()
+      )[0];
+  }, [payments]);
+
+  const balanceAfterPayments = useMemo(() => {
+    if (!details) return 0;
+    const base = Number(details.totalRentPaymentMonthly ?? 0);
+    return base - Number(paymentsTotal ?? 0);
+  }, [details, paymentsTotal]);
+
+  async function refreshStatement() {
     if (!leaseId || !monthKey) return;
-
-    setPaymentOk(null);
-    setPaymentError(null);
-
     setLoading(true);
     setError(null);
-
     try {
       const d = await getLandRentMonthlyDetails({
         leaseId,
@@ -351,7 +483,10 @@ export default function Page() {
     } finally {
       setLoading(false);
     }
+  }
 
+  async function refreshPayments() {
+    if (!leaseId) return;
     setPaymentsLoading(true);
     try {
       const rows = await listLandPaymentsForLease(leaseId);
@@ -397,7 +532,7 @@ export default function Page() {
       setPayNote("");
       setPaymentOk("Payment saved. Statement updated.");
 
-      await refreshAll();
+      await refreshPayments();
     } catch (err: any) {
       setPaymentError(err?.message ?? "Failed to save payment.");
     } finally {
@@ -446,7 +581,7 @@ export default function Page() {
           windowWidth: el.scrollWidth,
           windowHeight: el.scrollHeight,
         },
-        jsPDF: { unit: "mm", format: "a4", orientation: "landscape" },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
       });
 
       await worker
@@ -982,7 +1117,10 @@ export default function Page() {
 
                           <button
                             type="button"
-                            onClick={() => refreshAll()}
+                            onClick={() => {
+                              refreshStatement();
+                              refreshPayments();
+                            }}
                             disabled={savingPayment || !leaseId}
                             className="h-11 rounded-2xl bg-black/[0.03] ring-1 ring-black/10 px-5 text-sm font-semibold
                                  transition hover:bg-black/[0.05] hover:-translate-y-0.5 disabled:opacity-50"
@@ -1054,7 +1192,7 @@ export default function Page() {
                           </div>
                         </div>
                       ) : (
-                        <div className="grid gap-2">
+                        <div className="grid gap-2 font-dh1">
                           {payments
                             .slice()
                             .sort(
@@ -1122,7 +1260,7 @@ export default function Page() {
                                       {note ? (
                                         <div className="mt-2 text-xs text-muted-foreground">
                                           <div className="rounded-lg bg-black/[0.02] px-2.5 py-2 ring-1 ring-black/5">
-                                            <div className="line-clamp-2">
+                                            <div className="line-clamp-2 py-1">
                                               {note}
                                             </div>
                                           </div>

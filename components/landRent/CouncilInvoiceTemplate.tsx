@@ -56,6 +56,7 @@ type CouncilInvoiceTemplateProps = {
   totalAmount: TextRun;
 
   footerNote: TextRun;
+  children?: React.ReactNode;
 };
 
 const GREEN = "#0f4b45";
@@ -159,6 +160,7 @@ export default function CouncilInvoiceTemplate(
     totalLabel,
     totalAmount,
     footerNote,
+    children,
   } = props;
 
   return (
@@ -328,7 +330,7 @@ export default function CouncilInvoiceTemplate(
                         {columns.map((c) => (
                           <td
                             key={c.key}
-                            className="px-3 py-3 border-t border-black/10 border-r border-black/10 last:border-r-0"
+                            className="px-3 py-3 border-t border-r border-black/10 last:border-r-0"
                           >
                             {renderCell(r[c.key])}
                           </td>
@@ -341,7 +343,7 @@ export default function CouncilInvoiceTemplate(
                     <tr className="bg-black/[0.03]">
                       <td
                         colSpan={2}
-                        className="px-3 py-3 text-center text-[18px] font-extrabold text-black border-t border-black/15 border-r border-black/10"
+                        className="px-3 py-3 text-center text-[18px] font-extrabold text-black border-t border-r border-black/10"
                       >
                         {renderText(totalAmount)}
                       </td>
@@ -366,6 +368,8 @@ export default function CouncilInvoiceTemplate(
                   {renderText(footerNote, "text-red-700")}
                 </div>
               </div>
+
+              {children ? <div className="mt-3">{children}</div> : null}
             </div>
           </div>
         </div>

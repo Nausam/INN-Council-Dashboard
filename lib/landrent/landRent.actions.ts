@@ -805,7 +805,7 @@ export const getLandRentMonthlyDetails = async (params: {
       ? Number(lease.fineLariPerDay ?? 0)
       : 0;
 
-  // ✅ opening snapshot ONLY (do not use latest payment to shift months)
+  // ✅ opening snapshot ONLY (never changes with payments)
   const openingLastPaid = safeDateUTC2((lease as any).lastPaymentDate ?? null);
 
   const rentStart = safeDateUTC2((lease as any).startDate ?? null);
@@ -817,20 +817,15 @@ export const getLandRentMonthlyDetails = async (params: {
   const today = dateOnlyUTC2(new Date());
   const capBySelectedMonth = endOfMonthUTC2(y, m);
 
-  // cap within selected month (or today if selected month is current-ish)
   let effectiveCap = minDate2(today, capBySelectedMonth) ?? today;
 
-  // optional cap by lease end date (toggle)
   if (params.capToEndDate && rentEnd) {
     effectiveCap = minDate2(effectiveCap, rentEnd) ?? effectiveCap;
   }
-
-  // always cap by released/letGo date
   if (released) {
     effectiveCap = minDate2(effectiveCap, released) ?? effectiveCap;
   }
 
-  // Determine first month we consider "unpaid range"
   let fromMonth = (() => {
     if (openingLastPaid)
       return addMonthsUTC2(startOfMonthUTC2(openingLastPaid), 1);
@@ -844,21 +839,23 @@ export const getLandRentMonthlyDetails = async (params: {
       fromMonth = rentStartMonth;
   }
 
-  // Determine last month to include (same rule you already had)
   let toMonth = new Date(Date.UTC(y, m - 1, 1));
   const dueThisMonth = new Date(
     Date.UTC(toMonth.getUTCFullYear(), toMonth.getUTCMonth(), paymentDueDay)
   );
 
-  // if cap is on/before due day, don't count this month yet
   if (effectiveCap.getTime() <= dateOnlyUTC2(dueThisMonth).getTime()) {
     toMonth = addMonthsUTC2(toMonth, -1);
   }
 
-  // If range invalid, return zeros (still return info)
-  if (toMonth.getTime() < fromMonth.getTime()) {
-    const latestPayment = await fetchLatestPaymentForLease(params.leaseId);
+  // Latest payment date displayed in snapshot is ONLY the opening snapshot.
+  const latestPaymentDate = openingLastPaid
+    ? `${openingLastPaid.getUTCFullYear()}-${pad2(
+        openingLastPaid.getUTCMonth() + 1
+      )}-${pad2(openingLastPaid.getUTCDate())}`
+    : null;
 
+  if (toMonth.getTime() < fromMonth.getTime()) {
     return {
       landName: String(parcel.name ?? ""),
       rentingPerson: String(tenant.fullName ?? ""),
@@ -875,17 +872,7 @@ export const getLandRentMonthlyDetails = async (params: {
       sizeOfLand: Number(parcel.sizeSqft ?? 0),
       rentRate: Number(lease.rateLariPerSqft ?? 0),
 
-      latestPaymentDate: latestPayment
-        ? `${dateOnlyUTC2(
-            new Date(latestPayment.paidAt)
-          ).getUTCFullYear()}-${pad2(
-            dateOnlyUTC2(new Date(latestPayment.paidAt)).getUTCMonth() + 1
-          )}-${pad2(dateOnlyUTC2(new Date(latestPayment.paidAt)).getUTCDate())}`
-        : openingLastPaid
-        ? `${openingLastPaid.getUTCFullYear()}-${pad2(
-            openingLastPaid.getUTCMonth() + 1
-          )}-${pad2(openingLastPaid.getUTCDate())}`
-        : null,
+      latestPaymentDate,
 
       numberOfFineDays: 0,
       fineAmount: 0,
@@ -903,22 +890,13 @@ export const getLandRentMonthlyDetails = async (params: {
       outstandingFees: 0,
       fineBreakdown: [],
 
+      // keep fields (but always empty) to avoid breaking old UI
       payments: [],
       paymentsTotal: 0,
     };
   }
 
-  // ✅ Pull payments up to effective cap end-of-day (so same-day payments count)
-  const capDate = endOfDayUTC2(effectiveCap);
-  const payments = await listLandPaymentsUpTo({
-    leaseId: params.leaseId,
-    capDate,
-  });
-
-  const paymentsTotal = round2(
-    payments.reduce((sum, p) => sum + Number(p.amount ?? 0), 0)
-  );
-
+  // ✅ IMPORTANT: ignore payments completely for snapshot
   const computed = computeBucketsWithPaymentsUTC2({
     fromMonth,
     toMonth,
@@ -926,26 +904,8 @@ export const getLandRentMonthlyDetails = async (params: {
     monthlyRent,
     fineLariPerDay,
     effectiveCap,
-    payments: payments.map((p) => ({
-      paidAt: p.paidAt,
-      amount: Number(p.amount ?? 0),
-    })),
+    payments: [], // <- always empty now
   });
-
-  // Latest payment date for display
-  const latestPayment = payments.length ? payments[payments.length - 1] : null;
-  const latestPaymentDate = latestPayment
-    ? (() => {
-        const d = dateOnlyUTC2(new Date(latestPayment.paidAt));
-        return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(
-          d.getUTCDate()
-        )}`;
-      })()
-    : openingLastPaid
-    ? `${openingLastPaid.getUTCFullYear()}-${pad2(
-        openingLastPaid.getUTCMonth() + 1
-      )}-${pad2(openingLastPaid.getUTCDate())}`
-    : null;
 
   return {
     landName: String(parcel.name ?? ""),
@@ -963,12 +923,10 @@ export const getLandRentMonthlyDetails = async (params: {
     sizeOfLand: Number(parcel.sizeSqft ?? 0),
     rentRate: Number(lease.rateLariPerSqft ?? 0),
 
-    latestPaymentDate,
+    latestPaymentDate, // <- opening snapshot only
 
     numberOfFineDays: computed.numberOfFineDays,
     fineAmount: computed.fineAmount,
-
-    // keep your existing mapping (if you want this to mean “fine days”, ok)
     numberOfDaysRentNotPaid: computed.numberOfFineDays,
 
     monthlyRentPaymentAmount: monthlyRent,
@@ -983,9 +941,8 @@ export const getLandRentMonthlyDetails = async (params: {
     outstandingFees: computed.outstandingFees,
     fineBreakdown: computed.fineBreakdown,
 
-    // ✅ for your UI Payments panel
-    payments,
-    paymentsTotal,
+    payments: [], // <- always empty now
+    paymentsTotal: 0, // <- always 0 now
   };
 };
 
