@@ -10,11 +10,12 @@ import {
   LandLeaseOption,
   LandPaymentDoc,
   listLandPaymentsForLease,
+  closeLandRentStatementIfFullyPaid,
 } from "@/lib/landrent/landRent.actions";
 import html2pdf from "html2pdf.js";
 import { CreditCard, Hash, Receipt, User2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 function getThisMonthKey() {
   const d = new Date();
@@ -74,6 +75,7 @@ export default function Page() {
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [capToEndDate, setCapToEndDate] = useState(false);
+  const [viewMode, setViewMode] = useState<"current" | "closed">("current");
 
   const searchParams = useSearchParams();
 
@@ -89,7 +91,7 @@ export default function Page() {
     ReturnType<typeof getLandRentMonthlyDetails>
   > | null>(null);
 
-  // Payments UI
+  // Payments UI (live history)
   const [payments, setPayments] = useState<LandPaymentDoc[]>([]);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
 
@@ -132,6 +134,7 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ✅ FIX 1: include viewMode so statement refetch reacts to toggles
   useEffect(() => {
     if (!leaseId || !monthKey) return;
 
@@ -139,7 +142,12 @@ export default function Page() {
     setLoading(true);
     setError(null);
 
-    getLandRentMonthlyDetails({ leaseId, monthKey, capToEndDate })
+    getLandRentMonthlyDetails({
+      leaseId,
+      monthKey,
+      capToEndDate,
+      view: viewMode,
+    })
       .then((d) => {
         if (!alive) return;
         setDetails(d);
@@ -157,11 +165,18 @@ export default function Page() {
     return () => {
       alive = false;
     };
-  }, [leaseId, monthKey, capToEndDate]);
+  }, [leaseId, monthKey, capToEndDate, viewMode]);
 
+  // ✅ FIX 5: only fetch live payments in current view
   useEffect(() => {
     if (!leaseId) {
       setPayments([]);
+      return;
+    }
+
+    if (viewMode !== "current") {
+      setPayments([]);
+      setPaymentsLoading(false);
       return;
     }
 
@@ -185,11 +200,37 @@ export default function Page() {
     return () => {
       alive = false;
     };
-  }, [leaseId]);
+  }, [leaseId, viewMode]);
 
+  // Snapshot payments from statement (closed view)
+  const statementPayments = useMemo(() => {
+    if (!details) return [];
+    const snapPays = (details as any).payments;
+    return Array.isArray(snapPays) ? snapPays : [];
+  }, [details]);
+
+  // ✅ FIX 4: paymentsTotal depends on view
   const paymentsTotal = useMemo(() => {
-    return payments.reduce((sum, p) => sum + Number((p as any).amount ?? 0), 0);
-  }, [payments]);
+    if (viewMode === "closed") {
+      const snapTotal = Number((details as any)?.paymentsTotal ?? NaN);
+      return Number.isFinite(snapTotal) ? snapTotal : 0;
+    }
+    // current view: compute from live list
+    return (payments ?? []).reduce(
+      (sum, p) => sum + Number((p as any).amount ?? 0),
+      0
+    );
+  }, [viewMode, details, payments]);
+
+  // ✅ FIX 3: one source of truth for rendering payments
+  const shownPayments = useMemo(() => {
+    return viewMode === "closed" ? statementPayments : payments;
+  }, [viewMode, statementPayments, payments]);
+
+  // ✅ FIX 6: lock collecting payments in closed snapshot view
+  const isClosedView = useMemo(() => {
+    return viewMode === "closed" && !!(details as any)?.__snapshot;
+  }, [viewMode, details]);
 
   const selectedLabel = useMemo(() => {
     const o = options.find((x) => x.leaseId === leaseId);
@@ -216,12 +257,12 @@ export default function Page() {
     const monthlyRent = fmtMoney(details.monthlyRentPaymentAmount);
     const totalMonthly = fmtMoney(details.totalRentPaymentMonthly);
 
-    // ✅ Payment record (from Payments history)
-    const latestPaymentRecord = payments.length
-      ? payments
+    // ✅ FIX 3: latest payment based on shownPayments (works for closed snapshot too)
+    const latestPaymentRecord = (shownPayments ?? []).length
+      ? (shownPayments ?? [])
           .slice()
           .sort(
-            (a, b) =>
+            (a: any, b: any) =>
               new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime()
           )[0]
       : null;
@@ -311,7 +352,10 @@ export default function Page() {
           },
           {
             key: "c6",
-            label: { text: "އެންމެފަހުން ދެއްކި ތާރީޚް", highlight: true },
+            label: {
+              text: "އެންމެފަހުން ޤަވާއިދުން ކުލި ދެއްކި ތާރީޚް",
+              highlight: true,
+            },
           },
           { key: "c7", label: { text: "ކުލި ރޭޓް (ލާރި)", highlight: true } },
           {
@@ -345,7 +389,6 @@ export default function Page() {
         }}
       >
         {/* ✅ Payment record (RTL + statement style) */}
-        {/* Payment record (RTL) */}
         <div
           dir="rtl"
           className="mt-4 rounded-2xl ring-1 ring-black/10 overflow-hidden font-dh1"
@@ -372,32 +415,35 @@ export default function Page() {
 
           {/* Rows */}
           <div className="bg-white">
-            {(payments ?? []).length === 0 ? (
+            {(shownPayments ?? []).length === 0 ? (
               <div className="px-4 py-6 text-sm text-black/60 font-dh1">
                 ޕޭމަންޓެއް ނޯޓުވެއެވެ.
               </div>
             ) : (
               <div className="divide-y divide-black/10">
-                {(payments ?? [])
+                {(shownPayments ?? [])
                   .slice()
                   .sort(
-                    (a, b) =>
+                    (a: any, b: any) =>
                       new Date(b.paidAt).getTime() -
                       new Date(a.paidAt).getTime()
                   )
-                  .map((p) => {
-                    const method = String((p as any).method ?? "").trim();
+                  .map((p: any, idx: number) => {
                     const note = String((p as any).note ?? "").trim();
                     const amount = Number((p as any).amount ?? 0);
+                    const key =
+                      (p as any).$id ??
+                      (p as any).id ??
+                      `${String((p as any).paidAt ?? "")}-${idx}`;
 
                     return (
                       <div
-                        key={p.$id}
+                        key={key}
                         className="grid grid-cols-[140px_1fr_140px] items-center"
                       >
                         {/* Date */}
                         <div className="px-4 py-3 text-sm font-semibold tabular-nums text-right">
-                          {fmtDateShort(p.paidAt)}
+                          {fmtDateShort((p as any).paidAt ?? null)}
                         </div>
 
                         {/* Details (one line, centered) */}
@@ -425,7 +471,7 @@ export default function Page() {
               </div>
             )}
 
-            {/* Footer (2 rows, not wide, no placeholder) */}
+            {/* Footer */}
             <div className="border-t border-black/10 bg-black/[0.03] px-4 py-3">
               <div className="mr-auto w-fit text-left">
                 <div className="flex items-baseline justify-between gap-8">
@@ -449,16 +495,17 @@ export default function Page() {
         </div>
       </CouncilInvoiceTemplate>
     );
-  }, [details, monthKey, payments, paymentsTotal]);
+  }, [details, monthKey, shownPayments, paymentsTotal]);
 
   const latestPaymentRecord = useMemo(() => {
-    if (!payments.length) return null;
-    return payments
+    if (!shownPayments.length) return null;
+    return shownPayments
       .slice()
       .sort(
-        (a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime()
+        (a: any, b: any) =>
+          new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime()
       )[0];
-  }, [payments]);
+  }, [shownPayments]);
 
   const balanceAfterPayments = useMemo(() => {
     if (!details) return 0;
@@ -466,6 +513,7 @@ export default function Page() {
     return base - Number(paymentsTotal ?? 0);
   }, [details, paymentsTotal]);
 
+  // ✅ FIX 2: refreshStatement passes viewMode
   async function refreshStatement() {
     if (!leaseId || !monthKey) return;
     setLoading(true);
@@ -475,6 +523,7 @@ export default function Page() {
         leaseId,
         monthKey,
         capToEndDate,
+        view: viewMode,
       });
       setDetails(d);
     } catch (e: any) {
@@ -487,6 +536,11 @@ export default function Page() {
 
   async function refreshPayments() {
     if (!leaseId) return;
+    if (viewMode !== "current") {
+      setPayments([]);
+      setPaymentsLoading(false);
+      return;
+    }
     setPaymentsLoading(true);
     try {
       const rows = await listLandPaymentsForLease(leaseId);
@@ -501,6 +555,7 @@ export default function Page() {
   async function onSubmitPayment(e: React.FormEvent) {
     e.preventDefault();
     if (!leaseId) return;
+    if (isClosedView) return;
 
     setSavingPayment(true);
     setPaymentOk(null);
@@ -533,6 +588,22 @@ export default function Page() {
       setPaymentOk("Payment saved. Statement updated.");
 
       await refreshPayments();
+
+      const closeRes = await closeLandRentStatementIfFullyPaid({
+        leaseId,
+        monthKey,
+        capToEndDate,
+        closedBy: payReceivedBy || "",
+      });
+
+      if (closeRes.closed) {
+        setPaymentOk("Payment saved. Statement CLOSED.");
+        setViewMode("closed");
+      } else {
+        setPaymentOk("Payment saved. Statement updated.");
+      }
+
+      await refreshStatement();
     } catch (err: any) {
       setPaymentError(err?.message ?? "Failed to save payment.");
     } finally {
@@ -589,7 +660,6 @@ export default function Page() {
         .get("pdf")
         .then((pdf: any) => {
           const n = pdf.internal.getNumberOfPages();
-          // remove trailing pages (your issue: last page is blank)
           for (let i = n; i >= 2; i--) pdf.deletePage(i);
         });
 
@@ -605,16 +675,13 @@ export default function Page() {
       {/* Controls */}
       <div className="relative rounded-2xl p-[1px] bg-gradient-to-br from-sky-500/25 via-fuchsia-500/15 to-emerald-500/20">
         <div className="relative overflow-hidden rounded-2xl bg-white ring-1 ring-black/10 shadow-[0_10px_30px_-20px_rgba(0,0,0,.35)]">
-          {/* inner wash */}
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(1200px_520px_at_20%_-10%,rgba(56,189,248,.12),transparent_60%),radial-gradient(900px_420px_at_90%_0%,rgba(217,70,239,.10),transparent_55%)]" />
 
           <div className="relative p-4 md:p-6">
             <div className="grid gap-4 lg:grid-cols-[1fr_2fr] lg:items-center">
-              {/* Left copy */}
               <div className="min-w-0">
                 <div className="flex items-center gap-3">
                   <div className="grid h-10 w-10 place-items-center rounded-xl bg-black/[0.04] ring-1 ring-black/10">
-                    {/* simple inline icon so you don't need imports */}
                     <svg
                       viewBox="0 0 24 24"
                       className="h-5 w-5 text-black/70"
@@ -643,9 +710,7 @@ export default function Page() {
                 </div>
               </div>
 
-              {/* Controls */}
               <div className="grid gap-3 sm:grid-cols-2">
-                {/* Land / Owner */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-black/70">
                     Land / Owner
@@ -678,7 +743,6 @@ export default function Page() {
                       )}
                     </select>
 
-                    {/* chevron */}
                     <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-black/50">
                       <svg
                         viewBox="0 0 24 24"
@@ -696,7 +760,6 @@ export default function Page() {
                   </div>
                 </div>
 
-                {/* Month */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-black/70">
                     Month
@@ -727,16 +790,13 @@ export default function Page() {
       {details ? (
         <div className="relative rounded-2xl p-[1px] bg-gradient-to-br from-sky-500/25 via-fuchsia-500/15 to-emerald-500/20">
           <div className="relative overflow-hidden rounded-2xl bg-white ring-1 ring-black/10 shadow-[0_10px_30px_-20px_rgba(0,0,0,.35)]">
-            {/* inner wash */}
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(1200px_520px_at_20%_-10%,rgba(56,189,248,.12),transparent_60%),radial-gradient(900px_420px_at_90%_0%,rgba(16,185,129,.10),transparent_55%)]" />
 
             <div className="relative p-4 md:p-6">
-              {/* Header row */}
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">
                   <div className="flex items-center gap-3">
                     <div className="grid h-10 w-10 place-items-center rounded-xl bg-black/[0.04] ring-1 ring-black/10">
-                      {/* calculator icon (inline) */}
                       <svg
                         viewBox="0 0 24 24"
                         className="h-5 w-5 text-black/70"
@@ -776,10 +836,8 @@ export default function Page() {
                   </div>
                 </div>
 
-                {/* Controls */}
                 <div className="rounded-2xl bg-white/80 ring-1 ring-black/10 shadow-sm">
                   <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
-                    {/* Latest payment */}
                     <div className="flex items-center gap-3 px-1">
                       <div className="grid h-9 w-9 place-items-center rounded-xl bg-black/[0.04] ring-1 ring-black/10">
                         <svg
@@ -808,7 +866,6 @@ export default function Page() {
 
                     <div className="hidden sm:block h-8 w-px bg-black/10" />
 
-                    {/* Fine cap */}
                     <label className="flex items-center gap-3 select-none px-1">
                       <span className="relative inline-flex h-6 w-11 items-center">
                         <input
@@ -836,7 +893,6 @@ export default function Page() {
                 </div>
               </div>
 
-              {/* Stats */}
               <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
                 {[
                   {
@@ -875,7 +931,6 @@ export default function Page() {
                   </div>
                 ))}
 
-                {/* Total card */}
                 <div className="relative overflow-hidden rounded-2xl bg-black text-white ring-1 ring-black/20 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
                   <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(900px_400px_at_20%_-10%,rgba(255,255,255,.18),transparent_55%)]" />
                   <div className="relative p-4">
@@ -887,7 +942,6 @@ export default function Page() {
                 </div>
               </div>
 
-              {/* Fine breakdown */}
               {(details as any).fineBreakdown?.length ? (
                 <div className="mt-5 relative rounded-2xl p-[1px] bg-gradient-to-br from-black/10 to-black/5">
                   <div className="relative overflow-hidden rounded-2xl bg-white ring-1 ring-black/10">
@@ -943,9 +997,8 @@ export default function Page() {
                 </div>
               ) : null}
 
-              {/* Collect payment + Payments list */}
               <div className="mt-5 grid gap-3 lg:grid-cols-2">
-                {/* Collect payment (redesigned) */}
+                {/* Collect payment */}
                 <div className="relative rounded-2xl p-[1px] bg-gradient-to-br from-black/10 to-black/5">
                   <div className="relative overflow-hidden rounded-2xl bg-white ring-1 ring-black/10 shadow-sm">
                     <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(1100px_420px_at_15%_-10%,rgba(0,0,0,.04),transparent_60%)]" />
@@ -970,12 +1023,20 @@ export default function Page() {
                             setPaymentOk(null);
                             setPaymentError(null);
                           }}
+                          disabled={isClosedView}
                           className="shrink-0 rounded-xl bg-black/[0.03] ring-1 ring-black/10 px-3 py-1.5 text-xs font-medium
-                               transition hover:bg-black/[0.05] hover:-translate-y-0.5"
+                               transition hover:bg-black/[0.05] hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0"
                         >
                           Set time to now
                         </button>
                       </div>
+
+                      {isClosedView ? (
+                        <div className="mt-3 rounded-2xl bg-amber-50 ring-1 ring-amber-200 px-4 py-3 text-sm text-amber-800">
+                          This is a CLOSED snapshot statement. Payments are
+                          locked.
+                        </div>
+                      ) : null}
 
                       <form
                         onSubmit={onSubmitPayment}
@@ -991,9 +1052,12 @@ export default function Page() {
                               value={payAmount}
                               onChange={(e) => setPayAmount(e.target.value)}
                               placeholder="0.00"
+                              disabled={
+                                savingPayment || !leaseId || isClosedView
+                              }
                               className="h-11 w-full rounded-2xl bg-white px-4 tabular-nums
                                    ring-1 ring-black/10 shadow-sm transition
-                                   focus:outline-none focus:ring-2 focus:ring-black/15"
+                                   focus:outline-none focus:ring-2 focus:ring-black/15 disabled:opacity-60"
                             />
                           </div>
 
@@ -1005,9 +1069,12 @@ export default function Page() {
                               type="datetime-local"
                               value={payAtLocal}
                               onChange={(e) => setPayAtLocal(e.target.value)}
+                              disabled={
+                                savingPayment || !leaseId || isClosedView
+                              }
                               className="h-11 w-full rounded-2xl bg-white px-4
                                    ring-1 ring-black/10 shadow-sm transition
-                                   focus:outline-none focus:ring-2 focus:ring-black/15"
+                                   focus:outline-none focus:ring-2 focus:ring-black/15 disabled:opacity-60"
                             />
                           </div>
                         </div>
@@ -1021,9 +1088,12 @@ export default function Page() {
                               <select
                                 value={payMethod}
                                 onChange={(e) => setPayMethod(e.target.value)}
+                                disabled={
+                                  savingPayment || !leaseId || isClosedView
+                                }
                                 className="h-11 w-full appearance-none rounded-2xl bg-white px-4 pr-10
                                      ring-1 ring-black/10 shadow-sm transition
-                                     focus:outline-none focus:ring-2 focus:ring-black/15"
+                                     focus:outline-none focus:ring-2 focus:ring-black/15 disabled:opacity-60"
                               >
                                 <option value="cash">Cash</option>
                                 <option value="bank">Bank</option>
@@ -1057,9 +1127,12 @@ export default function Page() {
                               value={payReceivedBy}
                               onChange={(e) => setPayReceivedBy(e.target.value)}
                               placeholder="Staff name (optional)"
+                              disabled={
+                                savingPayment || !leaseId || isClosedView
+                              }
                               className="h-11 w-full rounded-2xl bg-white px-4
                                    ring-1 ring-black/10 shadow-sm transition
-                                   focus:outline-none focus:ring-2 focus:ring-black/15"
+                                   focus:outline-none focus:ring-2 focus:ring-black/15 disabled:opacity-60"
                             />
                           </div>
                         </div>
@@ -1072,9 +1145,10 @@ export default function Page() {
                             value={payReference}
                             onChange={(e) => setPayReference(e.target.value)}
                             placeholder="Receipt / slip / transaction no. (optional)"
+                            disabled={savingPayment || !leaseId || isClosedView}
                             className="h-11 w-full rounded-2xl bg-white px-4
                                  ring-1 ring-black/10 shadow-sm transition
-                                 focus:outline-none focus:ring-2 focus:ring-black/15"
+                                 focus:outline-none focus:ring-2 focus:ring-black/15 disabled:opacity-60"
                           />
                         </div>
 
@@ -1087,9 +1161,10 @@ export default function Page() {
                             onChange={(e) => setPayNote(e.target.value)}
                             placeholder="Optional note"
                             rows={3}
+                            disabled={savingPayment || !leaseId || isClosedView}
                             className="w-full rounded-2xl bg-white px-4 py-3 text-sm
                                  ring-1 ring-black/10 shadow-sm transition
-                                 focus:outline-none focus:ring-2 focus:ring-black/15"
+                                 focus:outline-none focus:ring-2 focus:ring-black/15 disabled:opacity-60"
                           />
                         </div>
 
@@ -1108,9 +1183,9 @@ export default function Page() {
                         <div className="flex items-center gap-3">
                           <button
                             type="submit"
-                            disabled={savingPayment || !leaseId}
+                            disabled={savingPayment || !leaseId || isClosedView}
                             className="h-11 rounded-2xl bg-black px-5 text-sm font-semibold text-white
-                                 transition hover:-translate-y-0.5 disabled:opacity-50"
+                                 transition hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0"
                           >
                             {savingPayment ? "Saving…" : "Save payment"}
                           </button>
@@ -1123,7 +1198,7 @@ export default function Page() {
                             }}
                             disabled={savingPayment || !leaseId}
                             className="h-11 rounded-2xl bg-black/[0.03] ring-1 ring-black/10 px-5 text-sm font-semibold
-                                 transition hover:bg-black/[0.05] hover:-translate-y-0.5 disabled:opacity-50"
+                                 transition hover:bg-black/[0.05] hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0"
                           >
                             Refresh
                           </button>
@@ -1133,13 +1208,11 @@ export default function Page() {
                   </div>
                 </div>
 
-                {/* Payments (redesigned - FULL, with records) */}
+                {/* Payments list (uses shownPayments) */}
                 <div className="relative rounded-2xl p-[1px] ">
                   <div className="relative overflow-hidden rounded-2xl bg-white ring-1 ring-black/10 shadow-[0_10px_30px_-20px_rgba(0,0,0,.35)]">
-                    {/* subtle inner wash */}
                     <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(1200px_500px_at_20%_-10%,rgba(56,189,248,.12),transparent_60%),radial-gradient(900px_400px_at_90%_0%,rgba(16,185,129,.10),transparent_55%)]" />
 
-                    {/* Header */}
                     <div className="relative flex items-center justify-between gap-4 px-4 py-3">
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="grid h-10 w-10 place-items-center rounded-xl bg-black/[0.04] ring-1 ring-black/10">
@@ -1152,10 +1225,12 @@ export default function Page() {
                               Payments
                             </div>
                             <span className="inline-flex items-center rounded-full bg-black/[0.04] px-2 py-0.5 text-[11px] font-medium text-black/70 ring-1 ring-black/10">
-                              {paymentsLoading
+                              {viewMode === "current" && paymentsLoading
                                 ? "Loading…"
-                                : `${payments.length} record${
-                                    payments.length === 1 ? "" : "s"
+                                : `${(shownPayments ?? []).length} record${
+                                    (shownPayments ?? []).length === 1
+                                      ? ""
+                                      : "s"
                                   }`}
                             </span>
                           </div>
@@ -1177,9 +1252,8 @@ export default function Page() {
 
                     <div className="h-px bg-black/5" />
 
-                    {/* List */}
                     <div className="relative max-h-[420px] overflow-auto p-3">
-                      {payments.length === 0 ? (
+                      {(shownPayments ?? []).length === 0 ? (
                         <div className="grid place-items-center rounded-xl bg-black/[0.02] p-8 ring-1 ring-black/5">
                           <div className="grid h-11 w-11 place-items-center rounded-2xl bg-white ring-1 ring-black/10 shadow-sm">
                             <CreditCard className="h-5 w-5 text-black/60" />
@@ -1193,14 +1267,14 @@ export default function Page() {
                         </div>
                       ) : (
                         <div className="grid gap-2 font-dh1">
-                          {payments
+                          {(shownPayments ?? [])
                             .slice()
                             .sort(
-                              (a, b) =>
+                              (a: any, b: any) =>
                                 new Date(b.paidAt).getTime() -
                                 new Date(a.paidAt).getTime()
                             )
-                            .map((p) => {
+                            .map((p: any, idx: number) => {
                               const method = (p as any).method
                                 ? String((p as any).method)
                                 : null;
@@ -1214,10 +1288,14 @@ export default function Page() {
                                 ? String((p as any).note)
                                 : null;
                               const amount = Number((p as any).amount ?? 0);
+                              const key =
+                                (p as any).$id ??
+                                (p as any).id ??
+                                `${String((p as any).paidAt ?? "")}-${idx}`;
 
                               return (
                                 <div
-                                  key={p.$id}
+                                  key={key}
                                   className="group rounded-xl bg-white/80 ring-1 ring-black/5 shadow-sm transition
                              hover:-translate-y-0.5 hover:shadow-md"
                                 >
@@ -1225,7 +1303,9 @@ export default function Page() {
                                     <div className="min-w-0">
                                       <div className="flex items-center gap-2">
                                         <div className="text-sm font-semibold tabular-nums">
-                                          {fmtDateTimeShort(p.paidAt)}
+                                          {fmtDateTimeShort(
+                                            (p as any).paidAt ?? null
+                                          )}
                                         </div>
 
                                         {method ? (
@@ -1285,6 +1365,7 @@ export default function Page() {
                   </div>
                 </div>
               </div>
+              {/* end collect + payments */}
             </div>
           </div>
         </div>
@@ -1299,6 +1380,32 @@ export default function Page() {
       ) : (
         <div className="surface p-6">Select a lease to view statement.</div>
       )}
+
+      <div className="flex items-center gap-2 justify-end">
+        <button
+          type="button"
+          onClick={() => setViewMode("current")}
+          className={`h-10 rounded-2xl px-4 text-sm font-semibold ring-1 ring-black/10 transition ${
+            viewMode === "current"
+              ? "bg-black text-white"
+              : "bg-white hover:bg-black/[0.03]"
+          }`}
+        >
+          Current
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setViewMode("closed")}
+          className={`h-10 rounded-2xl px-4 text-sm font-semibold ring-1 ring-black/10 transition ${
+            viewMode === "closed"
+              ? "bg-black text-white"
+              : "bg-white hover:bg-black/[0.03]"
+          }`}
+        >
+          Closed
+        </button>
+      </div>
 
       <button
         type="button"

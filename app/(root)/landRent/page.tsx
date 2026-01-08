@@ -47,10 +47,19 @@ function statSafeNumber(v: any) {
 
 function fmtCompact(n: number) {
   if (!Number.isFinite(n)) return "-";
-  // safe, readable compact display for large totals
   if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(2)}K`;
   return fmtMoney(n);
+}
+
+/** Use the *real/current* outstanding if your API provides it; fallback to openingOutstandingTotal */
+function getOutstandingNow(r: any) {
+  return statSafeNumber(
+    r?.outstandingNow ??
+      r?.currentOutstanding ??
+      r?.outstandingTotal ??
+      r?.openingOutstandingTotal
+  );
 }
 
 export default function Page() {
@@ -87,8 +96,9 @@ export default function Page() {
     const s = q.trim().toLowerCase();
     if (!s) return rows;
     return rows.filter((r) => {
-      const hay =
-        `${r.landName} ${r.tenantName} ${r.agreementNumber}`.toLowerCase();
+      const hay = `${(r as any).landName} ${(r as any).tenantName} ${
+        (r as any).agreementNumber
+      }`.toLowerCase();
       return hay.includes(s);
     });
   }, [rows, q]);
@@ -101,8 +111,9 @@ export default function Page() {
       0
     );
 
+    // ✅ real outstanding sum (uses outstandingNow if available)
     const totalOutstanding = filtered.reduce(
-      (sum, r) => sum + statSafeNumber((r as any).openingOutstandingTotal),
+      (sum, r) => sum + getOutstandingNow(r as any),
       0
     );
 
@@ -187,7 +198,7 @@ export default function Page() {
               </div>
             </div>
 
-            {/* Stats (redesigned) */}
+            {/* Stats */}
             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {/* Total leases */}
               <div className="relative overflow-hidden rounded-2xl bg-white/80 ring-1 ring-black/10 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
@@ -231,7 +242,7 @@ export default function Page() {
                 </div>
               </div>
 
-              {/* Total outstanding */}
+              {/* Total outstanding (REAL) */}
               <div className="relative overflow-hidden rounded-2xl bg-white/80 ring-1 ring-black/10 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
                 <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(900px_360px_at_20%_-10%,rgba(245,158,11,.12),transparent_60%)]" />
                 <div className="relative p-4">
@@ -254,39 +265,6 @@ export default function Page() {
                   </div>
                 </div>
               </div>
-
-              {/* Missing last paid (NOT black anymore) */}
-              {/* <div className="relative overflow-hidden rounded-2xl bg-white ring-1 ring-black/10 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(900px_360px_at_20%_-10%,rgba(217,70,239,.10),transparent_60%)]" />
-                <div className="relative p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-[11px] text-muted-foreground">
-                      Missing “Last paid”
-                    </div>
-                    <div className="grid h-9 w-9 place-items-center rounded-2xl bg-black/[0.04] ring-1 ring-black/10">
-                      <CalendarDays className="h-4.5 w-4.5 text-black/70" />
-                    </div>
-                  </div>
-
-                  <div className="mt-2 flex items-end justify-between gap-3">
-                    <div className="text-2xl font-semibold tabular-nums tracking-tight">
-                      {loading ? "—" : totals.missingLastPaid}
-                    </div>
-
-                    <span className="inline-flex items-center rounded-full bg-black/[0.03] px-2 py-0.5 text-[11px] font-medium text-black/70 ring-1 ring-black/10">
-                      {loading || totals.totalLeases === 0
-                        ? "—"
-                        : `${Math.round(
-                            (totals.missingLastPaid / totals.totalLeases) * 100
-                          )}%`}
-                    </span>
-                  </div>
-
-                  <div className="mt-1 text-[11px] text-muted-foreground">
-                    Leases with no recorded last payment date.
-                  </div>
-                </div>
-              </div> */}
             </div>
 
             {err ? (
@@ -319,7 +297,7 @@ export default function Page() {
         </div>
       ) : (
         <>
-          {/* Desktop table (cleaner + correct columns) */}
+          {/* Desktop table */}
           <div className="hidden md:block relative rounded-2xl p-[1px] bg-gradient-to-br from-black/10 to-black/5">
             <div className="relative overflow-hidden rounded-2xl bg-white ring-1 ring-black/10 shadow-sm">
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(1100px_420px_at_15%_-10%,rgba(0,0,0,.04),transparent_60%)]" />
@@ -340,7 +318,7 @@ export default function Page() {
                       <tr>
                         <td
                           className="px-4 py-10 text-muted-foreground"
-                          colSpan={5}
+                          colSpan={4}
                         >
                           No results.
                         </td>
@@ -354,25 +332,26 @@ export default function Page() {
                           <td className="px-4 py-3">
                             <div className="min-w-0">
                               <div className="font-semibold text-lg font-dh1 text-black/85">
-                                {r.landName}
+                                {(r as any).landName}
                               </div>
                               <div className="mt-2 text-md text-muted-foreground font-dh1 truncate">
-                                {r.tenantName}
+                                {(r as any).tenantName}
                               </div>
                             </div>
                           </td>
 
                           <td className="px-4 py-3">
-                            <span className="inline-flex items-center rounded-xl bg-black/[0.02] px-3 py-1.5 ring-1 ring-black/10">
+                            <span className="inline-flex items-center rounded-xl bg-black/[0.02] px-3 py-1.5 ring-1 ring-emerald-500/50">
                               <User2 className="mr-2 h-4 w-4 text-black/55" />
                               <span className="tabular-nums">
-                                {r.agreementNumber}
+                                {(r as any).agreementNumber}
                               </span>
                             </span>
                           </td>
 
+                          {/* ✅ real outstanding */}
                           <td className="px-4 py-3 tabular-nums font-semibold">
-                            {fmtMoney((r as any).openingOutstandingTotal)}
+                            {fmtMoney(getOutstandingNow(r as any))}
                           </td>
 
                           <td className="px-4 py-3">
@@ -406,7 +385,7 @@ export default function Page() {
             </div>
           </div>
 
-          {/* Mobile cards (kept) */}
+          {/* Mobile cards */}
           <div className="md:hidden grid gap-3">
             {filtered.length === 0 ? (
               <div className="rounded-2xl bg-white ring-1 ring-black/10 p-6 text-sm text-muted-foreground">
@@ -425,10 +404,10 @@ export default function Page() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="text-sm font-semibold font-dh1 truncate">
-                            {r.landName}
+                            {(r as any).landName}
                           </div>
                           <div className="mt-0.5 text-xs text-muted-foreground font-dh1 truncate">
-                            {r.tenantName}
+                            {(r as any).tenantName}
                           </div>
                         </div>
 
@@ -447,14 +426,16 @@ export default function Page() {
                       <div className="mt-3 grid gap-2 text-xs">
                         <div className="flex items-center gap-2 text-black/70">
                           <User2 className="h-4 w-4" />
-                          <span className="truncate">{r.agreementNumber}</span>
+                          <span className="truncate">
+                            {(r as any).agreementNumber}
+                          </span>
                         </div>
 
                         <div className="flex items-center gap-2 text-black/70">
                           <CalendarDays className="h-4 w-4" />
                           <span className="tabular-nums">
-                            {fmtDateShort(r.startDate)} →{" "}
-                            {fmtDateShort(r.endDate)}
+                            {fmtDateShort((r as any).startDate)} →{" "}
+                            {fmtDateShort((r as any).endDate)}
                           </span>
                         </div>
 
@@ -473,7 +454,7 @@ export default function Page() {
                               Outstanding
                             </div>
                             <div className="text-sm font-semibold tabular-nums">
-                              {fmtMoney((r as any).openingOutstandingTotal)}
+                              {fmtMoney(getOutstandingNow(r as any))}
                             </div>
                           </div>
                         </div>

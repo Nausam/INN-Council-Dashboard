@@ -195,6 +195,10 @@ const data = {
           title: "Land Rent Leases",
           url: "/landRent",
         },
+        {
+          title: "Add Lease",
+          url: "/landRent/new",
+        },
       ],
     },
   ],
