@@ -172,7 +172,7 @@ export default function WasteCustomersTable({
   }
 
   return (
-    <div className="p-4 md:p-5">
+    <div className="p-4 md:p-5 font-dh1">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Input
           value={q}

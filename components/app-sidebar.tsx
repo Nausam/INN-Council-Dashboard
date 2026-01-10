@@ -2,14 +2,16 @@
 
 import {
   AudioWaveform,
-  Boxes,
   Calendar,
   Command,
   FileText,
   GalleryVerticalEnd,
   Home,
+  MapPinned,
   Package,
+  Trash2,
   Users,
+  Warehouse,
 } from "lucide-react";
 import * as React from "react";
 
@@ -22,9 +24,10 @@ import {
   SidebarFooter,
   SidebarHeader,
   SidebarRail,
+  useSidebar,
 } from "@/components/ui/sidebar";
 
-// This is sample data.
+// Sample data (yours)
 const data = {
   user: {
     name: "Nausam",
@@ -53,169 +56,112 @@ const data = {
       title: "Dashboard",
       url: "#",
       icon: Home,
-      isActive: true,
       items: [
-        {
-          title: "Home",
-          url: "/",
-        },
-        {
-          title: "Admin",
-          url: "/admin",
-        },
+        { title: "Home", url: "/" },
+        { title: "Admin", url: "/admin" },
       ],
     },
     {
       title: "Employees",
       url: "#",
       icon: Users,
-      isActive: true,
       items: [
-        {
-          title: "All Employees",
-          url: "/employees",
-        },
-        {
-          title: "Add Employee",
-          url: "/employees/add",
-        },
+        { title: "All Employees", url: "/employees" },
+        { title: "Add Employee", url: "/employees/add" },
       ],
     },
     {
       title: "Attendance",
       url: "#",
       icon: Calendar,
-      isActive: true,
       items: [
-        {
-          title: "Council",
-          url: "/attendance/council",
-        },
-        {
-          title: "Mosque",
-          url: "/attendance/mosque",
-        },
-        {
-          title: "Prayer Times",
-          url: "/attendance/mosque/prayerTimes",
-        },
+        { title: "Council", url: "/attendance/council" },
+        { title: "Mosque", url: "/attendance/mosque" },
+        { title: "Prayer Times", url: "/attendance/mosque/prayerTimes" },
       ],
     },
     {
       title: "Requests",
       url: "#",
       icon: Calendar,
-      isActive: true,
       items: [
-        {
-          title: "Leave",
-          url: "/requests/leave",
-        },
-        {
-          title: "Overtime",
-          url: "/requests/overtime",
-        },
+        { title: "Leave", url: "/requests/leave" },
+        { title: "Overtime", url: "/requests/overtime" },
       ],
     },
     {
       title: "Reports",
       url: "#",
       icon: FileText,
-      isActive: true,
       items: [
-        {
-          title: "Council Report",
-          url: "/reports/council",
-        },
-        {
-          title: "Mosque Daily Report",
-          url: "/reports/mosque/daily",
-        },
-        {
-          title: "Mosque Monthly Report",
-          url: "/reports/mosque/monthly",
-        },
+        { title: "Council Report", url: "/reports/council" },
+        { title: "Mosque Daily Report", url: "/reports/mosque/daily" },
+        { title: "Mosque Monthly Report", url: "/reports/mosque/monthly" },
       ],
     },
     {
       title: "Stock",
       url: "#",
       icon: Package,
-      isActive: true,
-      items: [
-        {
-          title: "General",
-          url: "#",
-        },
-      ],
+      items: [{ title: "General", url: "#" }],
     },
     {
       title: "Inventory",
       url: "#",
-      icon: Boxes,
-      isActive: true,
-      items: [
-        {
-          title: "General",
-          url: "#",
-        },
-      ],
+      icon: Warehouse,
+      items: [{ title: "General", url: "#" }],
     },
     {
       title: "Waste Management",
       url: "#",
-      icon: Boxes,
-      isActive: true,
+      icon: Trash2,
       items: [
-        {
-          title: "Customers",
-          url: "/wasteManagement/customers",
-        },
-        {
-          title: "Invoices",
-          url: "/wasteManagement/invoices",
-        },
-        {
-          title: "Payments",
-          url: "/wasteManagement/payments",
-        },
-        {
-          title: "Payment History",
-          url: "/wasteManagement/payments/history",
-        },
+        { title: "Customers", url: "/wasteManagement/customers" },
+        { title: "Invoices", url: "/wasteManagement/invoices" },
+        { title: "Payments", url: "/wasteManagement/payments" },
+        { title: "Payment History", url: "/wasteManagement/payments/history" },
       ],
     },
     {
       title: "Land Rent",
       url: "#",
-      icon: Boxes,
-      isActive: true,
+      icon: MapPinned,
       items: [
-        {
-          title: "Land Rent Leases",
-          url: "/landRent",
-        },
-        {
-          title: "Add Lease",
-          url: "/landRent/new",
-        },
+        { title: "Land Rent Leases", url: "/landRent" },
+        { title: "Add Lease", url: "/landRent/new" },
       ],
     },
   ],
 };
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const { state } = useSidebar();
+  const collapsed = state === "collapsed";
+
   return (
-    <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader>
-        <TeamSwitcher teams={data.teams} />
+    <Sidebar collapsible="icon" {...props} className="bg-white">
+      <SidebarHeader className="border-b border-slate-100">
+        <div
+          className={collapsed ? "flex justify-center p-2" : "px-5 pt-6 pb-4"}
+        >
+          <div className={collapsed ? "w-11" : ""}>
+            <TeamSwitcher teams={data.teams} />
+          </div>
+        </div>
       </SidebarHeader>
-      <SidebarContent>
+
+      <SidebarContent className="py-3">
         <NavMain items={data.navMain} />
       </SidebarContent>
-      <SidebarFooter>
-        <NavUser user={data.user} />
+
+      <SidebarFooter className="border-t border-slate-100 bg-white">
+        <div className={collapsed ? "flex justify-center p-2" : "p-3"}>
+          <div className={collapsed ? "w-11" : "w-full"}>
+            <NavUser user={data.user} />
+          </div>
+        </div>
       </SidebarFooter>
+
       <SidebarRail />
     </Sidebar>
   );

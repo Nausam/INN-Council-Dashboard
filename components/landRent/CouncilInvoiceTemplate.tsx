@@ -57,6 +57,8 @@ type CouncilInvoiceTemplateProps = {
 
   footerNote: TextRun;
   children?: React.ReactNode;
+
+  breakBeforeChildren?: boolean; // default true
 };
 
 const GREEN = "#0f4b45";
@@ -129,12 +131,10 @@ function ContactChip(props: {
 
   return (
     <div className="flex items-center gap-3 rounded-2xl bg-white/80 px-4 py-2 ring-1 ring-black/10">
-      <span className="text-[14px] font-semibold text-black">
-        {props.value}
-      </span>
+      <span className="text-sm font-semibold text-black">{props.value}</span>
       <span
         className={cx(
-          "inline-flex h-10 w-10 items-center justify-center rounded-2xl text-white",
+          "inline-flex h-9 w-9 items-center justify-center rounded-2xl text-white",
           accentClass
         )}
       >
@@ -161,30 +161,32 @@ export default function CouncilInvoiceTemplate(
     totalAmount,
     footerNote,
     children,
+    breakBeforeChildren = true,
   } = props;
 
   return (
     <section className="w-full font-dh2 print:bg-white">
-      <div className="mx-auto w-full max-w-[1157px] px-6 py-6">
-        <div className="relative rounded-3xl p-[1px] bg-gradient-to-br from-black/10 via-black/5 to-black/10 print:bg-none print:p-0">
+      <div className="a4-page mx-auto w-full max-w-[1157px] px-6 py-6 print:max-w-none print:px-0 print:py-0">
+        {/* PAGE 1 */}
+        <div className="avoid-break relative rounded-3xl bg-gradient-to-br from-black/10 via-black/5 to-black/10 p-[1px] print:bg-none print:p-0">
           <div className="relative overflow-hidden rounded-3xl bg-white ring-1 ring-black/10 print:ring-0">
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(1200px_520px_at_20%_-10%,rgba(15,75,69,.10),transparent_60%),radial-gradient(900px_420px_at_90%_0%,rgba(56,189,248,.08),transparent_55%)] print:hidden" />
 
-            <div className="relative p-6">
+            <div className="relative p-8 print:p-10">
               {/* Header */}
-              <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-4">
+              <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-6">
                 <div className="flex items-start">
                   {leftLogoSrc ? (
                     <Image
                       src={leftLogoSrc}
                       alt="Council logo"
-                      width={170}
-                      height={110}
+                      width={160}
+                      height={160}
                       priority
-                      className="h-auto w-[170px] object-contain"
+                      className="h-auto w-[160px] object-contain"
                     />
                   ) : (
-                    <div className="h-[110px] w-[170px] rounded-xl bg-black/5 ring-1 ring-black/10" />
+                    <div className="h-[160px] w-[160px] rounded-xl bg-black/5 ring-1 ring-black/10" />
                   )}
                 </div>
 
@@ -193,20 +195,22 @@ export default function CouncilInvoiceTemplate(
                     <Image
                       src={crestSrc}
                       alt="Crest"
-                      width={72}
-                      height={72}
+                      width={66}
+                      height={66}
                       priority
-                      className="h-auto w-[72px] object-contain"
+                      className="h-auto w-[66px] object-contain"
                     />
                   ) : (
-                    <div className="h-[72px] w-[72px] rounded-2xl bg-black/5 ring-1 ring-black/10" />
+                    <div className="h-[66px] w-[66px] rounded-2xl bg-black/5 ring-1 ring-black/10" />
                   )}
 
+                  {/* ✅ Mark as "must stay centered in PDF capture" */}
                   <div
-                    className="mt-3 rounded-2xl bg-white/80 px-6 py-3 text-center text-[16px] leading-snug text-black ring-1 ring-black/10"
+                    data-pdf-center-rtl="1"
+                    className="mt-10 rounded-2xl bg-white/80 px-7 py-4 text-center text-base leading-snug text-black ring-1 ring-black/10"
                     dir="rtl"
                   >
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       {headerCenterLines.map((l, i) => (
                         <div key={i} className="font-semibold">
                           {renderText(l)}
@@ -220,17 +224,16 @@ export default function CouncilInvoiceTemplate(
               </div>
 
               {/* Title */}
-              <div className="mt-6 relative overflow-hidden rounded-2xl ring-1 ring-black/10">
+              <div className="mt-10 relative overflow-hidden rounded-2xl ring-1 ring-black/10">
                 <div
                   className="absolute inset-0"
-                  style={{
-                    background:
-                      "linear-gradient(135deg, rgba(15,75,69,1) 0%, rgba(15,75,69,.92) 45%, rgba(2,132,199,.28) 100%)",
-                  }}
+                  style={{ backgroundColor: GREEN }}
                 />
-                <div className="relative flex items-center justify-center px-4 py-3">
+                <div className="relative flex items-center justify-center px-5 py-4">
+                  {/* ✅ Mark as "must stay centered in PDF capture" */}
                   <div
-                    className="text-center text-[22px] font-semibold text-white"
+                    data-pdf-center-rtl="1"
+                    className="text-center text-2xl font-semibold text-white"
                     dir="rtl"
                   >
                     {renderText(title, "text-white")}
@@ -239,10 +242,10 @@ export default function CouncilInvoiceTemplate(
               </div>
 
               {/* Info blocks */}
-              <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                <div className="rounded-2xl bg-white/90 p-5 ring-1 ring-black/10">
+              <div className="mt-10 grid gap-5 lg:grid-cols-2">
+                <div className="rounded-2xl bg-white/90 p-6 ring-1 ring-black/10">
                   <div
-                    className="space-y-2 text-[16px] leading-relaxed text-black"
+                    className="space-y-6 text-base leading-relaxed text-black"
                     dir="rtl"
                   >
                     {leftInfo.lines.map((l, i) => (
@@ -251,16 +254,16 @@ export default function CouncilInvoiceTemplate(
                       </div>
                     ))}
                     {leftInfo.amount ? (
-                      <div className="mt-3 rounded-2xl bg-black/[0.03] px-4 py-3 text-center text-[18px] font-semibold ring-1 ring-black/10">
+                      <div className="mt-4 rounded-2xl bg-black/[0.03] px-5 py-4 text-center text-lg font-semibold ring-1 ring-black/10">
                         {renderText(leftInfo.amount)}
                       </div>
                     ) : null}
                   </div>
                 </div>
 
-                <div className="rounded-2xl bg-white/90 p-5 ring-1 ring-black/10">
+                <div className="rounded-2xl bg-white/90 p-6 ring-1 ring-black/10">
                   <div
-                    className="space-y-2 text-[16px] leading-relaxed text-black"
+                    className="space-y-6 text-base leading-relaxed text-black"
                     dir="rtl"
                   >
                     {rightInfo.lines.map((l, i) => (
@@ -269,7 +272,7 @@ export default function CouncilInvoiceTemplate(
                       </div>
                     ))}
                     {rightInfo.amount ? (
-                      <div className="mt-3 rounded-2xl bg-black/[0.03] px-4 py-3 text-center text-[18px] font-semibold ring-1 ring-black/10">
+                      <div className="mt-4 rounded-2xl bg-black/[0.03] px-5 py-4 text-center text-lg font-semibold ring-1 ring-black/10">
                         {renderText(rightInfo.amount)}
                       </div>
                     ) : null}
@@ -278,36 +281,37 @@ export default function CouncilInvoiceTemplate(
               </div>
 
               {/* Contact */}
-              <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+              <div className="mt-10 flex flex-wrap items-center justify-between gap-4">
                 <ContactChip
                   value={contact.email}
                   accent="blue"
-                  icon={<MailIcon className="h-5 w-5" />}
+                  icon={<MailIcon className="h-4 w-4" />}
                 />
                 <ContactChip
                   value={contact.phone}
                   accent="indigo"
-                  icon={<PhoneIcon className="h-5 w-5" />}
+                  icon={<PhoneIcon className="h-4 w-4" />}
                 />
                 {contact.whatsapp ? (
                   <ContactChip
                     value={contact.whatsapp}
                     accent="emerald"
-                    icon={<WhatsAppIcon className="h-5 w-5" />}
+                    icon={<WhatsAppIcon className="h-4 w-4" />}
                   />
                 ) : null}
               </div>
 
               {/* Table */}
-              <div className="mt-5 overflow-hidden rounded-2xl ring-1 ring-black/15">
+              <div className="mt-10 overflow-hidden rounded-2xl ring-1 ring-black/15">
                 <table className="w-full border-collapse">
-                  <thead dir="rtl">
+                  {/* ✅ Mark header row for forced centering in PDF capture */}
+                  <thead dir="rtl" data-pdf-center-rtl="1">
                     <tr style={{ backgroundColor: GREEN }}>
                       {columns.map((c) => (
                         <th
                           key={c.key}
                           className={cx(
-                            "px-3 py-3 text-center text-[14px] font-semibold text-white",
+                            "px-4 py-4 text-center text-sm font-semibold text-white",
                             "border-r border-white/20 last:border-r-0",
                             c.className
                           )}
@@ -323,14 +327,14 @@ export default function CouncilInvoiceTemplate(
                       <tr
                         key={idx}
                         className={cx(
-                          "text-center text-[15px] font-semibold text-black",
+                          "text-center text-sm font-semibold text-black",
                           idx % 2 === 0 ? "bg-white" : "bg-black/[0.015]"
                         )}
                       >
                         {columns.map((c) => (
                           <td
                             key={c.key}
-                            className="px-3 py-3 border-t border-r border-black/10 last:border-r-0"
+                            className="px-4 py-4 border-t border-r border-black/10 last:border-r-0"
                           >
                             {renderCell(r[c.key])}
                           </td>
@@ -343,14 +347,14 @@ export default function CouncilInvoiceTemplate(
                     <tr className="bg-black/[0.03]">
                       <td
                         colSpan={2}
-                        className="px-3 py-3 text-center text-[18px] font-extrabold text-black border-t border-r border-black/10"
+                        className="px-4 py-4 text-center text-lg font-extrabold text-black border-t border-r border-black/10"
                       >
                         {renderText(totalAmount)}
                       </td>
 
                       <td
                         colSpan={Math.max(columns.length - 2, 1)}
-                        className="px-4 py-3 text-right text-[16px] font-semibold text-black border-t border-black/15"
+                        className="px-5 py-4 text-right text-base font-semibold text-black border-t border-black/15"
                       >
                         {renderText(totalLabel)}
                       </td>
@@ -360,19 +364,27 @@ export default function CouncilInvoiceTemplate(
               </div>
 
               {/* Footer note */}
-              <div className="mt-6 flex justify-center">
+              <div className="mt-10 flex justify-center">
+                {/* ✅ Mark footer for centering stability */}
                 <div
-                  className="max-w-3xl rounded-2xl bg-red-50 px-5 py-3 text-center text-[16px] font-semibold text-red-700 ring-1 ring-red-200"
+                  data-pdf-center-rtl="1"
+                  className="max-w-3xl rounded-2xl bg-red-50 px-6 py-4 text-center text-sm font-semibold text-red-700 ring-1 ring-red-200"
                   dir="rtl"
                 >
                   {renderText(footerNote, "text-red-700")}
                 </div>
               </div>
-
-              {children ? <div className="mt-3">{children}</div> : null}
             </div>
           </div>
         </div>
+
+        {/* PAGE 2+ */}
+        {children ? (
+          <>
+            {breakBeforeChildren ? <div className="pdf-break" /> : null}
+            <div className="mt-4">{children}</div>
+          </>
+        ) : null}
       </div>
     </section>
   );

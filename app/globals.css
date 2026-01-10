@@ -300,3 +300,37 @@ body {
   background: #fff;
   margin: 20px;
 } */
+
+/* Force A4 portrait when printing */
+/* Smaller typography when exporting via html2pdf/html2canvas */
+html.pdf-export {
+  font-size: 10px; /* default is 16px */
+}
+
+/* Smaller typography when browser prints (optional but good) */
+@media print {
+  html {
+    font-size: 10px;
+  }
+}
+
+/* Used by html2pdf/html2canvas capture */
+html.pdf-export .a4-page {
+  width: 210mm;
+  min-height: 297mm;
+  padding: 16mm;
+  box-sizing: border-box;
+  margin: 0 auto;
+}
+
+/* Works for html2pdf/html2canvas when you add html.pdf-export */
+html.pdf-export .pdf-break {
+  break-before: page;
+  page-break-before: always;
+}
+
+/* Prevent splitting key blocks */
+html.pdf-export .avoid-break {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
