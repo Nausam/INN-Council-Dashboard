@@ -258,17 +258,18 @@ export default function MonthlyCalculationPanel({
               />
               <StatCard
                 title="Total Fines Due"
-                value={fmtMoney(outstandingFees)}
-                hint={`${fineDays} fine days`}
-                tone="mint"
-                icon="tag"
-              />
-              <StatCard
-                title="Total Rent Due"
                 value={fmtMoney(fineAmount)}
-                hint="Total rent due"
+                hint={`${fineDays} fine days`}
                 tone="violet"
                 icon="spark"
+              />
+
+              <StatCard
+                title="Total Rent Due"
+                value={fmtMoney(outstandingFees)}
+                hint="Total rent due"
+                tone="mint"
+                icon="tag"
               />
             </div>
           </div>

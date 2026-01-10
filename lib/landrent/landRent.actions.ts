@@ -1588,3 +1588,113 @@ export async function createLandRentBundle(
 
   return { tenant, parcel, lease };
 }
+
+export const createLandRentHolder = async (input: {
+  landName: string;
+  renterName: string;
+
+  rentStartDate: string; // "YYYY-MM-DD" or ISO
+  rentEndDate: string; // "YYYY-MM-DD" or ISO
+
+  agreementNumber: string;
+  letGoDate: string | null; // "YYYY-MM-DD" or ISO or null
+
+  sizeSqft: number;
+  rate: number;
+  monthlyRent: number;
+
+  paymentDueDay: number;
+  finePerDay: number;
+
+  // Opening snapshot (optional but you’re sending them)
+  lastPaymentDate: string | null; // "YYYY-MM-DD" or ISO or null
+  openingFineDays: number;
+  openingFineMonths: number;
+  openingTotalFine: number;
+  openingOutstandingFees: number;
+  openingOutstandingTotal: number;
+}) => {
+  if (!landTenantsCollectionId)
+    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_TENANTS_COLLECTION");
+  if (!landParcelsCollectionId)
+    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_PARCELS_COLLECTION");
+  if (!landLeasesCollectionId)
+    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_LEASES_COLLECTION");
+
+  const landName = String(input.landName ?? "").trim();
+  const renterName = String(input.renterName ?? "").trim();
+  const agreementNumber = String(input.agreementNumber ?? "").trim();
+
+  if (!landName) throw new Error("Land name is required.");
+  if (!renterName) throw new Error("Renter name is required.");
+  if (!agreementNumber) throw new Error("Agreement number is required.");
+
+  const startISO = toIsoDateTimeOrNull(input.rentStartDate);
+  const endISO = toIsoDateTimeOrNull(input.rentEndDate);
+  if (!startISO) throw new Error("Invalid rentStartDate.");
+  if (!endISO) throw new Error("Invalid rentEndDate.");
+
+  const releasedISO = input.letGoDate
+    ? toIsoDateTimeOrNull(input.letGoDate)
+    : null;
+  const lastPaidISO = input.lastPaymentDate
+    ? toIsoDateTimeOrNull(input.lastPaymentDate)
+    : null;
+
+  const sizeSqft = Number(input.sizeSqft ?? 0);
+  const rate = Number(input.rate ?? 0);
+  const monthlyRent = Number(input.monthlyRent ?? 0);
+
+  const paymentDueDay = clampInt(Number(input.paymentDueDay ?? 10), 1, 28);
+  const finePerDay = Math.max(0, Number(input.finePerDay ?? 0));
+
+  // 1) Tenant
+  const tenant = await createDocumentSmartRetry<LandTenantDoc>(
+    landTenantsCollectionId,
+    {
+      fullName: renterName,
+    }
+  );
+
+  // 2) Parcel
+  const parcel = await createDocumentSmartRetry<LandParcelDoc>(
+    landParcelsCollectionId,
+    {
+      name: landName,
+      sizeSqft,
+    }
+  );
+
+  // 3) Lease
+  // NOTE: if your Appwrite lease schema does not have these opening fields yet,
+  // createDocumentSmartRetry will strip them. (But you should add lastPaymentDate at minimum.)
+  const lease = await createDocumentSmartRetry<LandLeaseDoc>(
+    landLeasesCollectionId,
+    {
+      parcelId: parcel.$id,
+      tenantId: tenant.$id,
+
+      startDate: startISO,
+      endDate: endISO,
+      agreementNumber,
+      releasedDate: releasedISO,
+
+      rateLariPerSqft: rate,
+      paymentDueDay,
+      fineLariPerDay: finePerDay,
+
+      // Optional denorm/helpers (safe to keep; stripped if not in schema)
+      monthlyRent,
+      lastPaymentDate: lastPaidISO,
+      openingFineDays: Math.floor(Number(input.openingFineDays ?? 0)),
+      openingFineMonths: Math.floor(Number(input.openingFineMonths ?? 0)),
+      openingTotalFine: Number(input.openingTotalFine ?? 0),
+      openingOutstandingFees: Number(input.openingOutstandingFees ?? 0),
+      openingOutstandingTotal: Number(input.openingOutstandingTotal ?? 0),
+
+      status: "ACTIVE",
+    } as any
+  );
+
+  return { tenant, parcel, lease };
+};
