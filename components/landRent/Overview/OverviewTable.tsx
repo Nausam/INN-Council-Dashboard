@@ -1,6 +1,5 @@
 "use client";
 
-import { FileText, User2 } from "lucide-react";
 import Link from "next/link";
 import {
   buildStatementHref,
@@ -8,6 +7,11 @@ import {
   getOutstandingNow,
   LandRentOverviewUIRow,
 } from "./landRentOverview.utils";
+import { FileText, User2, Eye, Download } from "lucide-react";
+import {
+  getAgreementPdfUrl,
+  getAgreementPdfDownloadUrl,
+} from "@/lib/landrent/landRent.actions";
 
 export default function OverviewTable({
   rows,
@@ -24,6 +28,7 @@ export default function OverviewTable({
           <thead className="bg-slate-50">
             <tr className="text-left text-slate-600">
               <th className="px-4 py-3 font-semibold">Tenant</th>
+              <th className="px-4 py-3 font-semibold">Agreement No</th>
               <th className="px-4 py-3 font-semibold">Agreement</th>
               <th className="px-4 py-3 font-semibold">Outstanding</th>
               <th className="px-4 py-3 font-semibold text-right">Action</th>
@@ -52,12 +57,44 @@ export default function OverviewTable({
                   </td>
 
                   <td className="px-4 py-3">
-                    <span className="inline-flex items-center rounded-xl bg-slate-50 px-3 py-1.5 ring-1 ring-slate-100">
-                      <User2 className="mr-2 h-4 w-4 text-slate-500" />
-                      <span className="tabular-nums text-slate-700">
-                        {r.agreementNumber ?? "-"}
+                    <div className="flex flex-col gap-2">
+                      <span className="inline-flex items-center rounded-xl bg-slate-50 px-3 py-1.5 ring-1 ring-slate-100">
+                        <User2 className="mr-2 h-4 w-4 text-slate-500" />
+                        <span className="tabular-nums text-slate-700">
+                          {r.agreementNumber ?? "-"}
+                        </span>
                       </span>
-                    </span>
+                    </div>
+                  </td>
+
+                  <td>
+                    {r.agreementPdfFileId ? (
+                      <div className="flex items-center gap-2">
+                        <a
+                          href={getAgreementPdfUrl(r.agreementPdfFileId)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 h-8 rounded-xl bg-white px-3 text-xs font-semibold
+            ring-1 ring-slate-200 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                        >
+                          <Eye className="h-4 w-4 text-slate-600" />
+                        </a>
+
+                        <a
+                          href={getAgreementPdfDownloadUrl(
+                            r.agreementPdfFileId
+                          )}
+                          className="inline-flex items-center gap-1.5 h-8 rounded-xl bg-slate-900 text-white px-3 text-xs font-semibold
+            ring-1 ring-black/10 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                        >
+                          <Download className="h-4 w-4" />
+                        </a>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-slate-400">
+                        No agreement uploaded
+                      </div>
+                    )}
                   </td>
 
                   <td className="px-4 py-3 tabular-nums font-semibold text-slate-900">

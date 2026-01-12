@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, FileText, User2 } from "lucide-react";
+import { CalendarDays, Download, Eye, FileText, User2 } from "lucide-react";
 import Link from "next/link";
 import {
   buildStatementHref,
@@ -9,6 +9,10 @@ import {
   getOutstandingNow,
   LandRentOverviewUIRow,
 } from "./landRentOverview.utils";
+import {
+  getAgreementPdfUrl,
+  getAgreementPdfDownloadUrl,
+} from "@/lib/landrent/landRent.actions";
 
 export default function OverviewCards({
   rows,
@@ -58,6 +62,41 @@ export default function OverviewCards({
                     <User2 className="h-4 w-4" />
                     <span className="truncate">{r.agreementNumber ?? "-"}</span>
                   </div>
+
+                  {r.agreementPdfFileId ? (
+                    <div className="flex items-center gap-2">
+                      <div className="inline-flex items-center gap-1 rounded-xl bg-black/[0.03] ring-1 ring-black/10 px-2 py-1 text-[11px] text-black/70">
+                        <FileText className="h-3.5 w-3.5" />
+                        <span className="truncate max-w-[180px]">
+                          {r.agreementPdfFilename ?? "Agreement.pdf"}
+                        </span>
+                      </div>
+
+                      <a
+                        href={getAgreementPdfUrl(r.agreementPdfFileId)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 h-8 rounded-xl bg-white px-3 text-[11px] font-semibold
+        ring-1 ring-black/10 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        View
+                      </a>
+
+                      <a
+                        href={getAgreementPdfDownloadUrl(r.agreementPdfFileId)}
+                        className="inline-flex items-center gap-1 h-8 rounded-xl bg-black text-white px-3 text-[11px] font-semibold
+        ring-1 ring-black/10 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Download
+                      </a>
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-muted-foreground">
+                      No agreement uploaded
+                    </div>
+                  )}
 
                   <div className="flex items-center gap-2 text-black/70">
                     <CalendarDays className="h-4 w-4" />

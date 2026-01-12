@@ -20,14 +20,19 @@ function dayIndexFlutterStyle(d: Date) {
 }
 
 /** Fetch **island** row for Innamaadhoo (so we can get CategoryId & Minutes) */
+// lib/salat.ts
+
+/** Fetch **island** row for Innamaadhoo (so we can get CategoryId & Minutes) */
 function getInnamaadhooIsland() {
   const db = getDb();
-  // table/columns are case sensitive in this db
-  return db
+
+  // Search for Innamaadhoo in Dhivehi: އިންނަމާދޫ
+  // R. Innamaadhoo atoll code in Dhivehi is: ރ
+  const result = db
     .prepare(
       `SELECT "Atoll","Island","IslandId","CategoryId","Minutes"
          FROM "Island"
-        WHERE "Atoll" = 'R' AND "Island" = 'Innamaadhoo'
+        WHERE "Atoll" = 'ރ' AND "Island" = 'އިންނަމާދޫ'
         LIMIT 1`
     )
     .get() as
@@ -39,6 +44,10 @@ function getInnamaadhooIsland() {
         Minutes: number;
       }
     | undefined;
+
+  // console.log("Innamaadhoo query result:", result);
+
+  return result;
 }
 
 /** Fetch times for Innamaadhoo on a given YYYY-MM-DD (UTC) */

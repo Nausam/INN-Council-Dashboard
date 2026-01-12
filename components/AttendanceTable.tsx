@@ -128,28 +128,46 @@ const MV_OFFSET_MIN = 5 * 60;
 /* ---------------- Time helpers ---------------- */
 const formatTimeForInput = (dateTime: string | null) => {
   if (!dateTime) return "";
-  const d = new Date(dateTime); // UTC moment
-  // Convert to MV wall-clock minutes, then format HH:mm
-  const minsUtc = d.getUTCHours() * 60 + d.getUTCMinutes();
-  const minsMv = (minsUtc + MV_OFFSET_MIN + 24 * 60) % (24 * 60);
-  const hh = String(Math.floor(minsMv / 60)).padStart(2, "0");
-  const mm = String(minsMv % 60).padStart(2, "0");
+  const d = new Date(dateTime); // Parse UTC ISO string
+
+  // Add 5 hours (300 minutes) to UTC to get Maldives time
+  const localMs = d.getTime() + MV_OFFSET_MIN * 60 * 1000;
+  const localDate = new Date(localMs);
+
+  const hh = String(localDate.getUTCHours()).padStart(2, "0");
+  const mm = String(localDate.getUTCMinutes()).padStart(2, "0");
+
   return `${hh}:${mm}`;
 };
 
+// Convert local Maldives time input (HH:mm) + date to UTC ISO string
 const convertTimeToDateTime = (time: string, date: string) => {
   const [hh, mm] = time.split(":").map((v) => parseInt(v, 10));
-  // Start at the UTC midnight of that calendar date
+
+  // Create date at midnight UTC
   const utc = new Date(`${date}T00:00:00.000Z`);
-  // Set minutes so that the *local MV* wall-clock equals hh:mm
-  utc.setUTCMinutes(hh * 60 + mm - MV_OFFSET_MIN);
+
+  // Subtract 5 hours from Maldives time to get UTC
+  const mvMinutes = hh * 60 + mm;
+  const utcMinutes = mvMinutes - MV_OFFSET_MIN;
+
+  utc.setUTCMinutes(utcMinutes);
+
   return utc.toISOString();
 };
 
+// Convert date + local Maldives time (HH:mm) to UTC Date object
 const mvLocalToUtcDate = (date: string, hhmm: string) => {
   const [hh, mm] = hhmm.split(":").map((v) => parseInt(v, 10));
+
   const utc = new Date(`${date}T00:00:00.000Z`);
-  utc.setUTCMinutes(hh * 60 + mm - MV_OFFSET_MIN);
+
+  // Subtract 5 hours from Maldives time to get UTC
+  const mvMinutes = hh * 60 + mm;
+  const utcMinutes = mvMinutes - MV_OFFSET_MIN;
+
+  utc.setUTCMinutes(utcMinutes);
+
   return utc;
 };
 

@@ -94,6 +94,11 @@ export default function Page() {
   const [sizeSqft, setSizeSqft] = useState("1800");
   const [rate, setRate] = useState("1.7");
 
+  // PDF Upload State
+  const [agreementPdf, setAgreementPdf] = useState<File | null>(null);
+  const [agreementPdfBase64, setAgreementPdfBase64] = useState<string>("");
+  const [pdfError, setPdfError] = useState<string>("");
+
   const monthlyRent = useMemo(() => {
     const v = num(sizeSqft) * num(rate);
     return Number.isFinite(v) ? v : 0;
@@ -121,6 +126,62 @@ export default function Page() {
 
   const [breakdown, setBreakdown] = useState<BreakdownRow[]>([]);
 
+  // Handle PDF file selection
+  const handlePdfChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    setPdfError("");
+
+    if (!file) {
+      setAgreementPdf(null);
+      setAgreementPdfBase64("");
+      return;
+    }
+
+    // Validate file type
+    if (file.type !== "application/pdf") {
+      setPdfError("Please select a PDF file");
+      setAgreementPdf(null);
+      setAgreementPdfBase64("");
+      e.target.value = "";
+      return;
+    }
+
+    // Validate file size (max 10MB)
+    const maxSize = 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      setPdfError("PDF file must be smaller than 10MB");
+      setAgreementPdf(null);
+      setAgreementPdfBase64("");
+      e.target.value = "";
+      return;
+    }
+
+    setAgreementPdf(file);
+
+    // Convert to base64
+    try {
+      const base64 = await fileToBase64(file);
+      setAgreementPdfBase64(base64);
+    } catch (error) {
+      setPdfError("Failed to process PDF file");
+      setAgreementPdf(null);
+      setAgreementPdfBase64("");
+    }
+  };
+
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        const base64 = result.split(",")[1];
+        resolve(base64);
+      };
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsDataURL(file);
+    });
+  };
+
   const reset = () => {
     setLandName("");
     setRenterName("");
@@ -131,6 +192,10 @@ export default function Page() {
     setSizeSqft("1800");
     setRate("1.7");
     setPaymentDueDay("10");
+
+    setAgreementPdf(null);
+    setAgreementPdfBase64("");
+    setPdfError("");
 
     setLastPaymentDate("");
     setOpeningFineDays("0");
@@ -165,6 +230,10 @@ export default function Page() {
 
         agreementNumber: agreementNumber.trim(),
         letGoDate: letGoDate ? toISODate(letGoDate) : null,
+
+        // PDF agreement (optional)
+        agreementPdfBase64: agreementPdfBase64 || null,
+        agreementPdfFilename: agreementPdf?.name || null,
 
         sizeSqft: num(sizeSqft),
         rate: num(rate),
@@ -366,6 +435,44 @@ export default function Page() {
               onChange={(e) => setAgreementNumber(e.target.value)}
               className="w-full rounded-2xl ring-1 ring-black/10 bg-white px-4 py-3 outline-none"
             />
+          </div>
+
+          {/* PDF Upload Section */}
+          <div className="space-y-1.5">
+            <label className="subtitle-2">Agreement PDF (optional)</label>
+            <div className="space-y-2">
+              <input
+                type="file"
+                accept="application/pdf"
+                onChange={handlePdfChange}
+                className="w-full rounded-2xl ring-1 ring-black/10 bg-white px-4 py-3 outline-none file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:bg-black/5 file:text-black hover:file:bg-black/10 file:cursor-pointer"
+              />
+              {pdfError && <p className="text-sm text-red-600">{pdfError}</p>}
+              {agreementPdf && !pdfError && (
+                <div className="flex items-center gap-2 text-sm text-green-600">
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M5 13l4 4L19 7"
+                    />
+                  </svg>
+                  <span>
+                    {agreementPdf.name} ({(agreementPdf.size / 1024).toFixed(1)}{" "}
+                    KB)
+                  </span>
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Upload a PDF copy of the rental agreement (max 10MB)
+            </p>
           </div>
 
           {/* Let go */}

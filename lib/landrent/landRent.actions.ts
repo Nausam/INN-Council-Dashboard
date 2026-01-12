@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Client, Databases, ID, Models, Query } from "appwrite";
+import { Client, Databases, ID, Models, Query, Storage } from "appwrite";
 
 /* =============================== Config =============================== */
 
@@ -19,6 +19,7 @@ export const appwriteConfig = {
   // ✅ NEW (your Appwrite collection: land_statements)
   landStatementsCollectionId:
     process.env.NEXT_PUBLIC_APPWRITE_LAND_STATEMENTS_COLLECTION ?? "",
+  agreementsBucketId: process.env.NEXT_PUBLIC_APPWRITE_AGREEMENTS_BUCKET ?? "",
 };
 
 const {
@@ -30,12 +31,15 @@ const {
   landLeasesCollectionId,
   landPaymentsCollectionId,
   landStatementsCollectionId,
+  agreementsBucketId,
 } = appwriteConfig;
 
 const client = new Client();
 client.setEndpoint(endpoint).setProject(projectId);
 
 const databases = new Databases(client);
+
+const storage = new Storage(client);
 
 /* =============================== Types =============================== */
 
@@ -61,6 +65,9 @@ export type LandLeaseDoc = Models.Document & {
   rateLariPerSqft: number;
   paymentDueDay?: number;
   fineLariPerDay?: number;
+
+  agreementPdfFileId?: string | null;
+  agreementPdfFilename?: string | null;
 
   status?: string | null;
 };
@@ -138,6 +145,9 @@ export type LandRentOverviewRow = {
   lastPaymentDate: string | null;
   openingOutstandingTotal: number;
   status: string | null;
+
+  agreementPdfFileId?: string | null;
+  agreementPdfFilename?: string | null;
 };
 
 export type CreateLandRentPayload = {
@@ -166,6 +176,53 @@ export type CreatedLandRentBundle = {
 };
 
 /* =============================== Helpers =============================== */
+
+/* =============================== PDF Storage Helpers =============================== */
+
+export function getAgreementPdfDownloadUrl(fileId: string): string {
+  if (!agreementsBucketId) return "";
+  return `${endpoint}/storage/buckets/${agreementsBucketId}/files/${fileId}/download?project=${projectId}`;
+}
+
+async function uploadPdfFromBase64(
+  base64Data: string,
+  filename: string
+): Promise<string> {
+  if (!agreementsBucketId) {
+    throw new Error("Missing NEXT_PUBLIC_APPWRITE_AGREEMENTS_BUCKET");
+  }
+
+  const byteCharacters = atob(base64Data);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  const blob = new Blob([byteArray], { type: "application/pdf" });
+  const file = new File([blob], filename, { type: "application/pdf" });
+
+  const result = await storage.createFile(
+    agreementsBucketId,
+    ID.unique(),
+    file
+  );
+
+  return result.$id;
+}
+
+export function getAgreementPdfUrl(fileId: string): string {
+  if (!agreementsBucketId) return "";
+  return `${endpoint}/storage/buckets/${agreementsBucketId}/files/${fileId}/view?project=${projectId}`;
+}
+
+async function deletePdfFile(fileId: string): Promise<void> {
+  if (!agreementsBucketId) return;
+  try {
+    await storage.deleteFile(agreementsBucketId, fileId);
+  } catch (error) {
+    console.warn("Failed to delete PDF file:", error);
+  }
+}
 
 const MALDIVES_TZ = "Indian/Maldives";
 
@@ -1455,6 +1512,9 @@ export const fetchLandRentOverview = async (params?: {
           // ✅ IMPORTANT: show remaining, not snapshot total
           openingOutstandingTotal: Number(details.balanceRemaining ?? 0),
           status: "OPEN",
+
+          agreementPdfFileId: l.agreementPdfFileId ?? null, // ADD THIS
+          agreementPdfFilename: l.agreementPdfFilename ?? null, // ADD THIS
         } satisfies LandRentOverviewRow;
       }
 
@@ -1492,6 +1552,8 @@ export const fetchLandRentOverview = async (params?: {
           lastPaymentDate: details.latestPaymentDate ?? null,
           openingOutstandingTotal: Number(details.balanceRemaining ?? 0),
           status: String(details.statement.status ?? "PAID"),
+          agreementPdfFileId: l.agreementPdfFileId ?? null,
+          agreementPdfFilename: l.agreementPdfFilename ?? null,
         } satisfies LandRentOverviewRow;
       }
 
@@ -1518,6 +1580,8 @@ export const fetchLandRentOverview = async (params?: {
         lastPaymentDate: preview.latestPaymentDate ?? null,
         openingOutstandingTotal: Number(preview.totalRentPaymentMonthly ?? 0),
         status: (l as any).status ? String((l as any).status) : null,
+        agreementPdfFileId: l.agreementPdfFileId ?? null,
+        agreementPdfFilename: l.agreementPdfFilename ?? null,
       } satisfies LandRentOverviewRow;
     })
   );
@@ -1599,6 +1663,10 @@ export const createLandRentHolder = async (input: {
   agreementNumber: string;
   letGoDate: string | null; // "YYYY-MM-DD" or ISO or null
 
+  // PDF agreement fields
+  agreementPdfBase64?: string | null;
+  agreementPdfFilename?: string | null;
+
   sizeSqft: number;
   rate: number;
   monthlyRent: number;
@@ -1606,7 +1674,7 @@ export const createLandRentHolder = async (input: {
   paymentDueDay: number;
   finePerDay: number;
 
-  // Opening snapshot (optional but you’re sending them)
+  // Opening snapshot (optional but you're sending them)
   lastPaymentDate: string | null; // "YYYY-MM-DD" or ISO or null
   openingFineDays: number;
   openingFineMonths: number;
@@ -1648,53 +1716,79 @@ export const createLandRentHolder = async (input: {
   const paymentDueDay = clampInt(Number(input.paymentDueDay ?? 10), 1, 28);
   const finePerDay = Math.max(0, Number(input.finePerDay ?? 0));
 
-  // 1) Tenant
-  const tenant = await createDocumentSmartRetry<LandTenantDoc>(
-    landTenantsCollectionId,
-    {
-      fullName: renterName,
+  // Upload PDF if provided
+  let agreementPdfFileId: string | null = null;
+  if (input.agreementPdfBase64 && input.agreementPdfFilename) {
+    try {
+      agreementPdfFileId = await uploadPdfFromBase64(
+        input.agreementPdfBase64,
+        input.agreementPdfFilename
+      );
+    } catch (error) {
+      console.error("Failed to upload PDF:", error);
+      throw new Error("Failed to upload agreement PDF. Please try again.");
     }
-  );
+  }
 
-  // 2) Parcel
-  const parcel = await createDocumentSmartRetry<LandParcelDoc>(
-    landParcelsCollectionId,
-    {
-      name: landName,
-      sizeSqft,
+  try {
+    // 1) Tenant
+    const tenant = await createDocumentSmartRetry<LandTenantDoc>(
+      landTenantsCollectionId,
+      {
+        fullName: renterName,
+      }
+    );
+
+    // 2) Parcel
+    const parcel = await createDocumentSmartRetry<LandParcelDoc>(
+      landParcelsCollectionId,
+      {
+        name: landName,
+        sizeSqft,
+      }
+    );
+
+    // 3) Lease
+    // NOTE: if your Appwrite lease schema does not have these opening fields yet,
+    // createDocumentSmartRetry will strip them. (But you should add lastPaymentDate at minimum.)
+    const lease = await createDocumentSmartRetry<LandLeaseDoc>(
+      landLeasesCollectionId,
+      {
+        parcelId: parcel.$id,
+        tenantId: tenant.$id,
+
+        startDate: startISO,
+        endDate: endISO,
+        agreementNumber,
+        releasedDate: releasedISO,
+
+        rateLariPerSqft: rate,
+        paymentDueDay,
+        fineLariPerDay: finePerDay,
+
+        // PDF fields
+        agreementPdfFileId,
+        agreementPdfFilename: input.agreementPdfFilename,
+
+        // Optional denorm/helpers (safe to keep; stripped if not in schema)
+        monthlyRent,
+        lastPaymentDate: lastPaidISO,
+        openingFineDays: Math.floor(Number(input.openingFineDays ?? 0)),
+        openingFineMonths: Math.floor(Number(input.openingFineMonths ?? 0)),
+        openingTotalFine: Number(input.openingTotalFine ?? 0),
+        openingOutstandingFees: Number(input.openingOutstandingFees ?? 0),
+        openingOutstandingTotal: Number(input.openingOutstandingTotal ?? 0),
+
+        status: "ACTIVE",
+      } as any
+    );
+
+    return { tenant, parcel, lease };
+  } catch (error) {
+    // If lease creation fails and we uploaded a PDF, clean it up
+    if (agreementPdfFileId) {
+      await deletePdfFile(agreementPdfFileId);
     }
-  );
-
-  // 3) Lease
-  // NOTE: if your Appwrite lease schema does not have these opening fields yet,
-  // createDocumentSmartRetry will strip them. (But you should add lastPaymentDate at minimum.)
-  const lease = await createDocumentSmartRetry<LandLeaseDoc>(
-    landLeasesCollectionId,
-    {
-      parcelId: parcel.$id,
-      tenantId: tenant.$id,
-
-      startDate: startISO,
-      endDate: endISO,
-      agreementNumber,
-      releasedDate: releasedISO,
-
-      rateLariPerSqft: rate,
-      paymentDueDay,
-      fineLariPerDay: finePerDay,
-
-      // Optional denorm/helpers (safe to keep; stripped if not in schema)
-      monthlyRent,
-      lastPaymentDate: lastPaidISO,
-      openingFineDays: Math.floor(Number(input.openingFineDays ?? 0)),
-      openingFineMonths: Math.floor(Number(input.openingFineMonths ?? 0)),
-      openingTotalFine: Number(input.openingTotalFine ?? 0),
-      openingOutstandingFees: Number(input.openingOutstandingFees ?? 0),
-      openingOutstandingTotal: Number(input.openingOutstandingTotal ?? 0),
-
-      status: "ACTIVE",
-    } as any
-  );
-
-  return { tenant, parcel, lease };
+    throw error;
+  }
 };

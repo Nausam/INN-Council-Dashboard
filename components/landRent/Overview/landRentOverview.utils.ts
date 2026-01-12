@@ -17,6 +17,8 @@ export type LandRentOverviewUIRow = LandRentOverviewRow & {
   currentOutstanding?: number | null;
   outstandingTotal?: number | null;
   openingOutstandingTotal?: number | null;
+  agreementPdfFileId: string | null;
+  agreementPdfFilename: string | null;
 };
 
 export function fmtMoney(n: number) {
