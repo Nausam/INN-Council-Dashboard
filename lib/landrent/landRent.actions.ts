@@ -106,9 +106,6 @@ export type LandStatementDoc = Models.Document & {
   snapshot_fineBreakdownJson?: string | null;
 
   snapshot_capToEndDate?: boolean | null;
-
-  paySlipFile: File | null;
-  setPaySlipFile: (f: File | null) => void;
 };
 
 export type LandPaymentDoc = Models.Document & {
@@ -120,6 +117,10 @@ export type LandPaymentDoc = Models.Document & {
 
   note?: string;
   receivedBy?: string;
+
+  slipFileId: string;
+  slipFileName: string;
+  slipMime?: string | null;
 };
 
 export type LandLeaseOption = {
@@ -1288,17 +1289,18 @@ export const createLandRentPayment = async (input: {
     );
   }
 
-  let slipFileId: string | null = null;
-  let slipMime: string | null = null;
-
-  if (input.slipDataUrl && input.slipFilename) {
-    const uploaded = await uploadSlipFromDataUrl(
-      input.slipDataUrl,
-      input.slipFilename
-    );
-    slipFileId = uploaded.fileId;
-    slipMime = uploaded.mime;
+  if (!input.slipDataUrl || !input.slipFilename) {
+    throw new Error("Payment slip is required.");
   }
+
+  const uploaded = await uploadSlipFromDataUrl(
+    input.slipDataUrl,
+    input.slipFilename
+  );
+
+  const slipFileId = uploaded.fileId;
+  const slipMime = uploaded.mime;
+  const slipFileName = input.slipFilename;
 
   const created = await databases.createDocument<LandPaymentDoc>(
     databaseId,
@@ -1314,7 +1316,7 @@ export const createLandRentPayment = async (input: {
       note: input.note ?? "",
       receivedBy: input.receivedBy ?? "",
       slipFileId,
-      slipFilename: input.slipFilename ?? null,
+      slipFileName,
       slipMime,
     }
   );

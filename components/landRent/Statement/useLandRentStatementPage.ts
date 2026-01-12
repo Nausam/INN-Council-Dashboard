@@ -63,6 +63,15 @@ export function useLandRentStatementPage() {
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [paymentOk, setPaymentOk] = useState<string | null>(null);
 
+  function fileToDataUrl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(new Error("Failed to read slip file."));
+      r.readAsDataURL(file);
+    });
+  }
+
   // Load lease options
   useEffect(() => {
     let alive = true;
@@ -254,6 +263,14 @@ export function useLandRentStatementPage() {
       if (Number.isNaN(paidAt.getTime()))
         throw new Error("Invalid payment date/time.");
 
+      let slipDataUrl: string | null = null;
+      let slipFilename: string | null = null;
+
+      if (paySlipFile) {
+        slipDataUrl = await fileToDataUrl(paySlipFile);
+        slipFilename = paySlipFile.name || "payment-slip";
+      }
+
       await createLandRentPayment({
         statementId: openStatement.statement.$id,
         paidAt: paidAt.toISOString(),
@@ -262,6 +279,8 @@ export function useLandRentStatementPage() {
         note: payNote || "",
         receivedBy: payReceivedBy || "",
         capToEndDate,
+        slipDataUrl,
+        slipFilename,
       });
 
       setPayAmount("");
