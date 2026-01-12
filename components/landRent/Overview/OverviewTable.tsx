@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  getAgreementPdfDownloadUrl,
+  getAgreementPdfUrl,
+} from "@/lib/landrent/landRent.actions";
+import { Download, Eye, FileText, User2 } from "lucide-react";
 import Link from "next/link";
 import {
   buildStatementHref,
@@ -7,11 +12,6 @@ import {
   getOutstandingNow,
   LandRentOverviewUIRow,
 } from "./landRentOverview.utils";
-import { FileText, User2, Eye, Download } from "lucide-react";
-import {
-  getAgreementPdfUrl,
-  getAgreementPdfDownloadUrl,
-} from "@/lib/landrent/landRent.actions";
 
 export default function OverviewTable({
   rows,
@@ -74,7 +74,7 @@ export default function OverviewTable({
                           href={getAgreementPdfUrl(r.agreementPdfFileId)}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center gap-1.5 h-8 rounded-xl bg-white px-3 text-xs font-semibold
+                          className="inline-flex items-center gap-1.5 h-10 rounded-xl bg-white px-3 text-xs font-semibold
             ring-1 ring-slate-200 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
                         >
                           <Eye className="h-4 w-4 text-slate-600" />
@@ -84,7 +84,7 @@ export default function OverviewTable({
                           href={getAgreementPdfDownloadUrl(
                             r.agreementPdfFileId
                           )}
-                          className="inline-flex items-center gap-1.5 h-8 rounded-xl bg-slate-900 text-white px-3 text-xs font-semibold
+                          className="inline-flex items-center gap-1.5 h-10 rounded-xl bg-slate-900 text-white px-3 text-xs font-semibold
             ring-1 ring-black/10 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
                         >
                           <Download className="h-4 w-4" />

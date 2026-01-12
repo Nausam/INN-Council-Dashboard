@@ -184,6 +184,11 @@ export type CreatedLandRentBundle = {
 
 /* =============================== Helpers =============================== */
 
+export function getPaymentSlipDownloadUrl(fileId: string): string {
+  if (!agreementsBucketId) return "";
+  return `${endpoint}/storage/buckets/${agreementsBucketId}/files/${fileId}/download?project=${projectId}`;
+}
+
 function parseDataUrl(dataUrl: string) {
   // "data:<mime>;base64,<data>"
   const m = String(dataUrl).match(/^data:(.+?);base64,(.+)$/);
@@ -1055,6 +1060,10 @@ export const getLandStatementDetails = async (params: {
     reference: String((p as any).reference ?? ""),
     note: String((p as any).note ?? ""),
     receivedBy: String((p as any).receivedBy ?? ""),
+
+    slipFileId: (p as any).slipFileId ?? null,
+    slipFileName: (p as any).slipFileName ?? null,
+    slipMime: (p as any).slipMime ?? null,
   }));
 
   const paymentsTotal = round2(

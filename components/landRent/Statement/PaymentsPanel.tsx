@@ -2,6 +2,11 @@
 "use client";
 
 import { fmtMoney } from "@/components/landRent/Statement/landRentStatement.utils";
+import {
+  getPaymentSlipDownloadUrl,
+  getPaymentSlipUrl,
+} from "@/lib/landrent/landRent.actions";
+import { Download, Eye } from "lucide-react";
 
 function clampPct(n: number) {
   if (!Number.isFinite(n)) return 0;
@@ -114,7 +119,8 @@ export default function PaymentsPanel({
               key={p?.$id ?? p?.id ?? `${iso ?? "x"}-${idx}`}
               className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-100"
             >
-              <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-4">
+                {/* Left */}
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="text-sm font-semibold text-slate-900 tabular-nums">
@@ -125,31 +131,56 @@ export default function PaymentsPanel({
                     </span>
                   </div>
 
-                  <div className="mt-1 text-xs text-slate-500 tabular-nums">
-                    {ref ? `Ref: ${ref}` : " "}
-                    {receivedBy ? (
-                      <>
-                        <span className="mx-2 text-slate-300">•</span>
-                        Received by: {receivedBy}
-                      </>
-                    ) : null}
-                  </div>
+                  {receivedBy ? (
+                    <div className="mt-1 text-xs text-slate-500">
+                      Received by: {receivedBy}
+                    </div>
+                  ) : null}
+                </div>
 
+                {/* Middle (note) */}
+                <div className="flex-1 min-w-0 flex items-center justify-center">
                   {note ? (
-                    <div className="mt-2 text-xs text-slate-600 font-dh1">
+                    <div className="text-md text-slate-700 font-dh1 text-center line-clamp-2">
                       {note}
                     </div>
                   ) : null}
-
-                  {/* <div className="mt-3">
-                    <ProgressBar pct={pct} />
-                  </div> */}
                 </div>
 
-                <div className="shrink-0 rounded-xl bg-white px-3 py-2 text-right ring-1 ring-slate-100">
-                  <div className="text-[11px] text-slate-500">Amount</div>
-                  <div className="font-semibold tabular-nums text-slate-900">
-                    {fmtMoney(amount)}
+                {/* Right */}
+                <div className="shrink-0 flex items-center gap-3">
+                  {p?.slipFileId ? (
+                    <div className="flex items-center gap-2">
+                      {/* View */}
+                      <a
+                        href={getPaymentSlipUrl(p.slipFileId)}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="View slip"
+                        className="inline-flex items-center gap-1.5 h-10 rounded-xl bg-white px-3 text-xs font-semibold
+            ring-1 ring-slate-200 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                      >
+                        <Eye className="h-4 w-4 text-slate-700" />
+                      </a>
+
+                      {/* Download */}
+                      <a
+                        href={getPaymentSlipDownloadUrl(p.slipFileId)}
+                        download={p?.slipFilename ?? "payment-slip"}
+                        title="Download slip"
+                        className="inline-flex items-center gap-1.5 h-10 rounded-xl bg-slate-900 text-white px-3 text-xs font-semibold
+            ring-1 ring-black/10 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                      >
+                        <Download className="h-4 w-4 text-white" />
+                      </a>
+                    </div>
+                  ) : null}
+
+                  <div className="rounded-xl bg-white px-3 py-2 text-right ring-1 ring-slate-100">
+                    <div className="text-[11px] text-slate-500">Amount</div>
+                    <div className="font-semibold tabular-nums text-slate-900">
+                      {fmtMoney(amount)}
+                    </div>
                   </div>
                 </div>
               </div>
