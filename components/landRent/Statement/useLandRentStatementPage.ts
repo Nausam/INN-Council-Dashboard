@@ -55,7 +55,7 @@ export function useLandRentStatementPage() {
     toDatetimeLocalValue(new Date())
   );
   const [payMethod, setPayMethod] = useState<string>("cash");
-  const [payReference, setPayReference] = useState<string>("");
+  const [paySlipFile, setPaySlipFile] = useState<File | null>(null);
   const [payNote, setPayNote] = useState<string>("");
   const [payReceivedBy, setPayReceivedBy] = useState<string>("");
 
@@ -259,14 +259,13 @@ export function useLandRentStatementPage() {
         paidAt: paidAt.toISOString(),
         amount,
         method: payMethod || "",
-        reference: payReference || "",
         note: payNote || "",
         receivedBy: payReceivedBy || "",
         capToEndDate,
       });
 
       setPayAmount("");
-      setPayReference("");
+      setPaySlipFile(null);
       setPayNote("");
 
       await refreshAll();
@@ -322,8 +321,9 @@ export function useLandRentStatementPage() {
     setPayAtLocal,
     payMethod,
     setPayMethod,
-    payReference,
-    setPayReference,
+    paySlipFile,
+    setPaySlipFile,
+
     payNote,
     setPayNote,
     payReceivedBy,

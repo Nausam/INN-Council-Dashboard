@@ -44,8 +44,8 @@ export default function MonthlyCalculationPanel({
   setPayAtLocal,
   payMethod,
   setPayMethod,
-  payReference,
-  setPayReference,
+  paySlipFile,
+  setPaySlipFile,
   payNote,
   setPayNote,
   payReceivedBy,
@@ -79,8 +79,9 @@ export default function MonthlyCalculationPanel({
   setPayAtLocal: (v: string) => void;
   payMethod: string;
   setPayMethod: (v: string) => void;
-  payReference: string;
-  setPayReference: (v: string) => void;
+  paySlipFile: File | null;
+  setPaySlipFile: (v: File | null) => void;
+
   payNote: string;
   setPayNote: (v: string) => void;
   payReceivedBy: string;
@@ -497,8 +498,8 @@ export default function MonthlyCalculationPanel({
             setPayAtLocal={setPayAtLocal}
             payMethod={payMethod}
             setPayMethod={setPayMethod}
-            payReference={payReference}
-            setPayReference={setPayReference}
+            paySlipFile={paySlipFile}
+            setPaySlipFile={setPaySlipFile}
             payNote={payNote}
             setPayNote={setPayNote}
             payReceivedBy={payReceivedBy}
@@ -760,8 +761,10 @@ function StatementAndPaymentsForm({
   setPayAtLocal,
   payMethod,
   setPayMethod,
-  payReference,
-  setPayReference,
+
+  paySlipFile,
+  setPaySlipFile,
+
   payNote,
   setPayNote,
   payReceivedBy,
@@ -789,8 +792,10 @@ function StatementAndPaymentsForm({
   setPayAtLocal: (v: string) => void;
   payMethod: string;
   setPayMethod: (v: string) => void;
-  payReference: string;
-  setPayReference: (v: string) => void;
+
+  paySlipFile: File | null;
+  setPaySlipFile: (v: File | null) => void;
+
   payNote: string;
   setPayNote: (v: string) => void;
   payReceivedBy: string;
@@ -968,16 +973,39 @@ function StatementAndPaymentsForm({
           </Field>
         </div>
 
-        <Field label="Reference">
-          <input
-            value={payReference}
-            onChange={(e) => setPayReference(e.target.value)}
-            placeholder="Receipt / slip / transaction no. (optional)"
-            disabled={savingPayment || !openStatement}
-            className="h-11 w-full rounded-xl bg-slate-50 px-4 text-slate-900
-              ring-1 ring-slate-100 shadow-sm transition
-              focus:outline-none focus:ring-2 focus:ring-sky-200 disabled:opacity-60"
-          />
+        <Field label="Slip upload">
+          <div className="flex items-center gap-3">
+            <label className="inline-flex h-11 cursor-pointer items-center justify-center rounded-xl bg-slate-50 px-4 text-sm font-semibold text-slate-700 ring-1 ring-slate-100 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md disabled:opacity-60">
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                className="hidden"
+                disabled={savingPayment || !openStatement}
+                onChange={(e) => setPaySlipFile(e.target.files?.[0] ?? null)}
+              />
+              Choose file
+            </label>
+
+            <div className="min-w-0 flex-1 rounded-xl bg-white px-3 py-2 ring-1 ring-slate-100">
+              <div className="truncate text-sm font-medium text-slate-900">
+                {paySlipFile?.name || "No file selected"}
+              </div>
+              <div className="text-[12px] text-slate-500">
+                JPG/PNG/PDF accepted
+              </div>
+            </div>
+
+            {paySlipFile ? (
+              <button
+                type="button"
+                onClick={() => setPaySlipFile(null)}
+                disabled={savingPayment || !openStatement}
+                className="h-11 rounded-xl bg-slate-50 px-4 text-sm font-semibold text-slate-700 ring-1 ring-slate-100 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md disabled:opacity-60"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
         </Field>
 
         <Field label="Note">

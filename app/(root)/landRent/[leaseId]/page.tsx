@@ -149,8 +149,8 @@ export default function Page() {
         setPayAtLocal={s.setPayAtLocal}
         payMethod={s.payMethod}
         setPayMethod={s.setPayMethod}
-        payReference={s.payReference}
-        setPayReference={s.setPayReference}
+        paySlipFile={s.paySlipFile}
+        setPaySlipFile={s.setPaySlipFile}
         payNote={s.payNote}
         setPayNote={s.setPayNote}
         payReceivedBy={s.payReceivedBy}

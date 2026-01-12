@@ -16,7 +16,6 @@ export const appwriteConfig = {
     process.env.NEXT_PUBLIC_APPWRITE_LAND_LEASES_COLLECTION ?? "",
   landPaymentsCollectionId:
     process.env.NEXT_PUBLIC_APPWRITE_LAND_PAYMENTS_COLLECTION ?? "",
-  // ✅ NEW (your Appwrite collection: land_statements)
   landStatementsCollectionId:
     process.env.NEXT_PUBLIC_APPWRITE_LAND_STATEMENTS_COLLECTION ?? "",
   agreementsBucketId: process.env.NEXT_PUBLIC_APPWRITE_AGREEMENTS_BUCKET ?? "",
@@ -107,6 +106,9 @@ export type LandStatementDoc = Models.Document & {
   snapshot_fineBreakdownJson?: string | null;
 
   snapshot_capToEndDate?: boolean | null;
+
+  paySlipFile: File | null;
+  setPaySlipFile: (f: File | null) => void;
 };
 
 export type LandPaymentDoc = Models.Document & {
@@ -115,7 +117,7 @@ export type LandPaymentDoc = Models.Document & {
   paidAt: string;
   amount: number;
   method?: string;
-  reference?: string;
+
   note?: string;
   receivedBy?: string;
 };
@@ -148,6 +150,10 @@ export type LandRentOverviewRow = {
 
   agreementPdfFileId?: string | null;
   agreementPdfFilename?: string | null;
+
+  slipFileId?: string | null;
+  slipFilename?: string | null;
+  slipMime?: string | null;
 };
 
 export type CreateLandRentPayload = {
@@ -176,6 +182,46 @@ export type CreatedLandRentBundle = {
 };
 
 /* =============================== Helpers =============================== */
+
+function parseDataUrl(dataUrl: string) {
+  // "data:<mime>;base64,<data>"
+  const m = String(dataUrl).match(/^data:(.+?);base64,(.+)$/);
+  if (!m) throw new Error("Invalid slip data (expected data URL).");
+  return { mime: m[1], base64: m[2] };
+}
+
+async function uploadSlipFromDataUrl(
+  dataUrl: string,
+  filename: string
+): Promise<{ fileId: string; mime: string }> {
+  if (!agreementsBucketId) {
+    throw new Error("Missing NEXT_PUBLIC_APPWRITE_PAYMENT_SLIPS_BUCKET");
+  }
+
+  const { mime, base64 } = parseDataUrl(dataUrl);
+
+  const byteCharacters = atob(base64);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  const blob = new Blob([byteArray], { type: mime });
+  const file = new File([blob], filename, { type: mime });
+
+  const result = await storage.createFile(
+    agreementsBucketId,
+    ID.unique(),
+    file
+  );
+
+  return { fileId: result.$id, mime };
+}
+
+export function getPaymentSlipUrl(fileId: string): string {
+  if (!agreementsBucketId) return "";
+  return `${endpoint}/storage/buckets/${agreementsBucketId}/files/${fileId}/view?project=${projectId}`;
+}
 
 /* =============================== PDF Storage Helpers =============================== */
 
@@ -1211,6 +1257,8 @@ export const createLandRentPayment = async (input: {
   reference?: string;
   note?: string;
   receivedBy?: string;
+  slipDataUrl?: string | null;
+  slipFilename?: string | null;
   capToEndDate?: boolean; // used only for auto-mark-paid calc
 }) => {
   if (!landPaymentsCollectionId)
@@ -1240,6 +1288,18 @@ export const createLandRentPayment = async (input: {
     );
   }
 
+  let slipFileId: string | null = null;
+  let slipMime: string | null = null;
+
+  if (input.slipDataUrl && input.slipFilename) {
+    const uploaded = await uploadSlipFromDataUrl(
+      input.slipDataUrl,
+      input.slipFilename
+    );
+    slipFileId = uploaded.fileId;
+    slipMime = uploaded.mime;
+  }
+
   const created = await databases.createDocument<LandPaymentDoc>(
     databaseId,
     landPaymentsCollectionId,
@@ -1253,6 +1313,9 @@ export const createLandRentPayment = async (input: {
       reference: input.reference ?? "",
       note: input.note ?? "",
       receivedBy: input.receivedBy ?? "",
+      slipFileId,
+      slipFilename: input.slipFilename ?? null,
+      slipMime,
     }
   );
 
