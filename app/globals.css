@@ -334,3 +334,65 @@ html.pdf-export .avoid-break {
   break-inside: avoid;
   page-break-inside: avoid;
 }
+
+@media print {
+
+  /* show only the print area */
+  body * {
+    visibility: hidden !important;
+  }
+
+  #print-area,
+  #print-area * {
+    visibility: visible !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 6mm;
+  }
+
+  /* place content at top-left and make it use full page width */
+  #print-area {
+    position: fixed !important;
+    inset: 0 !important;
+    width: calc(210mm - 12mm) !important;
+    /* A4 width minus margins */
+    height: auto !important;
+    background: #fff !important;
+    overflow: hidden !important;
+  }
+
+  /* force the table to occupy full available width */
+  #print-area table {
+    width: 100% !important;
+    table-layout: fixed !important;
+  }
+
+  /* shrink typography + padding for print so the whole month fits */
+  #print-area th,
+  #print-area td {
+    font-size: 10pt !important;
+    line-height: 1 !important;
+    padding: 2mm 1.2mm !important;
+  }
+
+  /* headings a bit larger but still compact */
+  #print-area thead th {
+    font-size: 12pt !important;
+  }
+
+  /* optional: reduce borders intensity if needed */
+  #print-area th,
+  #print-area td {
+    border-color: #444 !important;
+  }
+
+  /* prevent weird RTL shifts */
+  #print-area {
+    direction: rtl !important;
+  }
+
+  /* do not print the note if it pushes content (optional) */
+  /* #print-area .print-hide { display: none !important; } */
+}

@@ -16,7 +16,7 @@ function dayIndexFlutterStyle(d: Date) {
   const diffDays = Math.floor(
     (Date.UTC(y, d.getUTCMonth(), d.getUTCDate()) - start) / 86400000
   );
-  return diffDays - 1;
+  return diffDays;
 }
 
 /** Fetch **island** row for Innamaadhoo (so we can get CategoryId & Minutes) */
@@ -122,6 +122,6 @@ export function dayIndexFromISO(dateISO: string) {
   const d = new Date(dateISO + "T00:00:00Z");
   const year = d.getUTCFullYear();
   const start = Date.UTC(year, 0, 1);
-  const idx = Math.floor((d.getTime() - start) / 86400000) - 1;
+  const idx = Math.floor((d.getTime() - start) / 86400000);
   return idx;
 }

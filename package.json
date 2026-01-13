@@ -40,6 +40,7 @@
     "dotenv": "^17.2.3",
     "html2pdf.js": "^0.9.3",
     "input-otp": "^1.4.1",
+    "jspdf": "^4.0.0",
     "lucide-react": "^0.451.0",
     "next": "14.2.14",
     "next-themes": "^0.3.0",
