@@ -211,6 +211,73 @@ export default function Page() {
     });
   }, [dim]);
 
+  // ===== Empty rules: day -> which prayer(s) should be blank =====
+  type PrayerSelect = GroupKey | "ALL";
+  type EmptyRules = Record<number, Partial<Record<GroupKey, true>>>;
+
+  const [emptyRules, setEmptyRules] = useState<EmptyRules>({});
+  const [emptyDay, setEmptyDay] = useState<number>(1);
+  const [emptyPrayer, setEmptyPrayer] = useState<PrayerSelect>("ALL");
+
+  function isEmpty(day: number, key: GroupKey) {
+    return !!emptyRules[day]?.[key];
+  }
+
+  function addEmptyRule(day: number, prayer: PrayerSelect) {
+    setEmptyRules((prev) => {
+      const next: EmptyRules = { ...prev };
+      const dayMap = { ...(next[day] ?? {}) };
+
+      if (prayer === "ALL") {
+        for (const g of GROUPS) dayMap[g.key] = true;
+      } else {
+        dayMap[prayer] = true;
+      }
+
+      next[day] = dayMap;
+      return next;
+    });
+  }
+
+  function removeEmptyRule(day: number, prayer: PrayerSelect) {
+    setEmptyRules((prev) => {
+      const existing = prev[day];
+      if (!existing) return prev;
+
+      const next: EmptyRules = { ...prev };
+      const dayMap = { ...existing };
+
+      if (prayer === "ALL") {
+        delete next[day];
+        return next;
+      }
+
+      delete dayMap[prayer];
+      if (Object.keys(dayMap).length === 0) delete next[day];
+      else next[day] = dayMap;
+
+      return next;
+    });
+  }
+
+  function groupLabel(key: GroupKey) {
+    return GROUPS.find((g) => g.key === key)?.label ?? key;
+  }
+
+  // keep empty rules valid when month changes
+  useEffect(() => {
+    setEmptyRules((prev) => {
+      const next: EmptyRules = {};
+      for (const [k, v] of Object.entries(prev)) {
+        const day = Number(k);
+        if (day >= 1 && day <= dim) next[day] = v;
+      }
+      return next;
+    });
+
+    setEmptyDay((d) => (d >= 1 && d <= dim ? d : 1));
+  }, [dim]);
+
   // fetch month data
   useEffect(() => {
     let alive = true;
@@ -288,6 +355,15 @@ export default function Page() {
 
   const monthLabel = MONTHS.find((m) => m.value === month)?.label ?? "";
 
+  type HeadingMode = "ATTENDANCE" | "SHEET2";
+
+  const [headingMode, setHeadingMode] = useState<HeadingMode>("ATTENDANCE");
+
+  const headingText =
+    headingMode === "ATTENDANCE"
+      ? `މިސްކިތު އިމާމުން ފަސްވަގުތު މިސްކިތަށް ޙާޟިރު ވަމުންދާގޮތް (${monthLabel} ${year})`
+      : `ޕޫލް އިމާމުން/މުދިމުން ފަސްވަގުތު މިސްކިތަށް ޙާޟިރު ވަމުންދާގޮތުގެ ޙާޒިރީ (${monthLabel} ${year})`; // <- change this text
+
   // ✅ two dropdowns, pick A/B/BOTH
   const [viewSelect, setViewSelect] = useState<RangeKey>("BOTH");
   const [printSelect, setPrintSelect] = useState<RangeKey>("BOTH");
@@ -308,6 +384,20 @@ export default function Page() {
     const r = ranges[printSelect];
     return rows.filter((x) => x.day >= r.from && x.day <= r.to);
   }, [rows, ranges, printSelect]);
+
+  type ImamOptionKey = "Shahidh" | "Zahidh" | "Umair" | "Neem" | "Yazaan";
+
+  const IMAM_OPTIONS: Record<ImamOptionKey, string> = {
+    Shahidh: " އިމާމް: މުހައްމަދު ޝާހިދު / ނީލޯފަރު",
+    Zahidh: " އިމާމް: އަޙްމަދު ޒާހިދު / ބަށިމާގެ",
+    Umair:
+      " އިމާމް: އުމައިރު ޒާޚިރު ހުސައިން ވަލްވަތްކަރު / އިންޑިއާ (T4650904)",
+    Neem: "މުދިމު: އިސްމާޢީލް ނީމް / ނޫރާނީގެ",
+    Yazaan: "މުދިމު: ޙުސައިން ޔަޒާން އަޙްމަދު / އޯޝަންވިލާ",
+  };
+
+  const [imamKey, setImamKey] = useState<ImamOptionKey>("Shahidh");
+  const imamText = IMAM_OPTIONS[imamKey];
 
   return (
     <div dir="rtl" className="min-h-dvh bg-white p-6 font-dh1">
@@ -334,67 +424,233 @@ export default function Page() {
 
       <div className="mx-auto w-full max-w-[1400px] overflow-auto">
         {/* Controls */}
-        <div className="no-print mb-4 flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={printOnePage}
-            className="h-9 rounded-md border border-neutral-300 bg-white px-3 text-sm hover:bg-neutral-50"
-          >
-            ޕްރިންޓް
-          </button>
+        <div className="no-print mb-4">
+          {/* toolbar */}
+          <div className="rounded-2xl border border-neutral-200 bg-white/80 p-3 shadow-sm backdrop-blur">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              {/* Left: primary action */}
+              <div className="flex items-center justify-between gap-2 md:justify-start">
+                <button
+                  type="button"
+                  onClick={printOnePage}
+                  className="inline-flex h-10 items-center justify-center rounded-xl bg-neutral-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-neutral-800 active:translate-y-[1px]"
+                >
+                  ޕްރިންޓް
+                </button>
 
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <select
-              className="h-9 rounded-md border border-neutral-300 bg-white px-3 text-sm"
-              value={month}
-              onChange={(e) => setMonth(Number(e.target.value))}
-            >
-              {MONTHS.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
+                {/* Optional: small hint / status */}
+                <div className="text-xs text-neutral-500 md:hidden">
+                  {monthLabel} {year}
+                </div>
+              </div>
 
-            <input
-              className="h-9 w-[110px] rounded-md border border-neutral-300 bg-white px-3 text-sm text-center"
-              type="number"
-              value={year}
-              onChange={(e) =>
-                setYear(Number(e.target.value || now.getFullYear()))
-              }
-            />
+              {/* Right: controls grid */}
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-6">
+                {/* shared styles */}
+                {/* (keep classes inline to avoid extra code) */}
 
-            <div className="flex items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 py-1">
-              <span className="text-sm text-neutral-700">ކަނޑާ މިނަޓް</span>
-              <input
-                type="number"
-                min={0}
-                max={180}
-                step={1}
-                value={deductMins}
-                onChange={(e) =>
-                  setDeductMins(clampInt(Number(e.target.value), 0, 180))
-                }
-                className="h-8 w-[90px] rounded-md border border-neutral-300 bg-white px-2 text-center text-sm"
-              />
+                {/* Month */}
+                <div className="col-span-1">
+                  <div className="mb-1 text-[11px] font-semibold text-neutral-600">
+                    މަސް
+                  </div>
+                  <select
+                    className="h-10 w-full rounded-xl bg-white px-3 text-sm shadow-sm ring-1 ring-neutral-200 transition focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                    value={month}
+                    onChange={(e) => setMonth(Number(e.target.value))}
+                  >
+                    {MONTHS.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Year */}
+                <div className="col-span-1">
+                  <div className="mb-1 text-[11px] font-semibold text-neutral-600">
+                    އަހަރު
+                  </div>
+                  <input
+                    className="h-10 w-full rounded-xl bg-white px-3 text-center text-sm shadow-sm ring-1 ring-neutral-200 transition focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                    type="number"
+                    value={year}
+                    onChange={(e) =>
+                      setYear(Number(e.target.value || now.getFullYear()))
+                    }
+                  />
+                </div>
+
+                {/* Deduct minutes */}
+                <div className="col-span-1">
+                  <div className="mb-1 text-[11px] font-semibold text-neutral-600">
+                    ކަނޑާ މިނަޓް
+                  </div>
+                  <input
+                    type="number"
+                    min={0}
+                    max={180}
+                    step={1}
+                    value={deductMins}
+                    onChange={(e) =>
+                      setDeductMins(clampInt(Number(e.target.value), 0, 180))
+                    }
+                    className="h-10 w-full rounded-xl bg-white px-3 text-center text-sm shadow-sm ring-1 ring-neutral-200 transition focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                  />
+                </div>
+
+                {/* View range */}
+                <div className="col-span-1">
+                  <div className="mb-1 text-[11px] font-semibold text-neutral-600">
+                    View
+                  </div>
+                  <select
+                    className="h-10 w-full rounded-xl bg-white px-3 text-sm shadow-sm ring-1 ring-neutral-200 transition focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                    value={viewSelect}
+                    onChange={(e) => setViewSelect(e.target.value as RangeKey)}
+                  >
+                    <option value="A">{ranges.A.label}</option>
+                    <option value="B">{ranges.B.label}</option>
+                    <option value="BOTH">{ranges.BOTH.label}</option>
+                  </select>
+                </div>
+
+                {/* Heading (no-print already on wrapper) */}
+                <div className="col-span-1">
+                  <div className="mb-1 text-[11px] font-semibold text-neutral-600">
+                    ހެޑިންގް
+                  </div>
+                  <select
+                    value={headingMode}
+                    onChange={(e) =>
+                      setHeadingMode(e.target.value as HeadingMode)
+                    }
+                    className="h-10 w-full rounded-xl bg-white px-3 text-sm shadow-sm ring-1 ring-neutral-200 transition focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                  >
+                    <option value="ATTENDANCE">އިމާމު</option>
+                    <option value="SHEET2">ޕޫލް</option>
+                  </select>
+                </div>
+
+                {/* Imam */}
+                <div className="col-span-1">
+                  <div className="mb-1 text-[11px] font-semibold text-neutral-600">
+                    އިމާމް / މުދިމު
+                  </div>
+                  <select
+                    value={imamKey}
+                    onChange={(e) =>
+                      setImamKey(e.target.value as ImamOptionKey)
+                    }
+                    className="h-10 w-full rounded-xl bg-white px-3 text-sm shadow-sm ring-1 ring-neutral-200 transition focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                  >
+                    <option value="Shahidh">ސާހިދު</option>
+                    <option value="Zahidh">ޒާހިދު</option>
+                    <option value="Neem">ނީމް</option>
+                    <option value="Yazaan">ޔަޒާން</option>
+                  </select>
+                </div>
+              </div>
             </div>
 
-            {/* ✅ Dropdown 1: View range */}
-            <div className="flex items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 py-1">
-              <span className="text-sm text-neutral-700">View</span>
-              <select
-                className="h-8 rounded-md border border-neutral-300 bg-white px-2 text-sm"
-                value={viewSelect}
-                onChange={(e) => setViewSelect(e.target.value as RangeKey)}
-              >
-                <option value="A">{ranges.A.label}</option>
-                <option value="B">{ranges.B.label}</option>
-                <option value="BOTH">{ranges.BOTH.label}</option>
-              </select>
+            {/* Empty rules row (separate, cleaner) */}
+            <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-12">
+              <div className="md:col-span-12 rounded-2xl bg-neutral-50 p-3 ring-1 ring-neutral-200">
+                <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div>
+                      <div className="mb-1 text-[11px] font-semibold text-neutral-600">
+                        Empty
+                      </div>
+                      <select
+                        className="h-10 rounded-xl bg-white px-3 text-sm shadow-sm ring-1 ring-neutral-200 transition focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                        value={emptyDay}
+                        onChange={(e) => setEmptyDay(Number(e.target.value))}
+                      >
+                        {Array.from({ length: dim }, (_, i) => i + 1).map(
+                          (d) => (
+                            <option key={d} value={d}>
+                              {d}
+                            </option>
+                          )
+                        )}
+                      </select>
+                    </div>
+
+                    <div>
+                      <div className="mb-1 text-[11px] font-semibold text-neutral-600">
+                        Prayer
+                      </div>
+                      <select
+                        className="h-10 rounded-xl bg-white px-3 text-sm shadow-sm ring-1 ring-neutral-200 transition focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                        value={emptyPrayer}
+                        onChange={(e) =>
+                          setEmptyPrayer(e.target.value as PrayerSelect)
+                        }
+                      >
+                        <option value="ALL">All prayers</option>
+                        {GROUPS.map((g) => (
+                          <option key={g.key} value={g.key}>
+                            {g.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => addEmptyRule(emptyDay, emptyPrayer)}
+                      className="h-10 rounded-xl bg-white px-4 text-sm font-semibold shadow-sm ring-1 ring-neutral-200 transition hover:bg-neutral-100 active:translate-y-[1px]"
+                    >
+                      Apply
+                    </button>
+                  </div>
+
+                  {/* quick clear (optional) */}
+                  <button
+                    type="button"
+                    onClick={() => setEmptyRules({})}
+                    className="h-10 rounded-xl px-4 text-sm font-semibold text-neutral-600 ring-1 ring-neutral-200 transition hover:bg-white"
+                  >
+                    Clear empties
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
+
+        {/* Optional chips list for applied empty rules */}
+        {Object.keys(emptyRules).length > 0 ? (
+          <div className="no-print mb-3 flex flex-wrap justify-end gap-2">
+            {Object.entries(emptyRules)
+              .sort(([a], [b]) => Number(a) - Number(b))
+              .map(([dayStr, rules]) => {
+                const day = Number(dayStr);
+                const keys = GROUPS.filter((g) => rules[g.key]).map(
+                  (g) => g.key
+                );
+
+                const label =
+                  keys.length === GROUPS.length
+                    ? `Day ${day}: All`
+                    : `Day ${day}: ${keys.map(groupLabel).join("، ")}`;
+
+                return (
+                  <button
+                    key={dayStr}
+                    type="button"
+                    onClick={() => removeEmptyRule(day, "ALL")}
+                    className="rounded-full border border-neutral-300 bg-white px-3 py-1 text-sm hover:bg-neutral-50"
+                    title="Remove"
+                  >
+                    {label} ✕
+                  </button>
+                );
+              })}
+          </div>
+        ) : null}
 
         {/* ===== SCREEN VIEW TABLE (selected range only) ===== */}
         <div className="bg-white" id="view-area">
@@ -413,14 +669,13 @@ export default function Page() {
             <TableHeader>
               <TableRow>
                 <TableHead colSpan={17} className={`${th} py-3 text-[26px]`}>
-                  މިސްކިތު އިމާމުން ފަސްވަގުތު މިސްކިތަށް ޙާޟިރު ވަމުންދާގޮތް (
-                  {monthLabel} {year})
+                  {headingText}
                 </TableHead>
               </TableRow>
 
               <TableRow>
                 <TableHead colSpan={17} className={`${th} py-3 text-[26px]`}>
-                  އިމާމް: މުހައްމަދު ޝާހިދު / ނީލޯފަރު
+                  {imamText}
                 </TableHead>
               </TableRow>
 
@@ -498,6 +753,27 @@ export default function Page() {
                     </TableCell>
 
                     {GROUPS.flatMap((g) => {
+                      if (isEmpty(r.day, g.key)) {
+                        return [
+                          <TableCell
+                            key={`${g.key}-m-${r.day}`}
+                            className={`${td} text-[18px] font-medium`}
+                          >
+                            {""}
+                          </TableCell>,
+                          <TableCell
+                            key={`${g.key}-h-${r.day}`}
+                            className={`${td} text-[18px] font-medium`}
+                          >
+                            {""}
+                          </TableCell>,
+                          <TableCell
+                            key={`${g.key}-sig-${r.day}`}
+                            className={`${td} text-[16px]`}
+                          />,
+                        ];
+                      }
+
                       const v = applyMinuteOffset(get(g.key), deductMins);
                       return [
                         <TableCell
@@ -557,14 +833,13 @@ export default function Page() {
             <TableHeader>
               <TableRow>
                 <TableHead colSpan={17} className={`${th} py-3 text-[26px]`}>
-                  މިސްކިތު އިމާމުން ފަސްވަގުތު މިސްކިތަށް ޙާޟިރު ވަމުންދާގޮތް (
-                  {monthLabel} {year})
+                  {headingText}
                 </TableHead>
               </TableRow>
 
               <TableRow>
                 <TableHead colSpan={17} className={`${th} py-3 text-[26px]`}>
-                  އިމާމް: މުހައްމަދު ޝާހިދު / ނީލޯފަރު
+                  {imamText}
                 </TableHead>
               </TableRow>
 
@@ -638,6 +913,27 @@ export default function Page() {
                     </TableCell>
 
                     {GROUPS.flatMap((g) => {
+                      if (isEmpty(r.day, g.key)) {
+                        return [
+                          <TableCell
+                            key={`${g.key}-m-${r.day}`}
+                            className={`${td} text-[18px] font-medium`}
+                          >
+                            {""}
+                          </TableCell>,
+                          <TableCell
+                            key={`${g.key}-h-${r.day}`}
+                            className={`${td} text-[18px] font-medium`}
+                          >
+                            {""}
+                          </TableCell>,
+                          <TableCell
+                            key={`${g.key}-sig-${r.day}`}
+                            className={`${td} text-[16px]`}
+                          />,
+                        ];
+                      }
+
                       const v = applyMinuteOffset(get(g.key), deductMins);
                       return [
                         <TableCell

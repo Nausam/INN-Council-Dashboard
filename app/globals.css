@@ -337,6 +337,15 @@ html.pdf-export .avoid-break {
 
 @media print {
 
+  /* ✅ allow printing colors */
+  html,
+  body,
+  #print-area,
+  #print-area * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
   /* show only the print area */
   body * {
     visibility: hidden !important;
@@ -361,12 +370,14 @@ html.pdf-export .avoid-break {
     height: auto !important;
     background: #fff !important;
     overflow: hidden !important;
+    direction: rtl !important;
   }
 
   /* force the table to occupy full available width */
   #print-area table {
     width: 100% !important;
     table-layout: fixed !important;
+    border-collapse: collapse !important;
   }
 
   /* shrink typography + padding for print so the whole month fits */
@@ -375,6 +386,7 @@ html.pdf-export .avoid-break {
     font-size: 10pt !important;
     line-height: 1 !important;
     padding: 2mm 1.2mm !important;
+    border-color: #444 !important;
   }
 
   /* headings a bit larger but still compact */
@@ -382,15 +394,19 @@ html.pdf-export .avoid-break {
     font-size: 12pt !important;
   }
 
-  /* optional: reduce borders intensity if needed */
-  #print-area th,
-  #print-area td {
-    border-color: #444 !important;
+  /* ✅ IMPORTANT: apply shading to CELLS (more reliable than tr background) */
+  #print-area tr.bg-neutral-200>td,
+  #print-area tr.bg-neutral-200>th,
+  #print-area .bg-neutral-200>td,
+  #print-area .bg-neutral-200>th {
+    background: #e5e5e5 !important;
+    /* neutral-200 */
   }
 
-  /* prevent weird RTL shifts */
-  #print-area {
-    direction: rtl !important;
+  /* ✅ fallback: force-fill row using box-shadow (works in more print engines) */
+  #print-area tr.bg-neutral-200,
+  #print-area .bg-neutral-200 {
+    box-shadow: inset 0 0 0 9999px #e5e5e5 !important;
   }
 
   /* do not print the note if it pushes content (optional) */
