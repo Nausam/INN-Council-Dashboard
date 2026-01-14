@@ -1,14 +1,15 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 import AttendanceTable from "@/components/AttendanceTable";
 import SkeletonAttendanceTable from "@/components/skeletons/SkeletonAttendanceTable";
 import { toast } from "@/hooks/use-toast";
 import type { EmployeeDoc } from "@/lib/appwrite/appwrite";
 import {
-  createAttendanceForEmployees,
-  fetchAllEmployees,
-  fetchAttendanceForDate,
-  syncAttendanceForDate,
-} from "@/lib/appwrite/appwrite";
+  createAttendanceForEmployeesAction,
+  fetchAllEmployeesAction,
+  fetchAttendanceForDateAction,
+  syncAttendanceForDateAction,
+} from "@/lib/attendance/attendance.actions";
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -85,7 +86,14 @@ const AdminAttendancePage = () => {
     if (!date) return;
     setLoading(true);
     try {
-      const raw = (await fetchAttendanceForDate(date)) as unknown[];
+      const result = await fetchAttendanceForDateAction(date);
+
+      if (!result.success) {
+        throw new Error(result.error || "Failed to fetch attendance");
+      }
+
+      const raw = result.data || [];
+
       if (raw.length > 0) {
         setAttendanceData(normalize(raw));
         setIsAttendanceGenerated(true);
@@ -99,11 +107,12 @@ const AdminAttendancePage = () => {
         setIsAttendanceGenerated(false);
         setShowGenerateButton(true);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error loading attendance:", error);
       toast({
         title: "Error",
-        description: "Failed to load attendance for the selected date.",
+        description:
+          error.message || "Failed to load attendance for the selected date.",
         variant: "destructive",
       });
     } finally {
@@ -115,7 +124,14 @@ const AdminAttendancePage = () => {
     if (!formattedSelectedDate) return;
     try {
       setSyncing(true);
-      const updated = await syncAttendanceForDate(formattedSelectedDate);
+      const result = await syncAttendanceForDateAction(formattedSelectedDate);
+
+      if (!result.success) {
+        throw new Error(result.error || "Failed to sync");
+      }
+
+      const updated = result.updated || 0;
+
       if (!silent) {
         toast({
           title: updated ? "Attendance updated" : "No new punches",
@@ -127,12 +143,12 @@ const AdminAttendancePage = () => {
           variant: updated ? "success" : "default",
         });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Sync error:", err);
       if (!silent) {
         toast({
           title: "Error",
-          description: "Failed to update from punches.",
+          description: err.message || "Failed to update from punches.",
           variant: "destructive",
         });
       }
@@ -148,9 +164,17 @@ const AdminAttendancePage = () => {
     if (!formattedSelectedDate) return;
     setLoading(true);
     try {
-      const existing = (await fetchAttendanceForDate(
+      const existingResult = await fetchAttendanceForDateAction(
         formattedSelectedDate
-      )) as unknown[];
+      );
+
+      if (!existingResult.success) {
+        throw new Error(
+          existingResult.error || "Failed to check existing attendance"
+        );
+      }
+
+      const existing = existingResult.data || [];
 
       if (existing.length > 0) {
         toast({
@@ -160,12 +184,24 @@ const AdminAttendancePage = () => {
         });
         setAttendanceData(normalize(existing));
       } else {
-        const employees = (await fetchAllEmployees()) as EmployeeDoc[];
-        const created = (await createAttendanceForEmployees(
+        const employeesResult = await fetchAllEmployeesAction();
+
+        if (!employeesResult.success) {
+          throw new Error(employeesResult.error || "Failed to fetch employees");
+        }
+
+        const employees = employeesResult.data as EmployeeDoc[];
+
+        const createResult = await createAttendanceForEmployeesAction(
           formattedSelectedDate,
           employees
-        )) as unknown[]; // your helper returns plain objects
+        );
 
+        if (!createResult.success) {
+          throw new Error(createResult.error || "Failed to create attendance");
+        }
+
+        const created = createResult.data || [];
         setAttendanceData(normalize(created));
         setShowGenerateButton(false);
         toast({
@@ -174,11 +210,11 @@ const AdminAttendancePage = () => {
           variant: "success",
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating attendance:", error);
       toast({
         title: "Error",
-        description: "Failed to create attendance.",
+        description: error.message || "Failed to create attendance.",
         variant: "destructive",
       });
     } finally {
@@ -253,19 +289,6 @@ const AdminAttendancePage = () => {
             </button>
           </div>
         )}
-
-        {/* {isAttendanceGenerated && (
-          <div className="flex items-end">
-            <button
-              className="custom-button w-full lg:w-auto h-12"
-              onClick={() => handleSync(false)}
-              disabled={loading || syncing}
-              title="Refresh sign-in times from fingerprint punches"
-            >
-              {syncing ? "Updating..." : "Update from punches"}
-            </button>
-          </div>
-        )} */}
       </div>
 
       {/* Display Skeleton or Attendance Table based on loading state */}

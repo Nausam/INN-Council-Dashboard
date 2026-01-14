@@ -914,3 +914,14 @@ export const fetchUserLeaveRequests = async (
     throw error;
   }
 };
+
+// In your appwrite.ts file, add a function to check auth status
+export const getCurrentUser = async () => {
+  try {
+    const currentAccount = await account.get();
+    return currentAccount;
+  } catch (error) {
+    console.error("Not authenticated:", error);
+    return null;
+  }
+};
