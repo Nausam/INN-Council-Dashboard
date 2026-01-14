@@ -29,7 +29,7 @@ import {
   deductLeave,
   deleteMosqueAttendancesByDate,
   fetchEmployeeById,
-  fetchPrayerTimesByDate, // fallback source
+  fetchPrayerTimesByDate,
   updateMosqueAttendanceRecord,
 } from "@/lib/appwrite/appwrite";
 import { fetchInnamaadhooTimes, InnamaadhooTimes } from "@/lib/salat-client";
@@ -42,6 +42,7 @@ import {
   PrayerKey,
 } from "@/types";
 import { useEffect, useMemo, useState } from "react";
+import { Clock, AlertCircle, Save, Trash2 } from "lucide-react";
 
 /* -------------------- local helpers & types -------------------- */
 
@@ -109,9 +110,6 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
     useState<MosqueAttendanceRecord[]>(data);
   const [submitting, setSubmitting] = useState(false);
 
-  // id -> employee name (for rows where employeeId is a string id)
-  const [nameMap, setNameMap] = useState<Record<string, string>>({});
-
   const { toast } = useToast();
   const { isAdmin } = useUser();
 
@@ -124,15 +122,6 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
   }, [data]);
 
   // fetch names for unknown string ids
-  const unresolvedIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const r of data) {
-      const emp = r.employeeId;
-      if (typeof emp === "string" && !nameMap[emp]) ids.add(emp);
-    }
-    return Array.from(ids);
-  }, [data, nameMap]);
-
   useEffect(() => {
     const ids = new Set<string>();
     for (const r of data) {
@@ -259,10 +248,10 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
         .toLowerCase()
         .trim();
       const grace =
-        desig === "imam" ? 5 : desig === "council assistant" ? 15 : 0; // default if something unexpected
+        desig === "imam" ? 5 : desig === "council assistant" ? 15 : 0;
 
       (Object.keys(prayerTimes!) as PrayerKey[]).forEach((key) => {
-        const required = prayerTimes![key]; // "HH:MM"
+        const required = prayerTimes![key];
         const actualISO = record[key] as string | undefined;
         const late = Math.min(64, latenessMinutes(required, actualISO, grace));
         const lateKey = key.replace(
@@ -351,8 +340,12 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
         prev.map((r) => ({ ...r, changed: false }))
       );
     } catch (error) {
-      // eslint-disable-next-line no-console
       console.error(error);
+      toast({
+        title: "Error",
+        description: "Failed to update attendance.",
+        variant: "destructive",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -385,122 +378,209 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
     }
   };
 
+  // Count changes
+  const changedCount = attendanceRecords.filter((r) => r.changed).length;
+
+  const prayerColumns: { key: PrayerKey; label: string }[] = [
+    { key: "fathisSignInTime", label: "Fathis Prayer" },
+    { key: "mendhuruSignInTime", label: "Mendhuru Prayer" },
+    { key: "asuruSignInTime", label: "Asuru Prayer" },
+    { key: "maqribSignInTime", label: "Maqrib Prayer" },
+    { key: "ishaSignInTime", label: "Isha Prayer" },
+  ];
+
   return (
-    <div>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>#</TableHead>
-            <TableHead>Employee</TableHead>
-            <TableHead>Fathis Prayer</TableHead>
-            <TableHead>Mendhuru Prayer</TableHead>
-            <TableHead>Asuru Prayer</TableHead>
-            <TableHead>Maqrib Prayer</TableHead>
-            <TableHead>Isha Prayer</TableHead>
-            <TableHead>Attendance</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {attendanceRecords.map((record, index) => (
-            <TableRow key={record.$id}>
-              <TableCell>{index + 1}</TableCell>
-              <TableCell>
-                {nameFromRef(record.employeeId as EmployeeRef, empInfoMap)}
-              </TableCell>
+    <div className="space-y-6">
+      {/* Stats banner */}
+      {changedCount > 0 && (
+        <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100">
+            <AlertCircle className="h-5 w-5 text-amber-600" />
+          </div>
+          <div>
+            <p className="font-semibold text-amber-900">
+              {changedCount} {changedCount === 1 ? "record" : "records"}{" "}
+              modified
+            </p>
+            <p className="text-sm text-amber-700">
+              Don&apos;t forget to submit your changes
+            </p>
+          </div>
+        </div>
+      )}
 
-              {(
-                [
-                  "fathisSignInTime",
-                  "mendhuruSignInTime",
-                  "asuruSignInTime",
-                  "maqribSignInTime",
-                  "ishaSignInTime",
-                ] as PrayerKey[]
-              ).map((prayer) => (
-                <TableCell key={prayer}>
-                  <input
-                    type="time"
-                    value={
-                      record[prayer] ? formatTimeForInput(record[prayer]!) : ""
-                    }
-                    onChange={(e) =>
-                      handleSignInChange(record.$id, prayer, e.target.value)
-                    }
-                    className="border p-2 rounded"
-                  />
-                </TableCell>
-              ))}
+      {/* Table */}
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-slate-50 hover:bg-slate-50">
+                <TableHead className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-600">
+                  #
+                </TableHead>
+                <TableHead className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-600">
+                  Employee
+                </TableHead>
+                {prayerColumns.map((col) => (
+                  <TableHead
+                    key={col.key}
+                    className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-600"
+                  >
+                    {col.label}
+                  </TableHead>
+                ))}
+                <TableHead className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-600">
+                  Attendance Status
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {attendanceRecords.map((record, index) => {
+                const isChanged = record.changed;
+                return (
+                  <TableRow
+                    key={record.$id}
+                    className={`transition-colors ${
+                      isChanged
+                        ? "bg-amber-50/50 hover:bg-amber-50"
+                        : "hover:bg-slate-50"
+                    }`}
+                  >
+                    <TableCell className="py-3 px-4 text-slate-600 font-medium">
+                      {index + 1}
+                    </TableCell>
+                    <TableCell className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-600">
+                          {nameFromRef(
+                            record.employeeId as EmployeeRef,
+                            empInfoMap
+                          )
+                            .charAt(0)
+                            .toUpperCase()}
+                        </div>
+                        <span className="font-medium text-slate-900">
+                          {nameFromRef(
+                            record.employeeId as EmployeeRef,
+                            empInfoMap
+                          )}
+                        </span>
+                        {isChanged && (
+                          <span className="ml-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                            Modified
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
 
-              <TableCell>
-                <select
-                  value={
-                    record.leaveType
-                      ? reverseLeaveTypeMapping[
-                          record.leaveType as keyof typeof reverseLeaveTypeMapping
-                        ]
-                      : ""
-                  }
-                  onChange={(e) =>
-                    handleLeaveChange(record.$id, e.target.value)
-                  }
-                  className="border p-2"
-                >
-                  <option value="">Present</option>
-                  {leaveTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+                    {prayerColumns.map((col) => (
+                      <TableCell key={col.key} className="py-3 px-2">
+                        <div className="relative">
+                          <Clock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                          <input
+                            type="time"
+                            value={
+                              record[col.key]
+                                ? formatTimeForInput(record[col.key]!)
+                                : ""
+                            }
+                            onChange={(e) =>
+                              handleSignInChange(
+                                record.$id,
+                                col.key,
+                                e.target.value
+                              )
+                            }
+                            className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm font-medium text-slate-900 shadow-sm transition-all focus:border-emerald-300 focus:outline-none focus:ring-4 focus:ring-emerald-100"
+                          />
+                        </div>
+                      </TableCell>
+                    ))}
 
-      <div className="flex justify-between mt-6 gap-4">
+                    <TableCell className="py-3 px-2">
+                      <select
+                        value={
+                          record.leaveType
+                            ? reverseLeaveTypeMapping[
+                                record.leaveType as keyof typeof reverseLeaveTypeMapping
+                              ]
+                            : ""
+                        }
+                        onChange={(e) =>
+                          handleLeaveChange(record.$id, e.target.value)
+                        }
+                        className="w-full appearance-none rounded-lg border border-slate-200 bg-white py-2 px-3 pr-8 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 focus:border-emerald-300 focus:outline-none focus:ring-4 focus:ring-emerald-100"
+                      >
+                        <option value="">✓ Present</option>
+                        {leaveTypes.map((type) => (
+                          <option key={type} value={type}>
+                            {type}
+                          </option>
+                        ))}
+                      </select>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex flex-col gap-4 md:flex-row md:justify-between">
         <button
-          className={`custom-button ${
-            submitting ? "opacity-50 cursor-not-allowed" : ""
+          className={`inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 font-semibold text-white shadow-sm transition-all hover:bg-emerald-700 hover:shadow-md md:w-auto ${
+            submitting ? "cursor-not-allowed opacity-50" : ""
           }`}
           onClick={handleSubmitAttendance}
           disabled={submitting}
         >
+          <Save className="h-5 w-5" />
           {submitting ? "Submitting..." : "Submit Attendance"}
         </button>
 
-        {isAdmin ? (
+        {isAdmin && (
           <AlertDialog>
-            <AlertDialogTrigger className="flex items-center justify-center w-full md:w-48">
-              <div
-                className={`flex justify-center red-button w-full h-12 items-center ${
-                  submitting ? "opacity-50 cursor-not-allowed" : ""
+            <AlertDialogTrigger asChild>
+              <button
+                className={`inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-6 py-3 font-semibold text-red-600 shadow-sm transition-all hover:bg-red-50 hover:shadow-md md:w-auto ${
+                  submitting ? "cursor-not-allowed opacity-50" : ""
                 }`}
+                disabled={submitting}
               >
-                <p>Delete Attendance</p>
-              </div>
+                <Trash2 className="h-5 w-5" />
+                Delete Attendance
+              </button>
             </AlertDialogTrigger>
-            <AlertDialogContent>
+            <AlertDialogContent className="rounded-2xl">
               <AlertDialogHeader>
-                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                <AlertDialogDescription>
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-red-100">
+                  <AlertCircle className="h-6 w-6 text-red-600" />
+                </div>
+                <AlertDialogTitle className="text-xl">
+                  Are you absolutely sure?
+                </AlertDialogTitle>
+                <AlertDialogDescription className="text-slate-600">
                   This action cannot be undone. This will permanently delete
-                  today&apos;s attendance and remove your data from the
+                  today&apos;s mosque attendance and remove your data from the
                   database.
                 </AlertDialogDescription>
               </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogFooter className="gap-2">
+                <AlertDialogCancel className="rounded-xl">
+                  Cancel
+                </AlertDialogCancel>
                 <AlertDialogAction
-                  className="bg-red-600 hover:bg-red-700"
+                  className="rounded-xl bg-red-600 hover:bg-red-700"
                   onClick={handleDeleteAllAttendances}
                 >
-                  Continue
+                  Delete Attendance
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-        ) : null}
+        )}
       </div>
     </div>
   );

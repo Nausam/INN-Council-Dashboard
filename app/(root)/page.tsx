@@ -88,8 +88,12 @@ const Dashboard: React.FC = () => {
     late: 0,
     absent: 0,
   });
-  const [absentEmployees, setAbsentEmployees] = useState<string[]>([]);
-  const [lateEmployees, setLateEmployees] = useState<string[]>([]);
+  const [absentEmployees, setAbsentEmployees] = useState<
+    Array<{ name: string; leaveType?: string | null }>
+  >([]);
+  const [lateEmployees, setLateEmployees] = useState<Array<{ name: string }>>(
+    []
+  );
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(
     new Date()
@@ -181,13 +185,17 @@ const Dashboard: React.FC = () => {
 
         // ---------- ABSENT (office) ----------
         const absentSet = new Set<string>();
-        const absentees: string[] = [];
+        const absentees: Array<{ name: string; leaveType?: string | null }> =
+          [];
         for (const rec of officeAttendance) {
           if (rec.leaveType) {
             const nm = resolveName(rec);
             if (!absentSet.has(nm)) {
               absentSet.add(nm);
-              absentees.push(nm);
+              absentees.push({
+                name: nm,
+                leaveType: rec.leaveType,
+              });
             }
           }
         }
@@ -224,7 +232,7 @@ const Dashboard: React.FC = () => {
           if (!absentSet.has(nm) && anyLate) lateSet.add(nm);
         }
 
-        const lateList = Array.from(lateSet);
+        const lateList = Array.from(lateSet).map((name) => ({ name }));
         const absentCount = absentSet.size;
         const lateCount = lateSet.size;
 
@@ -259,119 +267,209 @@ const Dashboard: React.FC = () => {
   const { totalEmployees, onTime, late, absent } = dashboardData;
 
   return (
-    <div className="container mx-auto p-8">
-      <div className="mb-4">
-        <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              variant={"outline"}
-              className={cn(
-                "border p-2 rounded-md w-48 h-12",
-                !selectedDate && "text-muted-foreground"
-              )}
-            >
-              <CalendarIcon className="mr-2 h-4 w-4" />
-              {selectedDate ? (
-                format(selectedDate, "PPP")
-              ) : (
-                <span>Pick a date</span>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0">
-            <Calendar
-              mode="single"
-              selected={selectedDate}
-              onSelect={handleDateSelect}
-              initialFocus
-            />
-          </PopoverContent>
-        </Popover>
-      </div>
-
-      {!loading && !hasAttendance ? (
-        <div className="mt-4 rounded-xl border border-dashed text-gray-600 text-sm px-4 py-3 mb-4">
-          No attendance created for this date.
-        </div>
-      ) : null}
-      <DashboardHeader />
-
-      {/* Always show the four cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {loading ? (
-          <>
-            <SkeletonDashboardCard />
-            <SkeletonDashboardCard />
-            <SkeletonDashboardCard />
-            <SkeletonDashboardCard />
-          </>
-        ) : (
-          <>
-            <DashboardCard
-              icon={<FaUsers />}
-              title="Employees"
-              value={totalEmployees}
-              gradient="linear-gradient(135deg, #6DD5FA, #2980B9)"
-            />
-            <DashboardCard
-              icon={<FaClock />}
-              title="On Time"
-              value={onTime}
-              gradient="linear-gradient(135deg, #A8E063, #56AB2F)"
-            />
-            <DashboardCard
-              icon={<FaRunning />}
-              title="Late"
-              value={late}
-              gradient="linear-gradient(135deg, #F2C94C,  #F2994A)"
-            />
-            <DashboardCard
-              icon={<FaTimes />}
-              title="On Leave"
-              value={absent}
-              gradient="linear-gradient(135deg, #F2994A, #EB5757)"
-            />
-          </>
-        )}
-      </div>
-
-      <div className="mt-5 w-full">
-        <div className="flex flex-col w-full items-center justify-between mx-auto gap-10">
-          {loading ? (
-            <SkeletonProgressSection />
-          ) : (
-            <ProgressSection
-              onTimePercent={pct(onTime, totalEmployees)}
-              latePercent={pct(late, totalEmployees)}
-              absentPercent={pct(absent, totalEmployees)}
-            />
-          )}
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50">
+      <div className="container mx-auto px-4 py-8 lg:px-8">
+        {/* Date picker */}
+        <div className="mb-8 flex items-center justify-between">
+          <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant={"outline"}
+                className={cn(
+                  "group h-11 rounded-xl border-slate-200 bg-white px-4 shadow-sm transition-all hover:border-indigo-300 hover:shadow-md",
+                  !selectedDate && "text-muted-foreground"
+                )}
+              >
+                <CalendarIcon className="mr-2 h-4 w-4 text-slate-500 transition-colors group-hover:text-indigo-500" />
+                {selectedDate ? (
+                  <span className="font-medium text-slate-700">
+                    {format(selectedDate, "PPP")}
+                  </span>
+                ) : (
+                  <span>Pick a date</span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0">
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                onSelect={handleDateSelect}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
         </div>
 
-        <div className="flex flex-col lg:flex-row gap-4 w-full mt-10">
+        <DashboardHeader />
+
+        {/* No attendance notice */}
+        {!loading && !hasAttendance ? (
+          <div className="group relative mb-8 overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 p-6 shadow-sm transition-all hover:shadow-md">
+            <div className="absolute right-0 top-0 h-32 w-32 translate-x-8 -translate-y-8 rounded-full bg-amber-200/30 blur-2xl" />
+            <div className="relative flex items-start gap-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100">
+                <svg
+                  className="h-5 w-5 text-amber-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+              </div>
+              <div>
+                <h3 className="font-semibold text-amber-900">
+                  No attendance records
+                </h3>
+                <p className="mt-1 text-sm text-amber-700">
+                  No attendance has been created for the selected date.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Stats cards */}
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4 lg:gap-8">
           {loading ? (
             <>
-              <SkeletonListCard />
-              <SkeletonListCard />
+              <SkeletonDashboardCard />
+              <SkeletonDashboardCard />
+              <SkeletonDashboardCard />
+              <SkeletonDashboardCard />
             </>
           ) : (
             <>
-              <EmployeeListCard
-                title="On Leave"
-                employees={absentEmployees}
-                bgColor="#EB5757"
-                emptyMessage="No employees are absent today."
-                gradient="linear-gradient(to right, #fa6e28,  #fa6e28)"
-              />
-              <EmployeeListCard
-                title="Late Employees"
-                employees={lateEmployees}
-                bgColor="#fa6e28"
-                emptyMessage="No employees are late today."
-                gradient="linear-gradient(to right, #EB5757,  #EB5757)"
-              />
+              {/* Total Employees Card */}
+              <div className="group relative overflow-hidden rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/50 transition-all hover:shadow-xl hover:ring-indigo-300/50">
+                <div className="absolute right-0 top-0 h-32 w-32 translate-x-8 -translate-y-8 rounded-full bg-indigo-100/50 blur-2xl transition-transform group-hover:scale-125" />
+                <div className="relative flex items-start justify-between">
+                  <div>
+                    <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 ring-1 ring-indigo-100">
+                      <FaUsers className="h-5 w-5" />
+                    </div>
+                    <p className="mt-4 text-sm font-medium text-slate-600">
+                      Total Employees
+                    </p>
+                    <p className="mt-2 text-4xl font-bold tracking-tight text-slate-900">
+                      {totalEmployees}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* On Time Card */}
+              <div className="group relative overflow-hidden rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/50 transition-all hover:shadow-xl hover:ring-emerald-300/50">
+                <div className="absolute right-0 top-0 h-32 w-32 translate-x-8 -translate-y-8 rounded-full bg-emerald-100/50 blur-2xl transition-transform group-hover:scale-125" />
+                <div className="relative flex items-start justify-between">
+                  <div>
+                    <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100">
+                      <FaClock className="h-5 w-5" />
+                    </div>
+                    <p className="mt-4 text-sm font-medium text-slate-600">
+                      On Time
+                    </p>
+                    <p className="mt-2 text-4xl font-bold tracking-tight text-slate-900">
+                      {onTime}
+                    </p>
+                    <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+                      <span>{pct(onTime, totalEmployees)}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Late Card */}
+              <div className="group relative overflow-hidden rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/50 transition-all hover:shadow-xl hover:ring-amber-300/50">
+                <div className="absolute right-0 top-0 h-32 w-32 translate-x-8 -translate-y-8 rounded-full bg-amber-100/50 blur-2xl transition-transform group-hover:scale-125" />
+                <div className="relative flex items-start justify-between">
+                  <div>
+                    <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-xl bg-amber-50 text-amber-600 ring-1 ring-amber-100">
+                      <FaRunning className="h-5 w-5" />
+                    </div>
+                    <p className="mt-4 text-sm font-medium text-slate-600">
+                      Late
+                    </p>
+                    <p className="mt-2 text-4xl font-bold tracking-tight text-slate-900">
+                      {late}
+                    </p>
+                    <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">
+                      <span>{pct(late, totalEmployees)}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* On Leave Card */}
+              <div className="group relative overflow-hidden rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/50 transition-all hover:shadow-xl hover:ring-rose-300/50">
+                <div className="absolute right-0 top-0 h-32 w-32 translate-x-8 -translate-y-8 rounded-full bg-rose-100/50 blur-2xl transition-transform group-hover:scale-125" />
+                <div className="relative flex items-start justify-between">
+                  <div>
+                    <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-xl bg-rose-50 text-rose-600 ring-1 ring-rose-100">
+                      <FaTimes className="h-5 w-5" />
+                    </div>
+                    <p className="mt-4 text-sm font-medium text-slate-600">
+                      On Leave
+                    </p>
+                    <p className="mt-2 text-4xl font-bold tracking-tight text-slate-900">
+                      {absent}
+                    </p>
+                    <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700">
+                      <span>{pct(absent, totalEmployees)}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </>
           )}
+        </div>
+
+        {/* Progress section */}
+        <div className="mt-12 w-full">
+          <div className="flex w-full flex-col items-center justify-between gap-10">
+            {loading ? (
+              <SkeletonProgressSection />
+            ) : (
+              <ProgressSection
+                onTimePercent={pct(onTime, totalEmployees)}
+                latePercent={pct(late, totalEmployees)}
+                absentPercent={pct(absent, totalEmployees)}
+              />
+            )}
+          </div>
+
+          {/* Employee lists */}
+          <div className="mt-12 flex w-full flex-col gap-6 lg:flex-row lg:gap-8">
+            {loading ? (
+              <>
+                <SkeletonListCard />
+                <SkeletonListCard />
+              </>
+            ) : (
+              <>
+                <EmployeeListCard
+                  title="On Leave"
+                  employees={absentEmployees}
+                  bgColor="#f43f5e"
+                  emptyMessage="No employees are on leave today."
+                  gradient="linear-gradient(135deg, #f43f5e 0%, #e11d48 100%)"
+                />
+                <EmployeeListCard
+                  title="Late Employees"
+                  employees={lateEmployees}
+                  bgColor="#f59e0b"
+                  emptyMessage="No employees are late today."
+                  gradient="linear-gradient(135deg, #f59e0b 0%, #d97706 100%)"
+                />
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>

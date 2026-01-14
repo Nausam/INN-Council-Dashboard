@@ -29,6 +29,14 @@ import {
 } from "@/lib/appwrite/appwrite";
 import { useUser } from "@/Providers/UserProvider";
 import { useEffect, useMemo, useState } from "react";
+import {
+  Clock,
+  UserCheck,
+  Trash2,
+  AlertCircle,
+  Users,
+  Save,
+} from "lucide-react";
 
 // --- HELPERS ---
 const ADDITIVE_LEAVES = [
@@ -521,46 +529,87 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     }
   };
 
+  // Count changes
+  const changedCount = attendanceUpdates.filter((r) => r.changed).length;
+
   /* ---------------- UI ---------------- */
   let rowCounter = 0;
 
-  const SectionHeadingRow = ({ title }: { title: string }) => (
-    <TableRow>
-      <TableCell colSpan={4} className="bg-muted/60 text-sm font-medium">
-        <div className="py-2 px-3">{title}</div>
+  const SectionHeadingRow = ({
+    title,
+    icon,
+  }: {
+    title: string;
+    icon: React.ReactNode;
+  }) => (
+    <TableRow className="bg-slate-50 hover:bg-slate-50">
+      <TableCell colSpan={4} className="py-3 px-4">
+        <div className="flex items-center gap-2 font-semibold text-slate-900">
+          {icon}
+          <span>{title}</span>
+        </div>
       </TableCell>
     </TableRow>
   );
 
-  const renderSection = (title: string, rows: AttendanceRecord[]) => {
+  const renderSection = (
+    title: string,
+    rows: AttendanceRecord[],
+    icon: React.ReactNode
+  ) => {
     if (!rows.length) return null;
     const sorted = sortWithin(rows);
     return (
       <>
-        <SectionHeadingRow title={title} />
+        <SectionHeadingRow title={title} icon={icon} />
         {sorted.map((record) => {
           rowCounter += 1;
+          const isChanged = record.changed;
           return (
-            <TableRow key={record.$id}>
-              <TableCell className="py-2 px-4">{rowCounter}</TableCell>
-              <TableCell className="py-2 px-4">
-                {nameFromRecord(record)}
+            <TableRow
+              key={record.$id}
+              className={`transition-colors ${
+                isChanged
+                  ? "bg-amber-50/50 hover:bg-amber-50"
+                  : "hover:bg-slate-50"
+              }`}
+            >
+              <TableCell className="py-3 px-4 text-slate-600 font-medium">
+                {rowCounter}
               </TableCell>
-              <TableCell className="py-2 px-4">
+              <TableCell className="py-3 px-4">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-600">
+                    {nameFromRecord(record).charAt(0).toUpperCase()}
+                  </div>
+                  <span className="font-medium text-slate-900">
+                    {nameFromRecord(record)}
+                  </span>
+                  {isChanged && (
+                    <span className="ml-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                      Modified
+                    </span>
+                  )}
+                </div>
+              </TableCell>
+              <TableCell className="py-3 px-4">
                 {!record.leaveType ? (
-                  <input
-                    type="time"
-                    className="border p-2 rounded-md"
-                    value={formatTimeForInput(record.signInTime)}
-                    onChange={(e) =>
-                      handleSignInChange(record.$id, e.target.value)
-                    }
-                  />
+                  <div className="relative">
+                    <Clock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="time"
+                      className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm font-medium text-slate-900 shadow-sm transition-all focus:border-indigo-300 focus:outline-none focus:ring-4 focus:ring-indigo-100"
+                      value={formatTimeForInput(record.signInTime)}
+                      onChange={(e) =>
+                        handleSignInChange(record.$id, e.target.value)
+                      }
+                    />
+                  </div>
                 ) : (
-                  "-"
+                  <span className="text-sm text-slate-400">—</span>
                 )}
               </TableCell>
-              <TableCell className="py-2 px-4">
+              <TableCell className="py-3 px-4">
                 <select
                   value={
                     record.leaveType
@@ -570,9 +619,9 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
                   onChange={(e) =>
                     handleLeaveChange(record.$id, e.target.value)
                   }
-                  className="border p-2 rounded-md"
+                  className="w-full appearance-none rounded-lg border border-slate-200 bg-white py-2 px-3 pr-8 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 focus:border-indigo-300 focus:outline-none focus:ring-4 focus:ring-indigo-100"
                 >
-                  <option value="">Present</option>
+                  <option value="">✓ Present</option>
                   {leaveTypes.map((type) => (
                     <option key={type} value={type}>
                       {type}
@@ -593,67 +642,123 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
   const other = grouped["Other"];
 
   return (
-    <div>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="py-2 px-4">#</TableHead>
-            <TableHead className="py-2 px-4">Employee Name</TableHead>
-            <TableHead className="py-2 px-4">Sign in Time</TableHead>
-            <TableHead className="py-2 px-4">Attendance</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {renderSection("Council", councillor)}
-          {renderSection("Admin", admin)}
-          {renderSection("Waste Management", waste)}
-          {renderSection("Other", sortWithin(other))}
-        </TableBody>
-      </Table>
+    <div className="space-y-6">
+      {/* Stats banner */}
+      {changedCount > 0 && (
+        <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100">
+            <AlertCircle className="h-5 w-5 text-amber-600" />
+          </div>
+          <div>
+            <p className="font-semibold text-amber-900">
+              {changedCount} {changedCount === 1 ? "record" : "records"}{" "}
+              modified
+            </p>
+            <p className="text-sm text-amber-700">
+              Don&apos;t forget to submit your changes
+            </p>
+          </div>
+        </div>
+      )}
 
-      <div className="flex md:flex-row gap-4 flex-col w-full justify-between mt-10">
+      {/* Table */}
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-slate-50 hover:bg-slate-50">
+              <TableHead className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-600">
+                #
+              </TableHead>
+              <TableHead className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-600">
+                Employee Name
+              </TableHead>
+              <TableHead className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-600">
+                Sign in Time
+              </TableHead>
+              <TableHead className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-600">
+                Attendance Status
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {renderSection(
+              "Council",
+              councillor,
+              <Users className="h-4 w-4 text-purple-600" />
+            )}
+            {renderSection(
+              "Admin",
+              admin,
+              <UserCheck className="h-4 w-4 text-blue-600" />
+            )}
+            {renderSection(
+              "Waste Management",
+              waste,
+              <Users className="h-4 w-4 text-green-600" />
+            )}
+            {renderSection(
+              "Other",
+              sortWithin(other),
+              <Users className="h-4 w-4 text-slate-600" />
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex flex-col gap-4 md:flex-row md:justify-between">
         <button
-          className={`custom-button md:w-60 w-full h-12 ${
-            submitting ? "opacity-50 cursor-not-allowed" : ""
+          className={`inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 hover:shadow-md md:w-auto ${
+            submitting ? "cursor-not-allowed opacity-50" : ""
           }`}
           onClick={handleSubmitAttendance}
           disabled={submitting}
         >
-          Submit Attendance
+          <Save className="h-5 w-5" />
+          {submitting ? "Submitting..." : "Submit Attendance"}
         </button>
 
-        {isAdmin ? (
+        {isAdmin && (
           <AlertDialog>
-            <AlertDialogTrigger className="flex items-center justify-center w-full md:w-60">
-              <div
-                className={`flex justify-center red-button w-full h-12 items-center ${
-                  submitting ? "opacity-50 cursor-not-allowed" : ""
+            <AlertDialogTrigger asChild>
+              <button
+                className={`inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-6 py-3 font-semibold text-red-600 shadow-sm transition-all hover:bg-red-50 hover:shadow-md md:w-auto ${
+                  submitting ? "cursor-not-allowed opacity-50" : ""
                 }`}
+                disabled={submitting}
               >
-                <p>Delete Attendance</p>
-              </div>
+                <Trash2 className="h-5 w-5" />
+                Delete Attendance
+              </button>
             </AlertDialogTrigger>
-            <AlertDialogContent>
+            <AlertDialogContent className="rounded-2xl">
               <AlertDialogHeader>
-                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                <AlertDialogDescription>
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-red-100">
+                  <AlertCircle className="h-6 w-6 text-red-600" />
+                </div>
+                <AlertDialogTitle className="text-xl">
+                  Are you absolutely sure?
+                </AlertDialogTitle>
+                <AlertDialogDescription className="text-slate-600">
                   This action cannot be undone. This will permanently delete
                   today&apos;s attendance and remove your data from the
                   database.
                 </AlertDialogDescription>
               </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogFooter className="gap-2">
+                <AlertDialogCancel className="rounded-xl">
+                  Cancel
+                </AlertDialogCancel>
                 <AlertDialogAction
-                  className="bg-red-600 hover:bg-red-700"
+                  className="rounded-xl bg-red-600 hover:bg-red-700"
                   onClick={handleDeleteAllAttendances}
                 >
-                  Continue
+                  Delete Attendance
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-        ) : null}
+        )}
       </div>
     </div>
   );

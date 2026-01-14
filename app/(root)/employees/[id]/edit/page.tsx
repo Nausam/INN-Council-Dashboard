@@ -8,13 +8,11 @@ import {
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-// Shape of what we expect back from Appwrite for an Employee document.
-// Include only the fields you actually use on this page/form.
 type EmployeeDoc = {
   $id: string;
   name: string;
   designation: string;
-  joinedDate: string | null; // ISO in DB; we format to YYYY-MM-DD for the form
+  joinedDate: string | null;
   address: string;
   section: string;
   recordCardNumber: string;
@@ -32,7 +30,6 @@ type EmployeeDoc = {
 const toFormValues = (emp: EmployeeDoc): EmployeeFormData => ({
   name: emp.name ?? "",
   designation: emp.designation ?? "",
-  // convert ISO -> YYYY-MM-DD (or empty)
   joinedDate: emp.joinedDate
     ? new Date(emp.joinedDate).toISOString().split("T")[0]
     : "",
@@ -94,8 +91,16 @@ const EmployeeEditPage = ({ params }: { params: { id: string } }) => {
 
   if (!employeeData) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <p className="text-2xl font-semibold">Loading...</p>
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-50">
+        <div className="text-center">
+          <div className="mx-auto mb-4 h-16 w-16 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
+          <p className="text-lg font-semibold text-slate-900">
+            Loading employee data...
+          </p>
+          <p className="mt-1 text-sm text-slate-600">
+            Please wait while we fetch the details
+          </p>
+        </div>
       </div>
     );
   }
