@@ -5,7 +5,7 @@ import SkeletonEmployeeDetailsCard from "@/components/skeletons/SkeletonEmployee
 import { fetchEmployeeById } from "@/lib/appwrite/appwrite";
 import { useParams, useRouter } from "next/navigation";
 import React, { useEffect, useState } from "react";
-import { ArrowLeft, User } from "lucide-react";
+import { ArrowLeft, User, Sparkles } from "lucide-react";
 
 type EmployeeForCard = {
   name: string;
@@ -81,9 +81,15 @@ const EmployeeDetails: React.FC = () => {
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50">
-        <div className="mx-auto max-w-5xl px-4 py-8 lg:px-8">
+        {/* Decorative background */}
+        <div className="pointer-events-none fixed inset-0 overflow-hidden">
+          <div className="absolute -left-48 -top-48 h-96 w-96 rounded-full bg-indigo-100/30 blur-3xl" />
+          <div className="absolute -right-48 top-96 h-96 w-96 rounded-full bg-violet-100/30 blur-3xl" />
+        </div>
+
+        <div className="relative mx-auto max-w-5xl px-4 py-8 lg:px-8">
           {/* Back button skeleton */}
-          <div className="mb-8 h-10 w-32 animate-pulse rounded-xl bg-slate-200" />
+          <div className="mb-8 h-12 w-28 animate-pulse rounded-2xl bg-slate-200" />
 
           <SkeletonEmployeeDetailsCard />
         </div>
@@ -94,70 +100,152 @@ const EmployeeDetails: React.FC = () => {
   if (error || !employee) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50">
-        <div className="mx-auto max-w-5xl px-4 py-8 lg:px-8">
+        {/* Decorative background */}
+        <div className="pointer-events-none fixed inset-0 overflow-hidden">
+          <div className="absolute -left-48 -top-48 h-96 w-96 rounded-full bg-red-100/30 blur-3xl" />
+        </div>
+
+        <div className="relative mx-auto max-w-5xl px-4 py-8 lg:px-8">
           {/* Back button */}
           <button
             onClick={() => router.back()}
-            className="mb-8 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50"
+            className="group mb-8 inline-flex items-center gap-2 rounded-2xl border-2 border-slate-200 bg-white/80 px-5 py-3 text-sm font-bold text-slate-700 shadow-sm backdrop-blur-sm transition-all duration-200 hover:scale-105 hover:border-slate-300 hover:bg-white hover:shadow-md"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className="h-4 w-4 transition-transform duration-200 group-hover:-translate-x-1" />
             Back
           </button>
 
           {/* Error state */}
-          <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white py-16 px-6">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-red-100">
-              <User className="h-8 w-8 text-red-600" />
+          <div
+            className="flex flex-col items-center justify-center rounded-3xl border-2 border-dashed border-red-200 bg-gradient-to-br from-red-50 to-rose-50 py-20 px-6"
+            style={{
+              animation: "fadeInUp 400ms ease-out",
+            }}
+          >
+            <div className="relative mb-6">
+              <div className="absolute inset-0 rounded-full bg-red-500 opacity-20 blur-2xl" />
+              <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-red-500 to-rose-500 text-white shadow-2xl shadow-red-500/30">
+                <User className="h-12 w-12" />
+              </div>
             </div>
-            <h3 className="mb-2 text-lg font-semibold text-slate-900">
+            <h3 className="mb-2 text-2xl font-black text-slate-900">
               Employee not found
             </h3>
-            <p className="mb-4 text-sm text-slate-600">
+            <p className="mb-6 text-center text-sm font-medium text-slate-600">
               The employee you&apos;re looking for doesn&apos;t exist or has
               been removed.
             </p>
             <button
               onClick={() => router.push("/employees")}
-              className="rounded-xl bg-indigo-500 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-indigo-600"
+              className="group flex items-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-500 to-violet-500 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/30 transition-all duration-200 hover:scale-105 hover:shadow-xl hover:shadow-indigo-500/40"
             >
+              <ArrowLeft className="h-4 w-4 transition-transform duration-200 group-hover:-translate-x-1" />
               Back to Employees
             </button>
           </div>
         </div>
+
+        <style jsx>{`
+          @keyframes fadeInUp {
+            from {
+              opacity: 0;
+              transform: translateY(20px);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+        `}</style>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50">
-      <div className="mx-auto max-w-5xl px-4 py-8 lg:px-8">
+      {/* Decorative background elements */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute -left-48 -top-48 h-96 w-96 rounded-full bg-indigo-100/30 blur-3xl" />
+        <div className="absolute -right-48 top-96 h-96 w-96 rounded-full bg-violet-100/30 blur-3xl" />
+      </div>
+
+      <div className="relative mx-auto max-w-5xl px-4 py-8 lg:px-8">
         {/* Back button */}
         <button
           onClick={() => router.back()}
-          className="mb-8 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50"
+          className="group mb-8 inline-flex items-center gap-2 rounded-2xl border-2 border-slate-200 bg-white/80 px-5 py-3 text-sm font-bold text-slate-700 shadow-sm backdrop-blur-sm transition-all duration-200 hover:scale-105 hover:border-slate-300 hover:bg-white hover:shadow-md"
+          style={{
+            animation: "fadeInLeft 400ms ease-out",
+          }}
         >
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft className="h-4 w-4 transition-transform duration-200 group-hover:-translate-x-1" />
           Back
         </button>
 
         {/* Page header */}
-        <div className="mb-8 flex items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-lg">
-            <User className="h-7 w-7" />
+        <div
+          className="mb-8 flex items-center gap-5"
+          style={{
+            animation: "fadeInUp 400ms ease-out 100ms both",
+          }}
+        >
+          {/* Icon Container */}
+          <div className="relative">
+            <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-indigo-500 to-violet-500 opacity-20 blur-xl" />
+            <div className="relative flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-xl shadow-indigo-500/30">
+              <User className="h-8 w-8" />
+            </div>
           </div>
+
+          {/* Title */}
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-              Employee Details
+            <h1 className="text-4xl font-black tracking-tight text-slate-900">
+              Employee Profile
             </h1>
-            <p className="mt-1 text-slate-600">
-              Viewing profile for {employee.name}
-            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <div className="flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-50 to-violet-50 px-3 py-1 ring-1 ring-indigo-200/50">
+                <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
+                <span className="text-sm font-bold text-indigo-700">
+                  {employee.name}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Employee details card */}
-        <EmployeeDetailsCard employee={employee} />
+        <div
+          style={{
+            animation: "fadeInUp 400ms ease-out 200ms both",
+          }}
+        >
+          <EmployeeDetailsCard employee={employee} />
+        </div>
       </div>
+
+      <style jsx>{`
+        @keyframes fadeInUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes fadeInLeft {
+          from {
+            opacity: 0;
+            transform: translateX(-20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+      `}</style>
     </div>
   );
 };

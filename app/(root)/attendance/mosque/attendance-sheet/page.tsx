@@ -423,57 +423,136 @@ export default function Page() {
       `}</style>
 
       <div className="mx-auto w-full max-w-[1400px] overflow-auto">
-        {/* Controls */}
-        <div className="no-print mb-4">
-          {/* toolbar */}
-          <div className="rounded-2xl border border-neutral-200 bg-white/80 p-3 shadow-sm backdrop-blur">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              {/* Left: primary action */}
-              <div className="flex items-center justify-between gap-2 md:justify-start">
+        {/* Controls - Redesigned with modern aesthetics */}
+        <div className="no-print mb-6">
+          {/* Main Controls Card */}
+          <div className="relative overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-xl shadow-slate-900/5">
+            {/* Subtle gradient overlay */}
+            <div className="absolute inset-0 bg-gradient-to-br from-emerald-50/40 via-transparent to-blue-50/40 pointer-events-none" />
+
+            <div className="relative p-6">
+              {/* Header Section */}
+              <div className="mb-6 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/25">
+                    <svg
+                      className="h-6 w-6 text-white"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+                      />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900">
+                      ކޮންޓްރޯލް ޕެނަލް
+                    </h3>
+                    <p className="text-sm text-slate-600">
+                      {monthLabel} {year}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Print Button - Prominent */}
                 <button
                   type="button"
                   onClick={printOnePage}
-                  className="inline-flex h-10 items-center justify-center rounded-xl bg-neutral-900 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-neutral-800 active:translate-y-[1px]"
+                  className="group relative inline-flex h-12 items-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-8 font-bold text-white shadow-lg shadow-slate-900/25 transition-all hover:shadow-xl hover:shadow-slate-900/30 hover:-translate-y-0.5 active:translate-y-0"
                 >
-                  ޕްރިންޓް
+                  <div className="absolute inset-0 bg-gradient-to-br from-white/0 via-white/5 to-white/0 opacity-0 transition-opacity group-hover:opacity-100" />
+                  <svg
+                    className="h-5 w-5 relative z-10"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"
+                    />
+                  </svg>
+                  <span className="relative z-10">ޕްރިންޓް</span>
                 </button>
-
-                {/* Optional: small hint / status */}
-                <div className="text-xs text-neutral-500 md:hidden">
-                  {monthLabel} {year}
-                </div>
               </div>
 
-              {/* Right: controls grid */}
-              <div className="grid grid-cols-2 gap-2 md:grid-cols-6">
-                {/* shared styles */}
-                {/* (keep classes inline to avoid extra code) */}
-
-                {/* Month */}
-                <div className="col-span-1">
-                  <div className="mb-1 text-[11px] font-semibold text-neutral-600">
+              {/* Main Controls Grid */}
+              <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
+                {/* Month Selector */}
+                <div className="group">
+                  <label className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-600">
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                      />
+                    </svg>
                     މަސް
+                  </label>
+                  <div className="relative">
+                    <select
+                      className="h-11 w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-4 pr-10 text-sm font-semibold text-slate-900 shadow-sm transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-100 group-hover:shadow-md"
+                      value={month}
+                      onChange={(e) => setMonth(Number(e.target.value))}
+                    >
+                      {MONTHS.map((m) => (
+                        <option key={m.value} value={m.value}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                      <svg
+                        className="h-5 w-5 text-slate-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 9l-7 7-7-7"
+                        />
+                      </svg>
+                    </div>
                   </div>
-                  <select
-                    className="h-10 w-full rounded-xl bg-white px-3 text-sm shadow-sm ring-1 ring-neutral-200 transition focus:outline-none focus:ring-2 focus:ring-neutral-900"
-                    value={month}
-                    onChange={(e) => setMonth(Number(e.target.value))}
-                  >
-                    {MONTHS.map((m) => (
-                      <option key={m.value} value={m.value}>
-                        {m.label}
-                      </option>
-                    ))}
-                  </select>
                 </div>
 
-                {/* Year */}
-                <div className="col-span-1">
-                  <div className="mb-1 text-[11px] font-semibold text-neutral-600">
+                {/* Year Input */}
+                <div className="group">
+                  <label className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-600">
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
                     އަހަރު
-                  </div>
+                  </label>
                   <input
-                    className="h-10 w-full rounded-xl bg-white px-3 text-center text-sm shadow-sm ring-1 ring-neutral-200 transition focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                    className="h-11 w-full rounded-xl border-2 border-slate-200 bg-white px-4 text-center text-sm font-bold text-slate-900 shadow-sm transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-100 group-hover:shadow-md"
                     type="number"
                     value={year}
                     onChange={(e) =>
@@ -482,11 +561,24 @@ export default function Page() {
                   />
                 </div>
 
-                {/* Deduct minutes */}
-                <div className="col-span-1">
-                  <div className="mb-1 text-[11px] font-semibold text-neutral-600">
+                {/* Deduct Minutes */}
+                <div className="group">
+                  <label className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-600">
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M20 12H4"
+                      />
+                    </svg>
                     ކަނޑާ މިނަޓް
-                  </div>
+                  </label>
                   <input
                     type="number"
                     min={0}
@@ -496,75 +588,198 @@ export default function Page() {
                     onChange={(e) =>
                       setDeductMins(clampInt(Number(e.target.value), 0, 180))
                     }
-                    className="h-10 w-full rounded-xl bg-white px-3 text-center text-sm shadow-sm ring-1 ring-neutral-200 transition focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                    className="h-11 w-full rounded-xl border-2 border-slate-200 bg-white px-4 text-center text-sm font-bold text-slate-900 shadow-sm transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-100 group-hover:shadow-md"
                   />
                 </div>
 
-                {/* View range */}
-                <div className="col-span-1">
-                  <div className="mb-1 text-[11px] font-semibold text-neutral-600">
+                {/* View Range */}
+                <div className="group">
+                  <label className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-600">
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                      />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                      />
+                    </svg>
                     View
+                  </label>
+                  <div className="relative">
+                    <select
+                      className="h-11 w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-4 pr-10 text-sm font-semibold text-slate-900 shadow-sm transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-100 group-hover:shadow-md"
+                      value={viewSelect}
+                      onChange={(e) =>
+                        setViewSelect(e.target.value as RangeKey)
+                      }
+                    >
+                      <option value="A">{ranges.A.label}</option>
+                      <option value="B">{ranges.B.label}</option>
+                      <option value="BOTH">{ranges.BOTH.label}</option>
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                      <svg
+                        className="h-5 w-5 text-slate-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 9l-7 7-7-7"
+                        />
+                      </svg>
+                    </div>
                   </div>
-                  <select
-                    className="h-10 w-full rounded-xl bg-white px-3 text-sm shadow-sm ring-1 ring-neutral-200 transition focus:outline-none focus:ring-2 focus:ring-neutral-900"
-                    value={viewSelect}
-                    onChange={(e) => setViewSelect(e.target.value as RangeKey)}
-                  >
-                    <option value="A">{ranges.A.label}</option>
-                    <option value="B">{ranges.B.label}</option>
-                    <option value="BOTH">{ranges.BOTH.label}</option>
-                  </select>
                 </div>
 
-                {/* Heading (no-print already on wrapper) */}
-                <div className="col-span-1">
-                  <div className="mb-1 text-[11px] font-semibold text-neutral-600">
+                {/* Heading Mode */}
+                <div className="group">
+                  <label className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-600">
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+                      />
+                    </svg>
                     ހެޑިންގް
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={headingMode}
+                      onChange={(e) =>
+                        setHeadingMode(e.target.value as HeadingMode)
+                      }
+                      className="h-11 w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-4 pr-10 text-sm font-semibold text-slate-900 shadow-sm transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-100 group-hover:shadow-md"
+                    >
+                      <option value="ATTENDANCE">އިމާމު</option>
+                      <option value="SHEET2">ޕޫލް</option>
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                      <svg
+                        className="h-5 w-5 text-slate-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 9l-7 7-7-7"
+                        />
+                      </svg>
+                    </div>
                   </div>
-                  <select
-                    value={headingMode}
-                    onChange={(e) =>
-                      setHeadingMode(e.target.value as HeadingMode)
-                    }
-                    className="h-10 w-full rounded-xl bg-white px-3 text-sm shadow-sm ring-1 ring-neutral-200 transition focus:outline-none focus:ring-2 focus:ring-neutral-900"
-                  >
-                    <option value="ATTENDANCE">އިމާމު</option>
-                    <option value="SHEET2">ޕޫލް</option>
-                  </select>
                 </div>
 
-                {/* Imam */}
-                <div className="col-span-1">
-                  <div className="mb-1 text-[11px] font-semibold text-neutral-600">
+                {/* Imam Selector */}
+                <div className="group">
+                  <label className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-600">
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                      />
+                    </svg>
                     އިމާމް / މުދިމު
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={imamKey}
+                      onChange={(e) =>
+                        setImamKey(e.target.value as ImamOptionKey)
+                      }
+                      className="h-11 w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-4 pr-10 text-sm font-semibold text-slate-900 shadow-sm transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-100 group-hover:shadow-md"
+                    >
+                      <option value="Shahidh">ސާހިދު</option>
+                      <option value="Zahidh">ޒާހިދު</option>
+                      <option value="Neem">ނީމް</option>
+                      <option value="Yazaan">ޔަޒާން</option>
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                      <svg
+                        className="h-5 w-5 text-slate-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M19 9l-7 7-7-7"
+                        />
+                      </svg>
+                    </div>
                   </div>
-                  <select
-                    value={imamKey}
-                    onChange={(e) =>
-                      setImamKey(e.target.value as ImamOptionKey)
-                    }
-                    className="h-10 w-full rounded-xl bg-white px-3 text-sm shadow-sm ring-1 ring-neutral-200 transition focus:outline-none focus:ring-2 focus:ring-neutral-900"
-                  >
-                    <option value="Shahidh">ސާހިދު</option>
-                    <option value="Zahidh">ޒާހިދު</option>
-                    <option value="Neem">ނީމް</option>
-                    <option value="Yazaan">ޔަޒާން</option>
-                  </select>
                 </div>
               </div>
-            </div>
 
-            {/* Empty rules row (separate, cleaner) */}
-            <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-12">
-              <div className="md:col-span-12 rounded-2xl bg-neutral-50 p-3 ring-1 ring-neutral-200">
-                <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-                  <div className="flex flex-wrap items-end gap-2">
-                    <div>
-                      <div className="mb-1 text-[11px] font-semibold text-neutral-600">
-                        Empty
-                      </div>
+              {/* Empty Rules Section - Collapsible Design */}
+              <div className="mt-6 overflow-hidden rounded-2xl border-2 border-slate-200 bg-gradient-to-br from-slate-50 to-white">
+                <div className="border-b border-slate-200 bg-white px-5 py-3">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-white">
+                      <svg
+                        className="h-4 w-4"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </div>
+                    <h4 className="text-sm font-bold text-slate-900">
+                      Empty Rules
+                    </h4>
+                    <span className="ml-auto rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-bold text-slate-700">
+                      {Object.keys(emptyRules).length} active
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-5">
+                  <div className="flex flex-wrap items-end gap-3">
+                    {/* Day Selector */}
+                    <div className="flex-1 min-w-[100px]">
+                      <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-600">
+                        Day
+                      </label>
                       <select
-                        className="h-10 rounded-xl bg-white px-3 text-sm shadow-sm ring-1 ring-neutral-200 transition focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                        className="h-11 w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 shadow-sm transition-all hover:border-slate-300 focus:border-slate-500 focus:outline-none focus:ring-4 focus:ring-slate-100"
                         value={emptyDay}
                         onChange={(e) => setEmptyDay(Number(e.target.value))}
                       >
@@ -578,12 +793,13 @@ export default function Page() {
                       </select>
                     </div>
 
-                    <div>
-                      <div className="mb-1 text-[11px] font-semibold text-neutral-600">
+                    {/* Prayer Selector */}
+                    <div className="flex-1 min-w-[140px]">
+                      <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-600">
                         Prayer
-                      </div>
+                      </label>
                       <select
-                        className="h-10 rounded-xl bg-white px-3 text-sm shadow-sm ring-1 ring-neutral-200 transition focus:outline-none focus:ring-2 focus:ring-neutral-900"
+                        className="h-11 w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 shadow-sm transition-all hover:border-slate-300 focus:border-slate-500 focus:outline-none focus:ring-4 focus:ring-slate-100"
                         value={emptyPrayer}
                         onChange={(e) =>
                           setEmptyPrayer(e.target.value as PrayerSelect)
@@ -598,23 +814,23 @@ export default function Page() {
                       </select>
                     </div>
 
+                    {/* Action Buttons */}
                     <button
                       type="button"
                       onClick={() => addEmptyRule(emptyDay, emptyPrayer)}
-                      className="h-10 rounded-xl bg-white px-4 text-sm font-semibold shadow-sm ring-1 ring-neutral-200 transition hover:bg-neutral-100 active:translate-y-[1px]"
+                      className="h-11 rounded-xl bg-slate-900 px-6 text-sm font-bold text-white shadow-lg shadow-slate-900/20 transition-all hover:bg-slate-800 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0"
                     >
-                      Apply
+                      Apply Rule
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setEmptyRules({})}
+                      className="h-11 rounded-xl border-2 border-slate-200 bg-white px-6 text-sm font-bold text-slate-700 shadow-sm transition-all hover:border-red-300 hover:bg-red-50 hover:text-red-700 hover:shadow-md"
+                    >
+                      Clear All
                     </button>
                   </div>
-
-                  {/* quick clear (optional) */}
-                  <button
-                    type="button"
-                    onClick={() => setEmptyRules({})}
-                    className="h-10 rounded-xl px-4 text-sm font-semibold text-neutral-600 ring-1 ring-neutral-200 transition hover:bg-white"
-                  >
-                    Clear empties
-                  </button>
                 </div>
               </div>
             </div>

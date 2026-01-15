@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
 import {
@@ -41,7 +42,7 @@ import {
   MosqueAttendanceTableProps,
   PrayerKey,
 } from "@/types";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Clock, AlertCircle, Save, Trash2 } from "lucide-react";
 
 /* -------------------- local helpers & types -------------------- */
@@ -90,7 +91,7 @@ function nameFromRef(
   cache: Record<string, { name: string }>
 ): string {
   if (!emp) return "Unknown";
-  if (typeof emp === "string") return cache[emp]?.name ?? emp;
+  if (typeof emp === "string") return cache[emp]?.name ?? "Unknown";
   return emp.name || emp.$id || emp.id || "Unknown";
 }
 
@@ -125,7 +126,7 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
   useEffect(() => {
     const ids = new Set<string>();
     for (const r of data) {
-      const emp = r.employeeId;
+      const emp = r.employeeId as unknown as EmployeeRef;
       if (typeof emp === "string" && !empInfoMap[emp]) ids.add(emp);
     }
     const unresolved = Array.from(ids);
@@ -170,22 +171,32 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
   const handleLeaveChange = (attendanceId: string, leaveTypeLabel: string) => {
     const leaveTypeValue =
       leaveTypeMapping[leaveTypeLabel as keyof typeof leaveTypeMapping] ?? null;
+
     setAttendanceRecords((prev) =>
-      prev.map((r) =>
-        r.$id === attendanceId
-          ? {
-              ...r,
-              fathisSignInTime: leaveTypeValue ? null : r.fathisSignInTime,
-              mendhuruSignInTime: leaveTypeValue ? null : r.mendhuruSignInTime,
-              asuruSignInTime: leaveTypeValue ? null : r.asuruSignInTime,
-              maqribSignInTime: leaveTypeValue ? null : r.maqribSignInTime,
-              ishaSignInTime: leaveTypeValue ? null : r.ishaSignInTime,
-              leaveType: leaveTypeValue,
-              previousLeaveType: r.leaveType,
-              changed: true,
-            }
-          : r
-      )
+      prev.map((r) => {
+        if (r.$id !== attendanceId) return r;
+
+        if (leaveTypeValue) {
+          return {
+            ...r,
+            fathisSignInTime: null,
+            mendhuruSignInTime: null,
+            asuruSignInTime: null,
+            maqribSignInTime: null,
+            ishaSignInTime: null,
+            leaveType: leaveTypeValue,
+            previousLeaveType: r.leaveType,
+            changed: true,
+          };
+        }
+
+        return {
+          ...r,
+          leaveType: null,
+          previousLeaveType: r.leaveType,
+          changed: true,
+        };
+      })
     );
   };
 
@@ -240,9 +251,8 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
     const updatedAttendance = attendanceRecords.map((record) => {
       const copy: MosqueAttendanceRecord = { ...record };
 
-      // figure out grace by designation
       const desig = designationFromRef(
-        record.employeeId as EmployeeRef,
+        record.employeeId as unknown as EmployeeRef,
         empInfoMap
       )
         .toLowerCase()
@@ -279,7 +289,9 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
     try {
       await Promise.all(
         changed.map(async (r) => {
-          const empId = resolveEmployeeId(r.employeeId);
+          const empId = resolveEmployeeId(
+            r.employeeId as unknown as EmployeeRef
+          );
 
           if (empId) {
             const employee = (await fetchEmployeeById(empId)) as Record<
@@ -296,7 +308,7 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
               toast({
                 title: "Leave Balance Error",
                 description: `${nameFromRef(
-                  r.employeeId,
+                  r.employeeId as unknown as EmployeeRef,
                   empInfoMap
                 )} does not have any ${r.leaveType} left.`,
                 variant: "destructive",
@@ -378,109 +390,129 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
     }
   };
 
-  // Count changes
   const changedCount = attendanceRecords.filter((r) => r.changed).length;
 
   const prayerColumns: { key: PrayerKey; label: string }[] = [
-    { key: "fathisSignInTime", label: "Fathis Prayer" },
-    { key: "mendhuruSignInTime", label: "Mendhuru Prayer" },
-    { key: "asuruSignInTime", label: "Asuru Prayer" },
-    { key: "maqribSignInTime", label: "Maqrib Prayer" },
-    { key: "ishaSignInTime", label: "Isha Prayer" },
+    { key: "fathisSignInTime", label: "Fajr" },
+    { key: "mendhuruSignInTime", label: "Dhuhr" },
+    { key: "asuruSignInTime", label: "Asr" },
+    { key: "maqribSignInTime", label: "Maghrib" },
+    { key: "ishaSignInTime", label: "Isha" },
   ];
 
   return (
     <div className="space-y-6">
-      {/* Stats banner */}
       {changedCount > 0 && (
-        <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100">
+        <div className="flex items-center gap-3 rounded-2xl border-2 border-amber-200 bg-amber-50 p-4 shadow-sm">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-100">
             <AlertCircle className="h-5 w-5 text-amber-600" />
           </div>
           <div>
-            <p className="font-semibold text-amber-900">
+            <p className="font-bold text-amber-900">
               {changedCount} {changedCount === 1 ? "record" : "records"}{" "}
               modified
             </p>
-            <p className="text-sm text-amber-700">
+            <p className="text-sm font-medium text-amber-700">
               Don&apos;t forget to submit your changes
             </p>
           </div>
         </div>
       )}
 
-      {/* Table */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="overflow-x-auto">
-          <Table>
+      <div className="overflow-hidden rounded-3xl bg-white/80 shadow-md ring-1 ring-slate-200/50 backdrop-blur-xl">
+        <div className="relative overflow-x-auto">
+          <Table className="w-full table-fixed">
             <TableHeader>
-              <TableRow className="bg-slate-50 hover:bg-slate-50">
-                <TableHead className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-600">
+              <TableRow className="bg-slate-50/80 hover:bg-slate-50/80">
+                <TableHead className="w-12 px-3 py-4 text-xs font-bold uppercase tracking-wider text-slate-600">
                   #
                 </TableHead>
-                <TableHead className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-600">
+
+                <TableHead className="w-[180px] px-3 py-4 text-xs font-bold uppercase tracking-wider text-slate-600">
                   Employee
                 </TableHead>
+
                 {prayerColumns.map((col) => (
                   <TableHead
                     key={col.key}
-                    className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-600"
+                    className="w-[110px] px-2 py-4 text-xs font-bold uppercase tracking-wider text-slate-600"
                   >
                     {col.label}
                   </TableHead>
                 ))}
-                <TableHead className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-600">
-                  Attendance Status
+
+                <TableHead
+                  className="
+                    w-[140px] px-2 py-4 text-xs font-bold uppercase tracking-wider text-slate-600
+                    sticky right-0 z-20 bg-white/90 backdrop-blur-xl
+                  "
+                >
+                  Status
                 </TableHead>
               </TableRow>
             </TableHeader>
+
             <TableBody>
               {attendanceRecords.map((record, index) => {
                 const isChanged = record.changed;
+                const isOnLeave = !!record.leaveType;
+
+                const displayName = nameFromRef(
+                  record.employeeId as unknown as EmployeeRef,
+                  empInfoMap
+                );
+
                 return (
                   <TableRow
                     key={record.$id}
                     className={`transition-colors ${
                       isChanged
-                        ? "bg-amber-50/50 hover:bg-amber-50"
-                        : "hover:bg-slate-50"
+                        ? "bg-amber-50/60 hover:bg-amber-50"
+                        : "hover:bg-slate-50/70"
                     }`}
                   >
-                    <TableCell className="py-3 px-4 text-slate-600 font-medium">
+                    <TableCell className="px-3 py-4 text-sm font-semibold text-slate-600">
                       {index + 1}
                     </TableCell>
-                    <TableCell className="py-3 px-4">
-                      <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-600">
-                          {nameFromRef(
-                            record.employeeId as EmployeeRef,
-                            empInfoMap
-                          )
-                            .charAt(0)
-                            .toUpperCase()}
+
+                    <TableCell className="px-3 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="relative">
+                          <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 opacity-30 blur-xl" />
+                          <div className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 text-sm font-black text-white shadow-lg shadow-indigo-500/30">
+                            {displayName.charAt(0).toUpperCase()}
+                          </div>
                         </div>
-                        <span className="font-medium text-slate-900">
-                          {nameFromRef(
-                            record.employeeId as EmployeeRef,
-                            empInfoMap
-                          )}
-                        </span>
-                        {isChanged && (
-                          <span className="ml-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                            Modified
-                          </span>
-                        )}
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate text-sm font-bold text-slate-900">
+                              {displayName}
+                            </span>
+                            {isChanged && (
+                              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700 ring-1 ring-amber-200/60">
+                                Modified
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs font-medium text-slate-500">
+                            {designationFromRef(
+                              record.employeeId as unknown as EmployeeRef,
+                              empInfoMap
+                            ) || "—"}
+                          </p>
+                        </div>
                       </div>
                     </TableCell>
 
                     {prayerColumns.map((col) => (
-                      <TableCell key={col.key} className="py-3 px-2">
+                      <TableCell key={col.key} className="px-2 py-4">
                         <div className="relative">
-                          <Clock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                          <Clock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                           <input
                             type="time"
                             value={
-                              record[col.key]
+                              record[col.key] && !isOnLeave
                                 ? formatTimeForInput(record[col.key]!)
                                 : ""
                             }
@@ -491,13 +523,36 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
                                 e.target.value
                               )
                             }
-                            className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm font-medium text-slate-900 shadow-sm transition-all focus:border-emerald-300 focus:outline-none focus:ring-4 focus:ring-emerald-100"
+                            disabled={isOnLeave}
+                            className="
+                              w-full
+                              rounded-2xl
+                              border-2 border-slate-200
+                              bg-white
+                              py-2.5 pl-10 pr-3
+                              text-sm font-semibold text-slate-900
+                              shadow-sm
+                              transition-all duration-200 ease-out
+                              hover:border-slate-300
+                              focus:border-indigo-400
+                              focus:outline-none
+                              focus:ring-2 focus:ring-indigo-100
+                              disabled:cursor-not-allowed
+                              disabled:bg-slate-50
+                              disabled:text-slate-400
+                            "
                           />
                         </div>
                       </TableCell>
                     ))}
 
-                    <TableCell className="py-3 px-2">
+                    <TableCell
+                      className="
+                        py-4 px-2
+                        sticky right-0 z-10
+                        bg-white/90 backdrop-blur-xl
+                      "
+                    >
                       <select
                         value={
                           record.leaveType
@@ -509,7 +564,21 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
                         onChange={(e) =>
                           handleLeaveChange(record.$id, e.target.value)
                         }
-                        className="w-full appearance-none rounded-lg border border-slate-200 bg-white py-2 px-3 pr-8 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 focus:border-emerald-300 focus:outline-none focus:ring-4 focus:ring-emerald-100"
+                        className="
+                          w-full
+                          appearance-none
+                          rounded-2xl
+                          border-2 border-slate-200
+                          bg-white
+                          py-2.5 px-3 pr-9
+                          text-sm font-bold text-slate-700
+                          shadow-sm
+                          transition-all duration-200 ease-out
+                          hover:border-slate-300
+                          focus:border-indigo-400
+                          focus:outline-none
+                          focus:ring-2 focus:ring-indigo-100
+                        "
                       >
                         <option value="">✓ Present</option>
                         {leaveTypes.map((type) => (
@@ -527,11 +596,10 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
         </div>
       </div>
 
-      {/* Action buttons */}
       <div className="flex flex-col gap-4 md:flex-row md:justify-between">
         <button
-          className={`inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 font-semibold text-white shadow-sm transition-all hover:bg-emerald-700 hover:shadow-md md:w-auto ${
-            submitting ? "cursor-not-allowed opacity-50" : ""
+          className={`group inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-500 to-violet-500 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/30 transition-all duration-200 ease-out hover:scale-105 hover:shadow-xl hover:shadow-indigo-500/40 md:w-auto ${
+            submitting ? "cursor-not-allowed opacity-50 hover:scale-100" : ""
           }`}
           onClick={handleSubmitAttendance}
           disabled={submitting}
@@ -544,8 +612,10 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <button
-                className={`inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-6 py-3 font-semibold text-red-600 shadow-sm transition-all hover:bg-red-50 hover:shadow-md md:w-auto ${
-                  submitting ? "cursor-not-allowed opacity-50" : ""
+                className={`inline-flex items-center justify-center gap-2 rounded-2xl border-2 border-red-200 bg-white/80 px-6 py-3 text-sm font-bold text-red-600 shadow-sm backdrop-blur-sm transition-all duration-200 ease-out hover:scale-105 hover:bg-red-50 hover:shadow-md md:w-auto ${
+                  submitting
+                    ? "cursor-not-allowed opacity-50 hover:scale-100"
+                    : ""
                 }`}
                 disabled={submitting}
               >
@@ -553,26 +623,28 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
                 Delete Attendance
               </button>
             </AlertDialogTrigger>
-            <AlertDialogContent className="rounded-2xl">
+
+            <AlertDialogContent className="rounded-3xl bg-white/90 backdrop-blur-2xl">
               <AlertDialogHeader>
-                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-red-100">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-100">
                   <AlertCircle className="h-6 w-6 text-red-600" />
                 </div>
-                <AlertDialogTitle className="text-xl">
+                <AlertDialogTitle className="text-2xl font-black text-slate-900">
                   Are you absolutely sure?
                 </AlertDialogTitle>
-                <AlertDialogDescription className="text-slate-600">
+                <AlertDialogDescription className="text-sm font-medium text-slate-600">
                   This action cannot be undone. This will permanently delete
                   today&apos;s mosque attendance and remove your data from the
                   database.
                 </AlertDialogDescription>
               </AlertDialogHeader>
+
               <AlertDialogFooter className="gap-2">
-                <AlertDialogCancel className="rounded-xl">
+                <AlertDialogCancel className="rounded-2xl">
                   Cancel
                 </AlertDialogCancel>
                 <AlertDialogAction
-                  className="rounded-xl bg-red-600 hover:bg-red-700"
+                  className="rounded-2xl bg-red-600 hover:bg-red-700"
                   onClick={handleDeleteAllAttendances}
                 >
                   Delete Attendance

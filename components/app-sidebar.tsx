@@ -27,7 +27,6 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
-// Sample data (yours)
 const data = {
   user: {
     name: "Nausam",
@@ -77,7 +76,10 @@ const data = {
       items: [
         { title: "Council", url: "/attendance/council" },
         { title: "Mosque", url: "/attendance/mosque" },
-        { title: "Prayer Times", url: "/attendance/mosque/prayerTimes" },
+        {
+          title: "Attendance Sheet",
+          url: "/attendance/mosque/attendance-sheet",
+        },
       ],
     },
     {
@@ -139,24 +141,58 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const collapsed = state === "collapsed";
 
   return (
-    <Sidebar collapsible="icon" {...props} className="bg-white">
-      <SidebarHeader className="border-b border-slate-100">
+    <Sidebar
+      collapsible="icon"
+      {...props}
+      className="border-r border-slate-200/50 bg-gradient-to-b from-white to-slate-50/50 transition-all duration-300 ease-out"
+      style={{
+        willChange: "width",
+      }}
+    >
+      {/* Decorative gradient overlay - no pointer events to avoid interference */}
+      <div
+        className="pointer-events-none absolute inset-0 bg-gradient-to-br from-indigo-500/5 via-transparent to-purple-500/5 transition-opacity duration-300"
+        style={{
+          opacity: collapsed ? 0 : 1,
+        }}
+      />
+
+      <SidebarHeader className="relative border-b border-slate-200/50">
         <div
-          className={collapsed ? "flex justify-center p-2" : "px-5 pt-6 pb-4"}
+          className={cn(
+            "overflow-hidden transition-all duration-300 ease-out",
+            collapsed ? "flex justify-center p-2" : "px-5 pt-6 pb-4"
+          )}
         >
-          <div className={collapsed ? "w-11" : ""}>
+          <div
+            className="transition-all duration-300 ease-out"
+            style={{
+              width: collapsed ? "2.75rem" : "100%",
+              opacity: collapsed ? 1 : 1,
+            }}
+          >
             <TeamSwitcher teams={data.teams} />
           </div>
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="py-3">
+      <SidebarContent className="relative py-3 overflow-hidden">
         <NavMain items={data.navMain} />
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-slate-100 bg-white">
-        <div className={collapsed ? "flex justify-center p-2" : "p-3"}>
-          <div className={collapsed ? "w-11" : "w-full"}>
+      <SidebarFooter className="relative border-t border-slate-200/50 bg-gradient-to-b from-transparent to-slate-50/50">
+        <div
+          className="overflow-hidden transition-all duration-300 ease-out"
+          style={{
+            padding: collapsed ? "0.5rem" : "0.75rem",
+          }}
+        >
+          <div
+            className="transition-all duration-300 ease-out"
+            style={{
+              width: collapsed ? "2.75rem" : "100%",
+            }}
+          >
             <NavUser user={data.user} />
           </div>
         </div>
@@ -165,4 +201,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarRail />
     </Sidebar>
   );
+}
+
+// Helper function for conditional classes
+function cn(...classes: (string | boolean | undefined)[]) {
+  return classes.filter(Boolean).join(" ");
 }

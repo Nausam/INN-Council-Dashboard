@@ -1,5 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 "use client";
+
+import React, { useEffect, useMemo, useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,7 +30,6 @@ import {
   updateAttendanceRecord,
 } from "@/lib/appwrite/appwrite";
 import { useUser } from "@/Providers/UserProvider";
-import { useEffect, useMemo, useState } from "react";
 import {
   Clock,
   UserCheck,
@@ -36,9 +37,11 @@ import {
   AlertCircle,
   Users,
   Save,
+  ChevronDown,
+  Sparkles,
 } from "lucide-react";
 
-// --- HELPERS ---
+/* ---------------- Helpers ---------------- */
 const ADDITIVE_LEAVES = [
   "maternityLeave",
   "preMaternityLeave",
@@ -55,8 +58,6 @@ const BALANCE_LEAVES = [
   "familyRelatedLeave",
 ] as const;
 type BalanceLeave = (typeof BALANCE_LEAVES)[number];
-
-type NumericLeaveKey = AdditiveLeave | BalanceLeave;
 
 const isAdditiveLeave = (k: string): k is AdditiveLeave =>
   (ADDITIVE_LEAVES as readonly string[]).includes(k);
@@ -130,56 +131,37 @@ const reverseLeaveTypeMapping: Record<string, LeaveLabel> = Object.fromEntries(
   )
 ) as Record<string, LeaveLabel>;
 
-// --- Maldives timezone helpers (UTC+05:00, no DST) ---
+/* --- Maldives timezone helpers (UTC+05:00, no DST) --- */
 const MV_OFFSET_MIN = 5 * 60;
 
 /* ---------------- Time helpers ---------------- */
 const formatTimeForInput = (dateTime: string | null) => {
   if (!dateTime) return "";
-  const d = new Date(dateTime); // Parse UTC ISO string
-
-  // Add 5 hours (300 minutes) to UTC to get Maldives time
+  const d = new Date(dateTime);
   const localMs = d.getTime() + MV_OFFSET_MIN * 60 * 1000;
   const localDate = new Date(localMs);
-
   const hh = String(localDate.getUTCHours()).padStart(2, "0");
   const mm = String(localDate.getUTCMinutes()).padStart(2, "0");
-
   return `${hh}:${mm}`;
 };
 
-// Convert local Maldives time input (HH:mm) + date to UTC ISO string
 const convertTimeToDateTime = (time: string, date: string) => {
   const [hh, mm] = time.split(":").map((v) => parseInt(v, 10));
-
-  // Create date at midnight UTC
   const utc = new Date(`${date}T00:00:00.000Z`);
-
-  // Subtract 5 hours from Maldives time to get UTC
   const mvMinutes = hh * 60 + mm;
   const utcMinutes = mvMinutes - MV_OFFSET_MIN;
-
   utc.setUTCMinutes(utcMinutes);
-
   return utc.toISOString();
 };
 
-// Convert date + local Maldives time (HH:mm) to UTC Date object
 const mvLocalToUtcDate = (date: string, hhmm: string) => {
   const [hh, mm] = hhmm.split(":").map((v) => parseInt(v, 10));
-
   const utc = new Date(`${date}T00:00:00.000Z`);
-
-  // Subtract 5 hours from Maldives time to get UTC
   const mvMinutes = hh * 60 + mm;
   const utcMinutes = mvMinutes - MV_OFFSET_MIN;
-
   utc.setUTCMinutes(utcMinutes);
-
   return utc;
 };
-
-/* ===================================================================== */
 
 const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
   const [attendanceUpdates, setAttendanceUpdates] =
@@ -188,28 +170,20 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
   const { isAdmin } = useUser();
   const { toast } = useToast();
 
-  // Cache for resolving names/sections when employeeId is a string
   const [employeeCache, setEmployeeCache] = useState<
     Record<string, { name: string; section?: string }>
   >({});
 
-  /* -------- helpers for mixed shapes + cache -------- */
   const idFromRef = (ref: EmployeeRef) =>
     typeof ref === "object" ? ref.$id : ref;
 
   const normalize = (s?: string) => (s ?? "").toLowerCase().trim();
   const clean = (s?: string) => normalize(s).replace(/[^a-z]/g, "");
 
-  // robust section extraction (looks at several possible fields/variants)
   const sectionFromRecord = (r: AttendanceRecord) => {
-    if (typeof r.employeeId === "object") {
-      const s = r.employeeId.section ?? "";
-      return s || "";
-    }
+    if (typeof r.employeeId === "object") return r.employeeId.section ?? "";
     const id = r.employeeId;
     const cache = id ? employeeCache[id] : undefined;
-    // try common alternative fields if your employee doc uses different keys
-
     const raw =
       cache?.section ||
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -230,12 +204,10 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     return (id && employeeCache[id]?.name) || "Unknown";
   };
 
-  // Keep local state in sync with prop
   useEffect(() => {
     setAttendanceUpdates(data);
   }, [data]);
 
-  // Which IDs do we need to resolve?
   const unresolvedIds = useMemo(() => {
     const ids = new Set<string>();
     for (const r of attendanceUpdates) {
@@ -247,7 +219,6 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     return Array.from(ids);
   }, [attendanceUpdates, employeeCache]);
 
-  // Fetch missing employee docs (parallel)
   useEffect(() => {
     if (unresolvedIds.length === 0) return;
     (async () => {
@@ -256,7 +227,6 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
           unresolvedIds.map(async (id) => {
             try {
               const doc = await fetchEmployeeById(id);
-              // read name/section defensively
               const anyDoc = doc as Record<string, unknown>;
               const name =
                 String(
@@ -293,8 +263,6 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
   }, [unresolvedIds]);
 
   /* ---------------- Custom order + section-first sort ---------------- */
-
-  // Your requested fixed order (we'll compare case-insensitively)
   const employeeOrder = [
     "Ahmed Azmeen",
     "Ahmed Ruzaan",
@@ -323,14 +291,12 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     "Ubaidh",
   ];
 
-  // Build a fast index map with normalized keys
   const orderIndex = useMemo(() => {
     const map = new Map<string, number>();
     employeeOrder.forEach((n, i) => map.set(normalize(n), i));
     return map;
   }, []);
 
-  // map noisy section strings to canonical groups
   type CanonicalSection = "Councillor" | "Admin" | "Waste Management" | "Other";
   const getCanonicalSection = (raw?: string): CanonicalSection => {
     const n = clean(raw);
@@ -360,7 +326,6 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     return "Other";
   };
 
-  // split into groups by canonical section
   const grouped = useMemo(() => {
     const g: Record<CanonicalSection, AttendanceRecord[]> = {
       Councillor: [],
@@ -375,7 +340,6 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     return g;
   }, [attendanceUpdates, employeeCache]);
 
-  // sort within group by your fixed order (case-insensitive), then by name
   const sortWithin = (arr: AttendanceRecord[]) => {
     return [...arr].sort((a, b) => {
       const an = nameFromRecord(a);
@@ -421,15 +385,12 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     setSubmitting(true);
     toast({ title: "Submitting", description: "Updating attendance..." });
 
-    // compute lateness first
     const withLateness = attendanceUpdates.map((r) => {
       if (!r.signInTime) return r;
       const sec = getCanonicalSection(sectionFromRecord(r));
       const required = sec === "Councillor" ? "08:30" : "08:00";
-
-      // required time treated as Maldives local, converted to UTC
       const requiredTime = mvLocalToUtcDate(date, required);
-      const actual = new Date(r.signInTime); // already UTC ISO
+      const actual = new Date(r.signInTime);
 
       const minutesLate = Math.max(
         0,
@@ -465,7 +426,6 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
                 );
               }
             }
-            // if additive -> no blocking check
           }
 
           if (r.previousLeaveType && r.previousLeaveType !== r.leaveType) {
@@ -529,10 +489,9 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     }
   };
 
-  // Count changes
   const changedCount = attendanceUpdates.filter((r) => r.changed).length;
 
-  /* ---------------- UI ---------------- */
+  /* ---------------- UI helpers ---------------- */
   let rowCounter = 0;
 
   const SectionHeadingRow = ({
@@ -542,11 +501,20 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     title: string;
     icon: React.ReactNode;
   }) => (
-    <TableRow className="bg-slate-50 hover:bg-slate-50">
-      <TableCell colSpan={4} className="py-3 px-4">
-        <div className="flex items-center gap-2 font-semibold text-slate-900">
-          {icon}
-          <span>{title}</span>
+    <TableRow className="bg-slate-50/60 hover:bg-slate-50/60">
+      <TableCell colSpan={4} className="px-4 py-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-black text-slate-900">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-white/80 text-slate-700 shadow-sm ring-1 ring-slate-200/60 backdrop-blur">
+              {icon}
+            </span>
+            <span className="tracking-tight">{title}</span>
+          </div>
+
+          <span className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-50 to-violet-50 px-3 py-1 text-xs font-bold text-indigo-700 ring-1 ring-indigo-200/50">
+            <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
+            Section
+          </span>
         </div>
       </TableCell>
     </TableRow>
@@ -559,46 +527,65 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
   ) => {
     if (!rows.length) return null;
     const sorted = sortWithin(rows);
+
     return (
       <>
         <SectionHeadingRow title={title} icon={icon} />
         {sorted.map((record) => {
           rowCounter += 1;
           const isChanged = record.changed;
+
           return (
             <TableRow
               key={record.$id}
-              className={`transition-colors ${
+              className={[
+                "transition-all duration-200 ease-out",
                 isChanged
-                  ? "bg-amber-50/50 hover:bg-amber-50"
-                  : "hover:bg-slate-50"
-              }`}
+                  ? "bg-amber-50/60 hover:bg-amber-50"
+                  : "hover:bg-slate-50/70",
+              ].join(" ")}
+              style={{ willChange: "transform" }}
             >
-              <TableCell className="py-3 px-4 text-slate-600 font-medium">
+              <TableCell className="px-4 py-3 text-sm font-bold text-slate-500">
                 {rowCounter}
               </TableCell>
-              <TableCell className="py-3 px-4">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-600">
-                    {nameFromRecord(record).charAt(0).toUpperCase()}
+
+              <TableCell className="px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <div className="absolute inset-0 rounded-2xl bg-indigo-500 opacity-30 blur-xl" />
+                    <div className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 text-sm font-black text-white shadow-lg shadow-indigo-500/30 ring-2 ring-white">
+                      {nameFromRecord(record).charAt(0).toUpperCase()}
+                    </div>
                   </div>
-                  <span className="font-medium text-slate-900">
-                    {nameFromRecord(record)}
-                  </span>
-                  {isChanged && (
-                    <span className="ml-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                      Modified
-                    </span>
-                  )}
+
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-bold text-slate-900">
+                        {nameFromRecord(record)}
+                      </span>
+
+                      {isChanged && (
+                        <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800 ring-1 ring-amber-200/60">
+                          Modified
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="text-xs font-medium text-slate-500">
+                      {sectionFromRecord(record) || "—"}
+                    </div>
+                  </div>
                 </div>
               </TableCell>
-              <TableCell className="py-3 px-4">
+
+              <TableCell className="px-4 py-3">
                 {!record.leaveType ? (
-                  <div className="relative">
-                    <Clock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <div className="relative group">
+                    <Clock className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400 transition-colors duration-200 group-hover:text-indigo-500" />
                     <input
                       type="time"
-                      className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm font-medium text-slate-900 shadow-sm transition-all focus:border-indigo-300 focus:outline-none focus:ring-4 focus:ring-indigo-100"
+                      className="w-full rounded-2xl border-2 border-slate-200 bg-white py-3 pl-12 pr-4 text-sm font-semibold text-slate-900 shadow-sm transition-all duration-200 ease-out placeholder-slate-400 hover:border-slate-300 focus:border-indigo-400 focus:outline-none focus:ring-4 focus:ring-indigo-100"
                       value={formatTimeForInput(record.signInTime)}
                       onChange={(e) =>
                         handleSignInChange(record.$id, e.target.value)
@@ -606,28 +593,34 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
                     />
                   </div>
                 ) : (
-                  <span className="text-sm text-slate-400">—</span>
+                  <span className="text-sm font-semibold text-slate-400">
+                    —
+                  </span>
                 )}
               </TableCell>
-              <TableCell className="py-3 px-4">
-                <select
-                  value={
-                    record.leaveType
-                      ? reverseLeaveTypeMapping[record.leaveType] ?? ""
-                      : ""
-                  }
-                  onChange={(e) =>
-                    handleLeaveChange(record.$id, e.target.value)
-                  }
-                  className="w-full appearance-none rounded-lg border border-slate-200 bg-white py-2 px-3 pr-8 text-sm font-medium text-slate-900 shadow-sm transition-all hover:border-slate-300 focus:border-indigo-300 focus:outline-none focus:ring-4 focus:ring-indigo-100"
-                >
-                  <option value="">✓ Present</option>
-                  {leaveTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
+
+              <TableCell className="px-4 py-3">
+                <div className="group relative">
+                  <select
+                    value={
+                      record.leaveType
+                        ? reverseLeaveTypeMapping[record.leaveType] ?? ""
+                        : ""
+                    }
+                    onChange={(e) =>
+                      handleLeaveChange(record.$id, e.target.value)
+                    }
+                    className="w-full appearance-none rounded-2xl border-2 border-slate-200 bg-white py-3 pl-4 pr-10 text-sm font-semibold text-slate-700 shadow-sm transition-all duration-200 ease-out hover:border-slate-300 focus:border-indigo-400 focus:outline-none focus:ring-4 focus:ring-indigo-100"
+                  >
+                    <option value="">✓ Present</option>
+                    {leaveTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400 transition-colors duration-200 group-hover:text-indigo-500" />
+                </div>
               </TableCell>
             </TableRow>
           );
@@ -643,48 +636,70 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
 
   return (
     <div className="space-y-6">
-      {/* Stats banner */}
+      {/* Modified banner (glass) */}
       {changedCount > 0 && (
-        <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100">
-            <AlertCircle className="h-5 w-5 text-amber-600" />
-          </div>
-          <div>
-            <p className="font-semibold text-amber-900">
-              {changedCount} {changedCount === 1 ? "record" : "records"}{" "}
-              modified
-            </p>
-            <p className="text-sm text-amber-700">
-              Don&apos;t forget to submit your changes
-            </p>
+        <div
+          className="group relative overflow-hidden rounded-3xl bg-white/80 p-4 shadow-md ring-1 ring-amber-200/60 backdrop-blur-xl transition-all duration-300 ease-out hover:shadow-xl"
+          style={{
+            willChange: "transform",
+            animation: "fadeInUp 420ms ease-out",
+          }}
+        >
+          <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-amber-500 opacity-0 blur-3xl transition-all duration-500 group-hover:opacity-15" />
+          <div className="relative z-10 flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 ring-1 ring-amber-200/60">
+              <AlertCircle className="h-6 w-6" />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-black text-slate-900">
+                {changedCount} {changedCount === 1 ? "record" : "records"}{" "}
+                modified
+              </p>
+              <p className="text-xs font-semibold text-slate-600">
+                Don&apos;t forget to submit your changes.
+              </p>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Table */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      {/* Table (glass card) */}
+      <div
+        className="group relative overflow-hidden rounded-3xl bg-white/80 shadow-md ring-1 ring-slate-200/50 backdrop-blur-xl transition-all duration-300 ease-out hover:shadow-xl hover:ring-slate-300/50"
+        style={{
+          willChange: "transform",
+          animation: "fadeInUp 420ms ease-out 60ms both",
+        }}
+      >
+        <div className="pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full bg-indigo-500 opacity-0 blur-3xl transition-all duration-500 group-hover:opacity-15" />
+        <div
+          className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/40 to-transparent transition-transform duration-700 group-hover:translate-x-full"
+          style={{ width: "50%" }}
+        />
+
         <Table>
           <TableHeader>
-            <TableRow className="bg-slate-50 hover:bg-slate-50">
-              <TableHead className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-600">
+            <TableRow className="bg-slate-50/70 hover:bg-slate-50/70">
+              <TableHead className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-600">
                 #
               </TableHead>
-              <TableHead className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-600">
-                Employee Name
+              <TableHead className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-600">
+                Employee
               </TableHead>
-              <TableHead className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-600">
-                Sign in Time
+              <TableHead className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-600">
+                Sign In
               </TableHead>
-              <TableHead className="py-3 px-4 text-xs font-bold uppercase tracking-wider text-slate-600">
-                Attendance Status
+              <TableHead className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-600">
+                Status
               </TableHead>
             </TableRow>
           </TableHeader>
+
           <TableBody>
             {renderSection(
               "Council",
               councillor,
-              <Users className="h-4 w-4 text-purple-600" />
+              <Users className="h-4 w-4 text-violet-600" />
             )}
             {renderSection(
               "Admin",
@@ -694,7 +709,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
             {renderSection(
               "Waste Management",
               waste,
-              <Users className="h-4 w-4 text-green-600" />
+              <Users className="h-4 w-4 text-emerald-600" />
             )}
             {renderSection(
               "Other",
@@ -705,12 +720,19 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
         </Table>
       </div>
 
-      {/* Action buttons */}
-      <div className="flex flex-col gap-4 md:flex-row md:justify-between">
+      {/* Action bar */}
+      <div
+        className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
+        style={{ animation: "fadeInUp 420ms ease-out 120ms both" }}
+      >
         <button
-          className={`inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 hover:shadow-md md:w-auto ${
-            submitting ? "cursor-not-allowed opacity-50" : ""
-          }`}
+          className={[
+            "group inline-flex items-center justify-center gap-2 rounded-2xl",
+            "bg-gradient-to-r from-indigo-500 to-violet-500 px-6 py-3",
+            "text-sm font-bold text-white shadow-lg shadow-indigo-500/30",
+            "transition-all duration-200 ease-out hover:scale-105 hover:shadow-xl hover:shadow-indigo-500/40",
+            submitting ? "cursor-not-allowed opacity-50" : "",
+          ].join(" ")}
           onClick={handleSubmitAttendance}
           disabled={submitting}
         >
@@ -722,35 +744,42 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <button
-                className={`inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-6 py-3 font-semibold text-red-600 shadow-sm transition-all hover:bg-red-50 hover:shadow-md md:w-auto ${
-                  submitting ? "cursor-not-allowed opacity-50" : ""
-                }`}
+                className={[
+                  "group inline-flex items-center justify-center gap-2 rounded-2xl",
+                  "border-2 border-red-200 bg-white/80 px-6 py-3",
+                  "text-sm font-bold text-red-600 shadow-sm backdrop-blur-sm",
+                  "transition-all duration-200 ease-out hover:scale-105 hover:bg-red-50 hover:shadow-md",
+                  submitting ? "cursor-not-allowed opacity-50" : "",
+                ].join(" ")}
                 disabled={submitting}
               >
                 <Trash2 className="h-5 w-5" />
                 Delete Attendance
               </button>
             </AlertDialogTrigger>
-            <AlertDialogContent className="rounded-2xl">
+
+            <AlertDialogContent className="rounded-3xl border-0 bg-white/90 shadow-2xl ring-1 ring-slate-200/60 backdrop-blur-2xl">
               <AlertDialogHeader>
-                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-red-100">
-                  <AlertCircle className="h-6 w-6 text-red-600" />
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-3xl bg-red-100 text-red-700 ring-1 ring-red-200/60">
+                  <AlertCircle className="h-7 w-7" />
                 </div>
-                <AlertDialogTitle className="text-xl">
+                <AlertDialogTitle className="text-2xl font-black tracking-tight text-slate-900">
                   Are you absolutely sure?
                 </AlertDialogTitle>
-                <AlertDialogDescription className="text-slate-600">
+                <AlertDialogDescription className="text-sm font-medium text-slate-600">
                   This action cannot be undone. This will permanently delete
                   today&apos;s attendance and remove your data from the
                   database.
                 </AlertDialogDescription>
               </AlertDialogHeader>
+
               <AlertDialogFooter className="gap-2">
-                <AlertDialogCancel className="rounded-xl">
+                <AlertDialogCancel className="rounded-2xl border-2 border-slate-200 bg-white/80 font-bold text-slate-700 shadow-sm backdrop-blur-sm transition-all duration-200 hover:bg-white hover:shadow-md">
                   Cancel
                 </AlertDialogCancel>
+
                 <AlertDialogAction
-                  className="rounded-xl bg-red-600 hover:bg-red-700"
+                  className="rounded-2xl bg-gradient-to-r from-red-500 to-rose-500 px-6 font-bold text-white shadow-lg transition-all duration-200 hover:shadow-xl"
                   onClick={handleDeleteAllAttendances}
                 >
                   Delete Attendance
@@ -760,6 +789,19 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
           </AlertDialog>
         )}
       </div>
+
+      <style jsx>{`
+        @keyframes fadeInUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
     </div>
   );
 };

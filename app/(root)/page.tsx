@@ -25,6 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { Calendar as CalendarIcon } from "lucide-react";
+import StatCard from "@/components/Dashboard/StatCard";
 
 /* ===================== Minimal types + guards ===================== */
 
@@ -335,7 +336,7 @@ const Dashboard: React.FC = () => {
           </div>
         ) : null}
 
-        {/* Stats cards */}
+        {/* Stats cards - NOW USING StatCard COMPONENT */}
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4 lg:gap-8">
           {loading ? (
             <>
@@ -346,86 +347,36 @@ const Dashboard: React.FC = () => {
             </>
           ) : (
             <>
-              {/* Total Employees Card */}
-              <div className="group relative overflow-hidden rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/50 transition-all hover:shadow-xl hover:ring-indigo-300/50">
-                <div className="absolute right-0 top-0 h-32 w-32 translate-x-8 -translate-y-8 rounded-full bg-indigo-100/50 blur-2xl transition-transform group-hover:scale-125" />
-                <div className="relative flex items-start justify-between">
-                  <div>
-                    <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 ring-1 ring-indigo-100">
-                      <FaUsers className="h-5 w-5" />
-                    </div>
-                    <p className="mt-4 text-sm font-medium text-slate-600">
-                      Total Employees
-                    </p>
-                    <p className="mt-2 text-4xl font-bold tracking-tight text-slate-900">
-                      {totalEmployees}
-                    </p>
-                  </div>
-                </div>
-              </div>
+              <StatCard
+                icon={FaUsers}
+                label="Total Employees"
+                value={totalEmployees}
+                colorScheme="indigo"
+              />
 
-              {/* On Time Card */}
-              <div className="group relative overflow-hidden rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/50 transition-all hover:shadow-xl hover:ring-emerald-300/50">
-                <div className="absolute right-0 top-0 h-32 w-32 translate-x-8 -translate-y-8 rounded-full bg-emerald-100/50 blur-2xl transition-transform group-hover:scale-125" />
-                <div className="relative flex items-start justify-between">
-                  <div>
-                    <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100">
-                      <FaClock className="h-5 w-5" />
-                    </div>
-                    <p className="mt-4 text-sm font-medium text-slate-600">
-                      On Time
-                    </p>
-                    <p className="mt-2 text-4xl font-bold tracking-tight text-slate-900">
-                      {onTime}
-                    </p>
-                    <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
-                      <span>{pct(onTime, totalEmployees)}%</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <StatCard
+                icon={FaClock}
+                label="On Time"
+                value={onTime}
+                percentage={pct(onTime, totalEmployees)}
+                colorScheme="emerald"
+              />
 
-              {/* Late Card */}
-              <div className="group relative overflow-hidden rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/50 transition-all hover:shadow-xl hover:ring-amber-300/50">
-                <div className="absolute right-0 top-0 h-32 w-32 translate-x-8 -translate-y-8 rounded-full bg-amber-100/50 blur-2xl transition-transform group-hover:scale-125" />
-                <div className="relative flex items-start justify-between">
-                  <div>
-                    <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-xl bg-amber-50 text-amber-600 ring-1 ring-amber-100">
-                      <FaRunning className="h-5 w-5" />
-                    </div>
-                    <p className="mt-4 text-sm font-medium text-slate-600">
-                      Late
-                    </p>
-                    <p className="mt-2 text-4xl font-bold tracking-tight text-slate-900">
-                      {late}
-                    </p>
-                    <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">
-                      <span>{pct(late, totalEmployees)}%</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <StatCard
+                icon={FaRunning}
+                label="Late"
+                value={late}
+                percentage={pct(late, totalEmployees)}
+                colorScheme="amber"
+              />
 
-              {/* On Leave Card */}
-              <div className="group relative overflow-hidden rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/50 transition-all hover:shadow-xl hover:ring-rose-300/50">
-                <div className="absolute right-0 top-0 h-32 w-32 translate-x-8 -translate-y-8 rounded-full bg-rose-100/50 blur-2xl transition-transform group-hover:scale-125" />
-                <div className="relative flex items-start justify-between">
-                  <div>
-                    <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-xl bg-rose-50 text-rose-600 ring-1 ring-rose-100">
-                      <FaTimes className="h-5 w-5" />
-                    </div>
-                    <p className="mt-4 text-sm font-medium text-slate-600">
-                      On Leave
-                    </p>
-                    <p className="mt-2 text-4xl font-bold tracking-tight text-slate-900">
-                      {absent}
-                    </p>
-                    <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700">
-                      <span>{pct(absent, totalEmployees)}%</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <StatCard
+                icon={FaTimes}
+                label="On Leave"
+                value={absent}
+                percentage={pct(absent, totalEmployees)}
+                colorScheme="rose"
+              />
             </>
           )}
         </div>

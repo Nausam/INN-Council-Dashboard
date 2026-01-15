@@ -540,24 +540,66 @@ export const fetchMosqueAttendanceForDate = async (
   }
 };
 
-// Create attendance rows for mosque assistants
+// Create attendance rows for mosque assistants with optional prefilled times
 export const createMosqueAttendanceForEmployees = async (
   date: string,
-  employees: EmployeeDoc[]
+  employees: EmployeeDoc[],
+  config?: {
+    getPrefilledTimes?: (designation: string) => {
+      fathisSignInTime: string;
+      mendhuruSignInTime: string;
+      asuruSignInTime: string;
+      maqribSignInTime: string;
+      ishaSignInTime: string;
+    };
+  }
 ): Promise<Array<Omit<MosqueAttendanceDoc, keyof Models.Document>>> => {
   try {
+    console.log("createMosqueAttendanceForEmployees called");
+    console.log("Date:", date);
+    console.log("Employees count:", employees.length);
+    console.log("Has config:", !!config);
+    console.log("Has getPrefilledTimes:", !!config?.getPrefilledTimes);
+
     const entries: Array<Omit<MosqueAttendanceDoc, keyof Models.Document>> =
-      employees.map((employee) => ({
-        employeeId: employee.$id, // your collection uses string id
-        date,
-        fathisSignInTime: null,
-        mendhuruSignInTime: null,
-        asuruSignInTime: null,
-        maqribSignInTime: null,
-        ishaSignInTime: null,
-        leaveType: null,
-        // minutesLate fields are usually computed later; omit here
-      }));
+      employees.map((employee) => {
+        console.log(
+          `Processing employee: ${employee.name} (${employee.designation})`
+        );
+
+        // Get prefilled times if config is provided
+        const prefilledTimes = config?.getPrefilledTimes
+          ? config.getPrefilledTimes(employee.designation || "")
+          : null;
+
+        if (prefilledTimes) {
+          console.log(
+            "Prefilled times for",
+            employee.name,
+            ":",
+            prefilledTimes
+          );
+        } else {
+          console.log("No prefilled times for", employee.name);
+        }
+
+        return {
+          employeeId: employee.$id,
+          date,
+          fathisSignInTime: prefilledTimes?.fathisSignInTime || null,
+          mendhuruSignInTime: prefilledTimes?.mendhuruSignInTime || null,
+          asuruSignInTime: prefilledTimes?.asuruSignInTime || null,
+          maqribSignInTime: prefilledTimes?.maqribSignInTime || null,
+          ishaSignInTime: prefilledTimes?.ishaSignInTime || null,
+          leaveType: null,
+          // minutesLate fields are usually computed later; omit here or set to 0
+          fathisMinutesLate: 0,
+          mendhuruMinutesLate: 0,
+          asuruMinutesLate: 0,
+          maqribMinutesLate: 0,
+          ishaMinutesLate: 0,
+        };
+      });
 
     await Promise.all(
       entries.map((entry) =>

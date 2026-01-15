@@ -62,6 +62,44 @@ const MosqueAttendancePage = () => {
     setIsAttendanceGenerated(false);
   }, [selectedDate]);
 
+  // Define the custom order for employees
+  const employeeOrder = [
+    "Mohamed Shahidh",
+    "Ahmed Zahidh",
+    "Mohamed Mahir",
+    "Ibrahim Waseen",
+    "Ibrahim Hashim",
+    "Hawwa Luiza",
+  ];
+
+  const sortAttendanceByEmployeeOrder = (attendance: AttendanceDoc[]) => {
+    return [...attendance].sort((a, b) => {
+      // Helper to get employee name from the record
+      const getEmployeeName = (record: AttendanceDoc): string => {
+        const emp = record.employeeId;
+        if (typeof emp === "string") return emp;
+        return emp?.name || emp?.$id || "";
+      };
+
+      const nameA = getEmployeeName(a);
+      const nameB = getEmployeeName(b);
+
+      const indexA = employeeOrder.indexOf(nameA);
+      const indexB = employeeOrder.indexOf(nameB);
+
+      // If both are in the order list, sort by their position
+      if (indexA !== -1 && indexB !== -1) {
+        return indexA - indexB;
+      }
+      // If only A is in the list, it comes first
+      if (indexA !== -1) return -1;
+      // If only B is in the list, it comes first
+      if (indexB !== -1) return 1;
+      // If neither is in the list, sort alphabetically
+      return nameA.localeCompare(nameB);
+    });
+  };
+
   const fetchAttendanceData = async (date: string) => {
     if (!date) return;
     setLoading(true);
@@ -71,7 +109,9 @@ const MosqueAttendancePage = () => {
       )) as AttendanceDoc[];
 
       if (attendance.length > 0) {
-        setAttendanceData(attendance);
+        // Sort the attendance data by the custom employee order
+        const sortedAttendance = sortAttendanceByEmployeeOrder(attendance);
+        setAttendanceData(sortedAttendance);
         setIsAttendanceGenerated(true);
         setShowGenerateButton(false);
       } else {
@@ -109,6 +149,59 @@ const MosqueAttendancePage = () => {
         setIsAttendanceGenerated(true);
         setShowGenerateButton(false);
       } else {
+        // Fetch prayer times for the selected date
+        let prayerTimes: {
+          fathisTime: string;
+          mendhuruTime: string;
+          asuruTime: string;
+          maqribTime: string;
+          ishaTime: string;
+        } | null = null;
+
+        try {
+          // Try fetching from salat.db first
+          const { fetchInnamaadhooTimes } = await import("@/lib/salat-client");
+          const salat = await fetchInnamaadhooTimes(formattedSelectedDate);
+          if (salat && salat.times) {
+            prayerTimes = salat.times;
+            console.log("Prayer times from salat.db:", prayerTimes);
+          }
+        } catch (error) {
+          console.log("Failed to fetch from salat.db, trying Appwrite:", error);
+          // Fallback to Appwrite prayerTimes collection
+          try {
+            const { fetchPrayerTimesByDate } = await import(
+              "@/lib/appwrite/appwrite"
+            );
+            const fetched = await fetchPrayerTimesByDate(formattedSelectedDate);
+            if (fetched) {
+              prayerTimes = {
+                fathisTime: fetched.fathisTime,
+                mendhuruTime: fetched.mendhuruTime,
+                asuruTime: fetched.asuruTime,
+                maqribTime: fetched.maqribTime,
+                ishaTime: fetched.ishaTime,
+              };
+              console.log("Prayer times from Appwrite:", prayerTimes);
+            }
+          } catch (appwriteError) {
+            console.error(
+              "Failed to fetch prayer times from Appwrite:",
+              appwriteError
+            );
+          }
+        }
+
+        if (!prayerTimes) {
+          console.warn("No prayer times available for prefilling");
+          toast({
+            title: "Warning",
+            description:
+              "Prayer times not found. Attendance created without prefilled times.",
+            variant: "default",
+          });
+        }
+
         const employees = (await fetchAllEmployees()) as EmployeeDoc[];
         const mosqueAssistants = employees.filter(
           (e) =>
@@ -116,10 +209,70 @@ const MosqueAttendancePage = () => {
               e.designation === "Imam") &&
             e.section === "Mosque"
         );
+
+        // Helper to subtract minutes from HH:MM time string
+        const subtractMinutes = (timeStr: string, minutes: number): string => {
+          const [hours, mins] = timeStr.split(":").map(Number);
+          const totalMinutes = hours * 60 + mins - minutes;
+          const newHours = Math.floor(totalMinutes / 60);
+          const newMins = totalMinutes % 60;
+          return `${String(newHours).padStart(2, "0")}:${String(
+            newMins
+          ).padStart(2, "0")}`;
+        };
+
+        // Helper to convert HH:MM to ISO datetime string for the selected date
+        const timeToDateTime = (timeStr: string, dateStr: string): string => {
+          return `${dateStr}T${timeStr}:00.000+00:00`;
+        };
+
+        // Create attendance records with prefilled prayer times
+        const prefilledConfig = prayerTimes
+          ? {
+              getPrefilledTimes: (designation: string) => {
+                const graceMinutes = designation === "Imam" ? 5 : 15;
+                console.log(
+                  `Creating prefilled times for ${designation} with ${graceMinutes} min grace`
+                );
+
+                const times = {
+                  fathisSignInTime: timeToDateTime(
+                    subtractMinutes(prayerTimes!.fathisTime, graceMinutes),
+                    formattedSelectedDate
+                  ),
+                  mendhuruSignInTime: timeToDateTime(
+                    subtractMinutes(prayerTimes!.mendhuruTime, graceMinutes),
+                    formattedSelectedDate
+                  ),
+                  asuruSignInTime: timeToDateTime(
+                    subtractMinutes(prayerTimes!.asuruTime, graceMinutes),
+                    formattedSelectedDate
+                  ),
+                  maqribSignInTime: timeToDateTime(
+                    subtractMinutes(prayerTimes!.maqribTime, graceMinutes),
+                    formattedSelectedDate
+                  ),
+                  ishaSignInTime: timeToDateTime(
+                    subtractMinutes(prayerTimes!.ishaTime, graceMinutes),
+                    formattedSelectedDate
+                  ),
+                };
+
+                console.log("Prefilled times:", times);
+                return times;
+              },
+            }
+          : undefined;
+
+        console.log("Mosque assistants count:", mosqueAssistants.length);
+        console.log("Has prefilled config:", !!prefilledConfig);
+
         await createMosqueAttendanceForEmployees(
           formattedSelectedDate,
-          mosqueAssistants
+          mosqueAssistants,
+          prefilledConfig
         );
+
         toast({
           title: "Success",
           description: "Attendance sheet created for mosque assistants.",
