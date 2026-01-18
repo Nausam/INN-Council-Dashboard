@@ -20,6 +20,8 @@ const APPWRITE_CONFIG = {
     process.env.NEXT_PUBLIC_APP_APPWRITE_COUNCIL_NINMUN_COLLECTION || "",
   iulaanCollectionId:
     process.env.NEXT_PUBLIC_APP_APPWRITE_COUNCIL_IULAAN_COLLECTION || "",
+  servicesCompetitionsCollectionId:
+    process.env.NEXT_PUBLIC_APPWRITE_SERVICES_COMPETITIONS_COLLECTION || "",
 };
 
 // Initialize Appwrite Client
