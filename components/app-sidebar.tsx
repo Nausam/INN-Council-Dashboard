@@ -58,6 +58,18 @@ const data = {
       items: [
         { title: "Home", url: "/" },
         { title: "Admin", url: "/admin" },
+        {
+          title: "Services & Competitions",
+          url: "/admin/app/services&competitions",
+        },
+        {
+          title: "Council Ninmun",
+          url: "/admin/app/council-ninmun",
+        },
+        {
+          title: "Council Iulaan",
+          url: "/admin/app/iulaan",
+        },
       ],
     },
     {
@@ -161,7 +173,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <div
           className={cn(
             "overflow-hidden transition-all duration-300 ease-out",
-            collapsed ? "flex justify-center p-2" : "px-5 pt-6 pb-4"
+            collapsed ? "flex justify-center p-2" : "px-5 pt-6 pb-4",
           )}
         >
           <div

@@ -6,7 +6,7 @@ import DirectoryItemForm, {
 import { servicesCompetitionsService } from "@/lib/appwrite/app/services.actions";
 import { useRouter } from "next/navigation";
 
-export default function NewNinmunPage() {
+const ServicesCompetitions = () => {
   const router = useRouter();
 
   const onSubmit = async (values: DirectoryItemFormValues) => {
@@ -23,8 +23,9 @@ export default function NewNinmunPage() {
   };
   return (
     <div className="mx-auto w-full max-w-3xl p-4">
-      {/* <IulaanCreateForm /> */}
       <DirectoryItemForm mode="create" onSubmit={onSubmit} />
     </div>
   );
-}
+};
+
+export default ServicesCompetitions;
