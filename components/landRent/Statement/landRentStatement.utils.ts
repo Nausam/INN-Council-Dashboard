@@ -39,6 +39,42 @@ export function fmtDateShort(iso: string | null | undefined) {
   return d.toISOString().slice(0, 10);
 }
 
+export function fmtDateDDMMYYYY(iso: string | null | undefined) {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "-";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
+}
+
+const DHIVEHI_MONTHS: Record<number, string> = {
+  0: "ޖެނުއަރީ",
+  1: "ފެބްރުއަރީ",
+  2: "މާރިޗް",
+  3: "އޭޕްރިލް",
+  4: "މޭ",
+  5: "ޖޫން",
+  6: "ޖުލައި",
+  7: "އޯގަސްޓް",
+  8: "ސެޕްޓެމްބަރު",
+  9: "އޮކްޓޯބަރު",
+  10: "ނޮވެމްބަރު",
+  11: "ޑިސެމްބަރު",
+};
+
+export function fmtDateDhivehi(iso: string | null | undefined) {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "-";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const monthIndex = d.getMonth();
+  const monthName = DHIVEHI_MONTHS[monthIndex] ?? "";
+  const yyyy = d.getFullYear();
+  return `${dd} ${monthName} ${yyyy}`;
+}
+
 export function fmtDateTimeShort(iso: string | null | undefined) {
   if (!iso) return "-";
   const d = new Date(iso);

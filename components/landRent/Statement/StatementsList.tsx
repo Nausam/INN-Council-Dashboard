@@ -5,9 +5,11 @@
 import CouncilInvoiceTemplate from "@/components/landRent/CouncilInvoiceTemplate";
 import { downloadElementAsPdf } from "@/components/landRent/Statement/landRentPdf.utils";
 import {
-  fmtDateShort,
-  fmtMoney,
-  monthKeyToFullDate,
+    fmtDateShort,
+    fmtDateDDMMYYYY,
+    fmtDateDhivehi,
+    fmtMoney,
+    monthKeyToFullDate,
 } from "@/components/landRent/Statement/landRentStatement.utils";
 import type { StatementDetails } from "@/components/landRent/Statement/useLandRentStatementPage";
 import React, { useMemo } from "react";
@@ -181,9 +183,10 @@ export default function StatementsList({
               totalLabel={{ text: "ޖުމްލަ: (ރުފިޔާ)", highlight: true }}
               totalAmount={{ text: totalMonthly, highlight: true }}
               footerNote={{
-                text: `ނޯޓް: ކުލީގެ ތަފްސީލް ހެދިފައިވަނީ ${monthKeyToFullDate(
-                  details.monthKey,
-                  1
+                text: `ނޯޓް: ކުލީގެ ތަފްސީލް ހެދިފައިވަނީ ${fmtDateDhivehi(
+                  details.statement.createdAt ??
+                    details.statement.$createdAt ??
+                    null
                 )} ވަނަ ދުވަހުގެ ނިޔަލަށް އަރާފައިވާ ކުއްޔާއި ޖޫރިމަނާއެވެ.`,
                 highlight: true,
               }}
