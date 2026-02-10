@@ -188,7 +188,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="relative py-3 overflow-hidden">
+      <SidebarContent className="relative py-3 overflow-y-auto overflow-x-hidden min-h-0">
         <NavMain items={data.navMain} />
       </SidebarContent>
 

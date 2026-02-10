@@ -158,6 +158,8 @@ export default function Page() {
         savingPayment={s.savingPayment}
         onSubmitPayment={s.submitPayment}
         onRefresh={s.refreshAll}
+        onRecalculateAll={s.recalculateAll}
+        recalculatingFines={s.recalculatingFines}
         leaseId={s.leaseId}
       />
 

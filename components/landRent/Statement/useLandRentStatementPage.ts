@@ -13,6 +13,7 @@ import {
   fetchLandLeaseOptions,
   fetchLandStatementsWithDetails,
   previewLandRentStatement,
+  recalculateLandStatementFines,
   type LandLeaseOption,
 } from "@/lib/landrent/landRent.actions";
 import { useSearchParams } from "next/navigation";
@@ -62,6 +63,8 @@ export function useLandRentStatementPage() {
   const [savingPayment, setSavingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [paymentOk, setPaymentOk] = useState<string | null>(null);
+
+  const [recalculatingFines, setRecalculatingFines] = useState(false);
 
   function fileToDataUrl(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -181,6 +184,27 @@ export function useLandRentStatementPage() {
       setPreview(null);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function recalculateAll() {
+    if (!leaseId) return;
+
+    setRecalculatingFines(true);
+    setError(null);
+
+    try {
+      if (openStatement) {
+        await recalculateLandStatementFines({
+          statementId: openStatement.statement.$id,
+          capToEndDate,
+        });
+      }
+      await refreshAll();
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to recalculate fines.");
+    } finally {
+      setRecalculatingFines(false);
     }
   }
 
@@ -353,9 +377,11 @@ export function useLandRentStatementPage() {
     paymentOk,
 
     creatingStatement,
+    recalculatingFines,
 
     // actions
     refreshAll,
+    recalculateAll,
     createStatement,
     submitPayment,
 

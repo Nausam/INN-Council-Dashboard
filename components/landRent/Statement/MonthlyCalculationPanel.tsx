@@ -54,6 +54,8 @@ export default function MonthlyCalculationPanel({
   savingPayment,
   onSubmitPayment,
   onRefresh,
+  onRecalculateAll,
+  recalculatingFines,
   leaseId,
 }: {
   previewSource: StatementDetails | PreviewDetails | null;
@@ -90,6 +92,8 @@ export default function MonthlyCalculationPanel({
   savingPayment: boolean;
   onSubmitPayment: (e: React.FormEvent) => Promise<void>;
   onRefresh: () => Promise<void>;
+  onRecalculateAll?: () => Promise<void>;
+  recalculatingFines?: boolean;
   leaseId: string;
 }) {
   const [paymentsOpen, setPaymentsOpen] = React.useState(false);
@@ -218,11 +222,18 @@ export default function MonthlyCalculationPanel({
 
             <button
               type="button"
-              onClick={onRefresh}
-              disabled={savingPayment || !leaseId}
-              className="h-10 rounded-xl bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-100 transition hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 disabled:hover:translate-y-0"
+              onClick={() => (onRecalculateAll ?? onRefresh)()}
+              disabled={savingPayment || recalculatingFines || !leaseId}
+              className="h-10 rounded-xl bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-100 transition hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 disabled:hover:translate-y-0 inline-flex items-center gap-2"
             >
-              Refresh
+              {recalculatingFines ? (
+                <>
+                  <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-500 border-t-transparent" />
+                  Recalculating…
+                </>
+              ) : (
+                "Recalculate all"
+              )}
             </button>
           </div>
         </div>

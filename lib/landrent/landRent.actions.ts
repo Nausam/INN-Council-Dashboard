@@ -752,8 +752,8 @@ const computeStatementFromBaseline = async (args: {
   }
 
   const today = dateOnlyInTimeZoneUTC(new Date());
-  const capBySelectedMonth = endOfMonthUTC(y, m);
-  let effectiveCap = minDate(today, capBySelectedMonth) ?? today;
+  // Cap at today so "days overdue" counts from 11th of each month through today (not end of statement month)
+  let effectiveCap = today;
 
   if (args.capToEndDate && rentEnd) {
     effectiveCap = minDate(effectiveCap, rentEnd) ?? effectiveCap;
@@ -1216,6 +1216,79 @@ export const getLandStatementDetails = async (params: {
     balanceRemaining,
     isPaid,
   };
+};
+
+/** Recompute fine (and snapshot) for an OPEN statement and update the document. */
+export const recalculateLandStatementFines = async (params: {
+  statementId: string;
+  capToEndDate?: boolean;
+}) => {
+  if (!landStatementsCollectionId)
+    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_STATEMENTS_COLLECTION");
+
+  const statement = await databases.getDocument<LandStatementDoc>(
+    databaseId,
+    landStatementsCollectionId,
+    params.statementId,
+  );
+
+  if (statement.status !== "OPEN") {
+    throw new Error("Only OPEN statements can be recalculated.");
+  }
+
+  const paysDocs = await listLandPaymentsForStatement(params.statementId);
+  const payments = paysDocs.map((p) => ({
+    paidAt: p.paidAt,
+    amount: Number((p as any).amount ?? 0),
+  }));
+
+  const computed = await computeStatementFromBaseline({
+    leaseId: statement.leaseId,
+    monthKey: statement.monthKey,
+    capToEndDate: params.capToEndDate,
+    payments,
+  });
+
+  const snapshot_totalRentPaymentMonthly = Number(
+    (computed as any).totalRentPaymentMonthly ?? 0,
+  );
+  const snapshot_monthlyRentPaymentAmount = Number(
+    (computed as any).monthlyRentPaymentAmount ?? 0,
+  );
+  const snapshot_unpaidMonths = Number((computed as any).unpaidMonths ?? 0);
+  const snapshot_outstandingFees = Number(
+    (computed as any).outstandingFees ?? 0,
+  );
+  const snapshot_numberOfFineDays = Number(
+    (computed as any).numberOfFineDays ?? 0,
+  );
+  const snapshot_fineAmount = Number((computed as any).fineAmount ?? 0);
+  const snapshot_latestPaymentDate = ((computed as any).latestPaymentDate ??
+    null) as string | null;
+  const snapshot_fineBreakdown = Array.isArray((computed as any).fineBreakdown)
+    ? (computed as any).fineBreakdown
+    : [];
+
+  await databases.updateDocument(
+    databaseId,
+    landStatementsCollectionId,
+    params.statementId,
+    {
+      snapshot_totalRentPaymentMonthly,
+      snapshot_monthlyRentPaymentAmount,
+      snapshot_unpaidMonths,
+      snapshot_outstandingFees,
+      snapshot_numberOfFineDays,
+      snapshot_fineAmount,
+      snapshot_latestPaymentDate,
+      snapshot_fineBreakdownJson: JSON.stringify(
+        snapshot_fineBreakdown ?? [],
+      ),
+      snapshot_capToEndDate: !!params.capToEndDate,
+    },
+  );
+
+  return { ok: true };
 };
 
 export const fetchLandStatementsWithDetails = async (params: {
