@@ -721,6 +721,7 @@ export default function Page() {
                     >
                       <option value="Shahidh">ސާހިދު</option>
                       <option value="Zahidh">ޒާހިދު</option>
+                      <option value="Umair">އުމައިރު</option>
                       <option value="Neem">ނީމް</option>
                       <option value="Yazaan">ޔަޒާން</option>
                     </select>
