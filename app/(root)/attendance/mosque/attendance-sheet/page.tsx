@@ -135,7 +135,7 @@ function buildRowsForMonth(year: number, monthIndex0: number): DayRow[] {
 async function mapWithConcurrency<T, R>(
   items: T[],
   limit: number,
-  worker: (item: T) => Promise<R>
+  worker: (item: T) => Promise<R>,
 ) {
   const results: R[] = new Array(items.length) as R[];
   let idx = 0;
@@ -298,7 +298,7 @@ export default function Page() {
             {
               cache: "no-store",
               signal: controller.signal,
-            }
+            },
           );
 
           if (!res.ok) return { day, data: null as ApiPayload | null };
@@ -327,7 +327,7 @@ export default function Page() {
         if (!alive) return;
         if (e?.name === "AbortError") return;
         setTimesError(
-          e instanceof Error ? e.message : "Failed to load month times"
+          e instanceof Error ? e.message : "Failed to load month times",
         );
       } finally {
         if (alive) setLoadingTimes(false);
@@ -385,7 +385,13 @@ export default function Page() {
     return rows.filter((x) => x.day >= r.from && x.day <= r.to);
   }, [rows, ranges, printSelect]);
 
-  type ImamOptionKey = "Shahidh" | "Zahidh" | "Umair" | "Neem" | "Yazaan";
+  type ImamOptionKey =
+    | "Shahidh"
+    | "Zahidh"
+    | "Umair"
+    | "Neem"
+    | "Yazaan"
+    | "Ibraheem";
 
   const IMAM_OPTIONS: Record<ImamOptionKey, string> = {
     Shahidh: " އިމާމް: މުހައްމަދު ޝާހިދު / ނީލޯފަރު",
@@ -394,6 +400,7 @@ export default function Page() {
       " އިމާމް: އުމައިރު ޒާޚިރު ހުސައިން ވަލްވަތްކަރު / އިންޑިއާ (T4650904)",
     Neem: "މުދިމު: އިސްމާޢީލް ނީމް / ނޫރާނީގެ",
     Yazaan: "މުދިމު: ޙުސައިން ޔަޒާން އަޙްމަދު / އޯޝަންވިލާ",
+    Ibraheem: "މުދިމު: އިބްރާޙީމް ޙަލީމް / ހަވީރީނާޒް",
   };
 
   const [imamKey, setImamKey] = useState<ImamOptionKey>("Shahidh");
@@ -724,6 +731,7 @@ export default function Page() {
                       <option value="Umair">އުމައިރު</option>
                       <option value="Neem">ނީމް</option>
                       <option value="Yazaan">ޔަޒާން</option>
+                      <option value="Ibraheem">އިބްރާޙީމް ޙަލީމް</option>
                     </select>
                     <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
                       <svg
@@ -789,7 +797,7 @@ export default function Page() {
                             <option key={d} value={d}>
                               {d}
                             </option>
-                          )
+                          ),
                         )}
                       </select>
                     </div>
@@ -846,7 +854,7 @@ export default function Page() {
               .map(([dayStr, rules]) => {
                 const day = Number(dayStr);
                 const keys = GROUPS.filter((g) => rules[g.key]).map(
-                  (g) => g.key
+                  (g) => g.key,
                 );
 
                 const label =
@@ -944,14 +952,14 @@ export default function Page() {
 
                 const get = (k: GroupKey): HHMM =>
                   k === "fajr"
-                    ? t?.fajr ?? { h: "", m: "" }
+                    ? (t?.fajr ?? { h: "", m: "" })
                     : k === "dhuhr"
-                    ? t?.dhuhr ?? { h: "", m: "" }
-                    : k === "asr"
-                    ? t?.asr ?? { h: "", m: "" }
-                    : k === "maghrib"
-                    ? t?.maghrib ?? { h: "", m: "" }
-                    : t?.isha ?? { h: "", m: "" };
+                      ? (t?.dhuhr ?? { h: "", m: "" })
+                      : k === "asr"
+                        ? (t?.asr ?? { h: "", m: "" })
+                        : k === "maghrib"
+                          ? (t?.maghrib ?? { h: "", m: "" })
+                          : (t?.isha ?? { h: "", m: "" });
 
                 return (
                   <TableRow
@@ -1108,14 +1116,14 @@ export default function Page() {
 
                 const get = (k: GroupKey): HHMM =>
                   k === "fajr"
-                    ? t?.fajr ?? { h: "", m: "" }
+                    ? (t?.fajr ?? { h: "", m: "" })
                     : k === "dhuhr"
-                    ? t?.dhuhr ?? { h: "", m: "" }
-                    : k === "asr"
-                    ? t?.asr ?? { h: "", m: "" }
-                    : k === "maghrib"
-                    ? t?.maghrib ?? { h: "", m: "" }
-                    : t?.isha ?? { h: "", m: "" };
+                      ? (t?.dhuhr ?? { h: "", m: "" })
+                      : k === "asr"
+                        ? (t?.asr ?? { h: "", m: "" })
+                        : k === "maghrib"
+                          ? (t?.maghrib ?? { h: "", m: "" })
+                          : (t?.isha ?? { h: "", m: "" });
 
                 return (
                   <TableRow
