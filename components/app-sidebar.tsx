@@ -79,6 +79,8 @@ const data = {
       items: [
         { title: "All Employees", url: "/employees" },
         { title: "Add Employee", url: "/employees/add" },
+        { title: "Salary Slips", url: "/salary-slips" },
+        { title: "Upload Slips", url: "/salary-slips/upload" },
       ],
     },
     {

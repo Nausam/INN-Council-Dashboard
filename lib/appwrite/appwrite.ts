@@ -15,6 +15,8 @@ export const appwriteConfig = {
   wasteManagementFormsId: "6784e0610000e598d1e6",
   punchLogsRawCollectionId:
     process.env.NEXT_PUBLIC_APPWRITE_PUNCH_LOGS_RAW_COLLECTION ?? "",
+  salarySlipsCollectionId:
+    process.env.NEXT_PUBLIC_APPWRITE_SALARY_SLIPS_COLLECTION_ID ?? "",
 };
 
 const {
@@ -89,6 +91,15 @@ export type PrayerTimesDoc = Models.Document & {
   asuruTime: string;
   maqribTime: string;
   ishaTime: string;
+};
+
+// Salary slip registry doc (maps record card + period to R2 object key)
+export type SalarySlipDoc = Models.Document & {
+  recordCardNumber: string;
+  employeeId?: string;
+  periodLabel: string;
+  objectKey: string;
+  fileName?: string;
 };
 
 const ADDITIVE_LEAVES = new Set([
@@ -424,6 +435,25 @@ export const fetchEmployeeById = async (
   } catch (error) {
     console.error("Error fetching employee:", error);
     throw error;
+  }
+};
+
+// Fetch employee by record card number
+export const fetchEmployeeByRecordCardNumber = async (
+  recordCardNumber: string
+): Promise<EmployeeDoc | null> => {
+  try {
+    const trimmed = recordCardNumber.trim();
+    if (!trimmed) return null;
+    const response = await databases.listDocuments<EmployeeDoc>(
+      appwriteConfig.databaseId,
+      appwriteConfig.employeesCollectionId,
+      [Query.equal("recordCardNumber", trimmed), Query.limit(1)]
+    );
+    return response.documents[0] ?? null;
+  } catch (error) {
+    console.error("Error fetching employee by record card:", error);
+    return null;
   }
 };
 
@@ -958,6 +988,81 @@ export const fetchUserLeaveRequests = async (
 };
 
 // In your appwrite.ts file, add a function to check auth status
+// List salary slips for a record card number (newest first by periodLabel)
+export const listSalarySlipsByRecordCard = async (
+  recordCardNumber: string
+): Promise<SalarySlipDoc[]> => {
+  const collectionId = appwriteConfig.salarySlipsCollectionId;
+  if (!collectionId) return [];
+  const trimmed = recordCardNumber.trim();
+  if (!trimmed) return [];
+  try {
+    const response = await databases.listDocuments<SalarySlipDoc>(
+      appwriteConfig.databaseId,
+      collectionId,
+      [
+        Query.equal("recordCardNumber", trimmed),
+        Query.orderDesc("periodLabel"),
+        Query.limit(100),
+      ]
+    );
+    return response.documents;
+  } catch (error) {
+    console.error("Error listing salary slips:", error);
+    return [];
+  }
+};
+
+// List record card numbers that have a slip for the given period (for upload UI ticks)
+export const listRecordCardNumbersWithSlipForPeriod = async (
+  periodLabel: string
+): Promise<string[]> => {
+  const collectionId = appwriteConfig.salarySlipsCollectionId;
+  if (!collectionId) return [];
+  const trimmed = periodLabel.trim();
+  if (!trimmed) return [];
+  try {
+    const response = await databases.listDocuments<SalarySlipDoc>(
+      appwriteConfig.databaseId,
+      collectionId,
+      [Query.equal("periodLabel", trimmed), Query.limit(500)]
+    );
+    const set = new Set<string>();
+    for (const doc of response.documents) {
+      if (doc.recordCardNumber?.trim()) set.add(doc.recordCardNumber.trim());
+    }
+    return Array.from(set);
+  } catch (error) {
+    console.error("Error listing slips by period:", error);
+    return [];
+  }
+};
+
+// Create a salary slip registry document (admin)
+export const createSalarySlipRecord = async (data: {
+  recordCardNumber: string;
+  employeeId?: string;
+  periodLabel: string;
+  objectKey: string;
+  fileName?: string;
+}): Promise<SalarySlipDoc> => {
+  const collectionId = appwriteConfig.salarySlipsCollectionId;
+  if (!collectionId) throw new Error("Salary slips collection not configured");
+  const doc = await databases.createDocument<SalarySlipDoc>(
+    appwriteConfig.databaseId,
+    collectionId,
+    ID.unique(),
+    {
+      recordCardNumber: data.recordCardNumber.trim(),
+      employeeId: data.employeeId ?? undefined,
+      periodLabel: data.periodLabel,
+      objectKey: data.objectKey,
+      fileName: data.fileName ?? undefined,
+    }
+  );
+  return doc;
+};
+
 export const getCurrentUser = async () => {
   try {
     const currentAccount = await account.get();

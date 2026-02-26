@@ -29,6 +29,15 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
+## Salary Slips (optional)
+
+The Salary Slips page lets employees view and download PDF slips by record card number. To enable it:
+
+1. **Appwrite**: Create a `salary_slips` collection with attributes: `recordCardNumber` (string), `employeeId` (string, optional), `periodLabel` (string), `objectKey` (string), `fileName` (string, optional). Set `NEXT_PUBLIC_APPWRITE_SALARY_SLIPS_COLLECTION_ID` in `.env.local` to the collection ID.
+2. **Cloudflare R2**: Create an R2 bucket and [API token](https://developers.cloudflare.com/r2/api/tokens/). In `.env.local` set: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`.
+
+Upload PDFs to R2 (e.g. key `slips/{recordCardNumber}/2025-01.pdf`) and register each slip via `POST /api/salary-slips` with `{ recordCardNumber, periodLabel, objectKey, fileName? }` or from the Appwrite console.
+
 ## Deploy on Vercel
 
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
