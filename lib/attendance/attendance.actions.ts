@@ -52,6 +52,48 @@ const getFirstPunchCreatedAtForEmployee = async (
   }
 };
 
+// Get first punch time by deviceUserId (match punch logs deviceUserId to Employees deviceUserId)
+const getFirstPunchByDeviceUserId = async (
+  localDate: string,
+  deviceUserId: string
+): Promise<string | null> => {
+  const { databases } = await createSessionClient();
+  if (!appwriteConfig.punchLogsRawCollectionId) return null;
+  const { startUtc, endUtc } = localDayRangeToUtc(localDate);
+  const trimmed = String(deviceUserId).trim();
+  if (!trimmed) return null;
+  try {
+    let res = await databases.listDocuments(
+      appwriteConfig.databaseId,
+      appwriteConfig.punchLogsRawCollectionId,
+      [
+        Query.equal("deviceUserId", trimmed),
+        Query.greaterThanEqual("timestamp", startUtc),
+        Query.lessThan("timestamp", endUtc),
+        Query.orderAsc("timestamp"),
+        Query.limit(1),
+      ]
+    );
+    if (res.documents.length && res.documents[0].timestamp)
+      return res.documents[0].timestamp as string;
+    res = await databases.listDocuments(
+      appwriteConfig.databaseId,
+      appwriteConfig.punchLogsRawCollectionId,
+      [
+        Query.equal("deviceUserId", trimmed),
+        Query.greaterThanEqual("$createdAt", startUtc),
+        Query.lessThan("$createdAt", endUtc),
+        Query.orderAsc("$createdAt"),
+        Query.limit(1),
+      ]
+    );
+    if (res.documents.length) return res.documents[0].$createdAt as string;
+  } catch (error) {
+    console.error("Error fetching punch logs by deviceUserId:", error);
+  }
+  return null;
+};
+
 // Utility functions
 const normalizeHumanName = (s: string) =>
   s
@@ -138,13 +180,12 @@ export const createAttendanceForEmployeesAction = async (
       return sec !== "mosque";
     });
 
-    // Build entries with real sign-in times
+    // Build entries with real sign-in times (match punch logs by deviceUserId, fallback to name)
     const attendanceEntries = await Promise.all(
       filteredEmployees.map(async (employee) => {
-        const firstPunch = await getFirstPunchCreatedAtForEmployee(
-          date,
-          employee.name
-        );
+        const firstPunch = employee.deviceUserId?.trim()
+          ? await getFirstPunchByDeviceUserId(date, employee.deviceUserId.trim())
+          : await getFirstPunchCreatedAtForEmployee(date, employee.name);
 
         return {
           employeeId: employee.$id,
@@ -200,31 +241,37 @@ export const syncAttendanceForDateAction = async (date: string) => {
     }
 
     const nameById = new Map<string, string>();
+    const deviceUserIdById = new Map<string, string>();
     for (const e of employeesRes.data) {
       nameById.set(e.$id, e.name);
+      if (e.deviceUserId?.trim()) deviceUserIdById.set(e.$id, e.deviceUserId.trim());
     }
 
     let changed = 0;
 
     await Promise.all(
       rows.map(async (row) => {
+        const deviceUserId = deviceUserIdById.get(row.employeeId);
         const empName = nameById.get(row.employeeId);
-        if (!empName) return;
 
-        const earliest = await getFirstPunchCreatedAtForEmployee(date, empName);
-        if (!earliest) return;
+        const earliest = deviceUserId
+          ? await getFirstPunchByDeviceUserId(date, deviceUserId)
+          : null;
+        const earliestByName =
+          earliest ?? (empName ? await getFirstPunchCreatedAtForEmployee(date, empName) : null);
+        if (!earliestByName) return;
 
         const current = row.signInTime
           ? new Date(row.signInTime).getTime()
           : null;
-        const earliestMs = new Date(earliest).getTime();
+        const earliestMs = new Date(earliestByName).getTime();
 
         if (current === null || earliestMs < current) {
           await databases.updateDocument(
             appwriteConfig.databaseId,
             appwriteConfig.attendanceCollectionId,
             row.$id,
-            { signInTime: earliest }
+            { signInTime: earliestByName }
           );
           changed += 1;
         }
