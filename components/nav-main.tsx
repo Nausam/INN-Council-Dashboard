@@ -15,16 +15,45 @@ export type NavMainItem = {
   items?: { title: string; url: string }[];
 };
 
+/** Among sibling links, only the longest matching path should be "active" (e.g. /employees/add vs /employees). */
+function getMostSpecificMatchingChildUrl(
+  pathname: string,
+  children: { url: string }[] | undefined,
+): string | null {
+  if (!children?.length) return null;
+  let best: string | null = null;
+  let bestLen = -1;
+
+  for (const { url } of children) {
+    if (!url || url === "#") continue;
+
+    if (url === "/") {
+      if (pathname === "/" && 1 > bestLen) {
+        best = "/";
+        bestLen = 1;
+      }
+      continue;
+    }
+
+    const exact = pathname === url;
+    const nested = pathname.startsWith(url + "/");
+    if (exact || nested) {
+      if (url.length > bestLen) {
+        best = url;
+        bestLen = url.length;
+      }
+    }
+  }
+
+  return best;
+}
+
 function isSectionActive(pathname: string, item: NavMainItem) {
   if (item.url && item.url !== "#") {
     if (pathname === item.url) return true;
     if (pathname.startsWith(item.url + "/")) return true;
   }
-  if (
-    item.items?.some(
-      (x) => pathname === x.url || pathname.startsWith(x.url + "/")
-    )
-  )
+  if (getMostSpecificMatchingChildUrl(pathname, item.items) != null)
     return true;
   return false;
 }
@@ -36,7 +65,10 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
 
   const [open, setOpen] = React.useState<Record<string, boolean>>({});
 
-  React.useEffect(() => {
+  // Open sections that contain the current route (e.g. after navigation).
+  // Visibility is driven only by `open`, not by `active`, so users can collapse
+  // a section even while a child link is selected.
+  React.useLayoutEffect(() => {
     const next: Record<string, boolean> = {};
     for (const item of items) {
       if (item.items?.length && isSectionActive(pathname, item)) {
@@ -64,7 +96,10 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
           const Icon = item.icon;
           const hasChildren = !!item.items?.length;
           const isOpen = !!open[item.title];
-          const showChildren = !collapsed && hasChildren && (isOpen || active);
+          const showChildren = !collapsed && hasChildren && isOpen;
+          const activeChildUrl = hasChildren
+            ? getMostSpecificMatchingChildUrl(pathname, item.items)
+            : null;
 
           // Collapsed (icon-only) style - optimized for performance
           const iconOnlyBtn = cn(
@@ -92,7 +127,7 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
             active
               ? "text-white/90"
               : "text-slate-400 group-hover:text-indigo-600",
-            showChildren ? "rotate-180" : "rotate-0"
+            isOpen ? "rotate-180" : "rotate-0"
           );
 
           // --- COLLAPSED (icon-only) ---
@@ -172,10 +207,8 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
               {/* Animated dropdown children */}
               {showChildren && (
                 <div className="mt-2 space-y-1 overflow-hidden pl-12">
-                  {item.items!.map((sub, index) => {
-                    const subActive =
-                      pathname === sub.url ||
-                      pathname.startsWith(sub.url + "/");
+                  {item.items!.map((sub) => {
+                    const subActive = activeChildUrl === sub.url;
                     return (
                       <Link
                         key={sub.title}
@@ -187,7 +220,6 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
                             : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                         )}
                       >
-                        {/* Dot indicator */}
                         <div className="relative z-10 flex items-center gap-3">
                           <div
                             className={cn(
@@ -200,7 +232,6 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
                           <span>{sub.title}</span>
                         </div>
 
-                        {/* Active bar */}
                         {subActive && (
                           <div className="absolute left-0 top-1/2 h-6 w-0.5 -translate-y-1/2 rounded-r-full bg-indigo-600" />
                         )}

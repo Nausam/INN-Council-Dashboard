@@ -34,7 +34,7 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The Salary Slips page lets employees view and download PDF slips by record card number. To enable it:
 
 1. **Appwrite**: Create a `salary_slips` collection with attributes: `recordCardNumber` (string), `employeeId` (string, optional), `periodLabel` (string), `objectKey` (string), `fileName` (string, optional). Set `NEXT_PUBLIC_APPWRITE_SALARY_SLIPS_COLLECTION_ID` in `.env.local` to the collection ID.
-2. **Cloudflare R2**: Create an R2 bucket and [API token](https://developers.cloudflare.com/r2/api/tokens/). In `.env.local` set: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`.
+2. **Cloudflare R2**: Create an R2 bucket and [API token](https://developers.cloudflare.com/r2/api/tokens/). In `.env.local` set: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` (used for salary slips). Document receiver attachments use a separate bucket name in `R2_CORRESPONDENCE_BUCKET_NAME` (same R2 credentials).
 
 Upload PDFs to R2 (e.g. key `slips/{recordCardNumber}/2025-01.pdf`) and register each slip via `POST /api/salary-slips` with `{ recordCardNumber, periodLabel, objectKey, fileName? }` or from the Appwrite console.
 

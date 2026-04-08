@@ -1,4 +1,5 @@
 import {
+  DeleteObjectCommand,
   GetObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -10,6 +11,7 @@ const accountId = process.env.R2_ACCOUNT_ID;
 const accessKeyId = process.env.R2_ACCESS_KEY_ID;
 const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
 const bucketName = process.env.R2_BUCKET_NAME;
+const correspondenceBucketName = process.env.R2_CORRESPONDENCE_BUCKET_NAME;
 
 function getR2Client(): S3Client {
   if (!accountId || !accessKeyId || !secretAccessKey) {
@@ -72,6 +74,16 @@ export function isR2Configured(): boolean {
   );
 }
 
+/** R2 bucket for council correspondence attachments (separate from salary slips). */
+export function isCorrespondenceR2Configured(): boolean {
+  return Boolean(
+    accountId &&
+      accessKeyId &&
+      secretAccessKey &&
+      correspondenceBucketName
+  );
+}
+
 /**
  * Upload a file to R2. Used for salary slip PDFs.
  */
@@ -85,6 +97,82 @@ export async function uploadToR2(
   await client.send(
     new PutObjectCommand({
       Bucket: bucketName,
+      Key: objectKey,
+      Body: body,
+      ContentType: contentType,
+    })
+  );
+}
+
+async function getObjectBufferFromBucket(
+  bucket: string,
+  objectKey: string
+): Promise<{ buffer: Buffer; contentType: string }> {
+  const client = getR2Client();
+  const out = await client.send(
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: objectKey,
+    })
+  );
+  const body = out.Body as
+    | { transformToByteArray: () => Promise<Uint8Array> }
+    | undefined;
+  if (!body?.transformToByteArray) {
+    throw new Error("Empty R2 response body");
+  }
+  const bytes = await body.transformToByteArray();
+  return {
+    buffer: Buffer.from(bytes),
+    contentType: out.ContentType ?? "application/octet-stream",
+  };
+}
+
+/**
+ * Download a correspondence attachment from the correspondence R2 bucket.
+ */
+export async function downloadCorrespondenceFromR2(
+  objectKey: string
+): Promise<{ buffer: Buffer; contentType: string }> {
+  if (!correspondenceBucketName) {
+    throw new Error("R2_CORRESPONDENCE_BUCKET_NAME is not set");
+  }
+  return getObjectBufferFromBucket(correspondenceBucketName, objectKey);
+}
+
+/**
+ * Delete an object from the correspondence R2 bucket.
+ */
+export async function deleteCorrespondenceFromR2(
+  objectKey: string
+): Promise<void> {
+  if (!correspondenceBucketName) {
+    throw new Error("R2_CORRESPONDENCE_BUCKET_NAME is not set");
+  }
+  const client = getR2Client();
+  await client.send(
+    new DeleteObjectCommand({
+      Bucket: correspondenceBucketName,
+      Key: objectKey,
+    })
+  );
+}
+
+/**
+ * Upload correspondence attachment to the correspondence R2 bucket.
+ */
+export async function uploadCorrespondenceToR2(
+  objectKey: string,
+  body: Buffer | Uint8Array,
+  contentType: string
+): Promise<void> {
+  if (!correspondenceBucketName) {
+    throw new Error("R2_CORRESPONDENCE_BUCKET_NAME is not set");
+  }
+  const client = getR2Client();
+  await client.send(
+    new PutObjectCommand({
+      Bucket: correspondenceBucketName,
       Key: objectKey,
       Body: body,
       ContentType: contentType,

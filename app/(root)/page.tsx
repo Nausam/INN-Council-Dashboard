@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { Calendar as CalendarIcon } from "lucide-react";
 import StatCard from "@/components/Dashboard/StatCard";
+import { CorrespondenceDashboardStrip } from "@/components/correspondence/CorrespondenceDashboardStrip";
 
 /* ===================== Minimal types + guards ===================== */
 
@@ -303,6 +304,8 @@ const Dashboard: React.FC = () => {
         </div>
 
         <DashboardHeader />
+
+        <CorrespondenceDashboardStrip />
 
         {/* No attendance notice */}
         {!loading && !hasAttendance ? (

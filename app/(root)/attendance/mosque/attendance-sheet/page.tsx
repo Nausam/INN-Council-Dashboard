@@ -11,6 +11,13 @@ import {
   TableRow,
   TableCell,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type HHMM = { h: number | ""; m: number | "" };
 
@@ -510,34 +517,21 @@ export default function Page() {
                     </svg>
                     މަސް
                   </label>
-                  <div className="relative">
-                    <select
-                      className="h-11 w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-4 pr-10 text-sm font-semibold text-slate-900 shadow-sm transition-all hover:border-emerald-300 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-100 group-hover:shadow-md"
-                      value={month}
-                      onChange={(e) => setMonth(Number(e.target.value))}
-                    >
+                  <Select
+                    value={String(month)}
+                    onValueChange={(value) => setMonth(Number(value))}
+                  >
+                    <SelectTrigger className="h-11 w-full rounded-xl border-2 border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 shadow-sm transition-all hover:border-emerald-300 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100 group-hover:shadow-md">
+                      <SelectValue placeholder="Select month" />
+                    </SelectTrigger>
+                    <SelectContent>
                       {MONTHS.map((m) => (
-                        <option key={m.value} value={m.value}>
+                        <SelectItem key={m.value} value={String(m.value)}>
                           {m.label}
-                        </option>
+                        </SelectItem>
                       ))}
-                    </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
-                      <svg
-                        className="h-5 w-5 text-slate-400"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M19 9l-7 7-7-7"
-                        />
-                      </svg>
-                    </div>
-                  </div>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {/* Year Input */}

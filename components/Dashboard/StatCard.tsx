@@ -1,5 +1,6 @@
 import React from "react";
 import { IconType } from "react-icons";
+import { cn } from "@/lib/utils";
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -13,6 +14,7 @@ interface StatCardProps {
   value: number;
   percentage?: number;
   colorScheme: ColorScheme;
+  compact?: boolean;
 }
 
 interface ColorConfig {
@@ -34,6 +36,7 @@ const StatCard: React.FC<StatCardProps> = ({
   value,
   percentage,
   colorScheme,
+  compact = false,
 }) => {
   const colors: Record<ColorScheme, ColorConfig> = {
     indigo: {
@@ -74,7 +77,10 @@ const StatCard: React.FC<StatCardProps> = ({
 
   return (
     <div
-      className="group relative h-full overflow-hidden rounded-3xl bg-gradient-to-br from-white/90 to-white/60 p-8 backdrop-blur-xl transition-all duration-500 hover:scale-[1.02] hover:shadow-2xl"
+      className={cn(
+        "group relative h-full overflow-hidden bg-gradient-to-br from-white/90 to-white/60 backdrop-blur-xl transition-all duration-500 hover:scale-[1.02] hover:shadow-2xl",
+        compact ? "rounded-2xl p-5" : "rounded-3xl p-8",
+      )}
       style={{
         boxShadow: `
           0 4px 24px -2px rgba(0, 0, 0, 0.08),
@@ -93,32 +99,43 @@ const StatCard: React.FC<StatCardProps> = ({
 
       {/* Decorative Corner Element */}
       <div
-        className="absolute -right-8 -top-8 h-32 w-32 rounded-full opacity-20 blur-3xl transition-transform duration-700 group-hover:scale-150"
+        className={cn(
+          "absolute rounded-full opacity-20 blur-3xl transition-transform duration-700 group-hover:scale-150",
+          compact ? "-right-6 -top-6 h-24 w-24" : "-right-8 -top-8 h-32 w-32",
+        )}
         style={{ background: color.primary }}
       />
 
       {/* Content Container */}
       <div className="relative z-10">
         {/* Icon Section */}
-        <div className="mb-6 flex items-start justify-between">
+        <div className={cn("flex items-start justify-between", compact ? "mb-4" : "mb-6")}>
           <div
-            className="flex h-16 w-16 items-center justify-center rounded-2xl shadow-lg transition-all duration-500 group-hover:scale-110 group-hover:rotate-6"
+            className={cn(
+              "flex items-center justify-center rounded-2xl shadow-lg transition-all duration-500 group-hover:scale-110 group-hover:rotate-6",
+              compact ? "h-12 w-12" : "h-16 w-16",
+            )}
             style={{
               background: `linear-gradient(135deg, ${color.primary}, ${color.secondary})`,
               boxShadow: `0 8px 16px -4px ${color.glow}`,
             }}
           >
-            <Icon className="h-7 w-7 text-white" />
+            <Icon className={cn("text-white", compact ? "h-5 w-5" : "h-7 w-7")} />
           </div>
 
           {/* Trend Indicator (decorative) */}
-          <div className="flex h-8 items-center gap-1 rounded-full bg-white/60 px-3 shadow-sm backdrop-blur-sm">
+          <div
+            className={cn(
+              "flex items-center gap-1 rounded-full bg-white/60 shadow-sm backdrop-blur-sm",
+              compact ? "h-7 px-2.5" : "h-8 px-3",
+            )}
+          >
             <div
               className="h-2 w-2 rounded-full animate-pulse"
               style={{ background: color.primary }}
             />
             <span
-              className="text-xs font-bold"
+              className={cn("font-bold", compact ? "text-[11px]" : "text-xs")}
               style={{ color: color.textSecondary }}
             >
               Live
@@ -128,16 +145,22 @@ const StatCard: React.FC<StatCardProps> = ({
 
         {/* Label */}
         <p
-          className="mb-2 text-sm font-semibold uppercase tracking-wider"
+          className={cn(
+            "font-semibold uppercase tracking-wider",
+            compact ? "mb-1.5 text-xs" : "mb-2 text-sm",
+          )}
           style={{ color: color.textSecondary }}
         >
           {label}
         </p>
 
         {/* Value with animated counting effect styling */}
-        <div className="mb-4">
+        <div className={cn(compact ? "mb-2" : "mb-4")}>
           <p
-            className="text-5xl font-black tracking-tight transition-all duration-300"
+            className={cn(
+              "font-black tracking-tight transition-all duration-300",
+              compact ? "text-4xl" : "text-5xl",
+            )}
             style={{
               color: color.textPrimary,
               fontVariantNumeric: "tabular-nums",
@@ -193,7 +216,10 @@ const StatCard: React.FC<StatCardProps> = ({
 
       {/* Decorative Border Glow on Hover */}
       <div
-        className="absolute inset-0 rounded-3xl opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+        className={cn(
+          "absolute inset-0 opacity-0 transition-opacity duration-500 group-hover:opacity-100",
+          compact ? "rounded-2xl" : "rounded-3xl",
+        )}
         style={{
           background: `linear-gradient(135deg, ${color.glow}, transparent)`,
           padding: "2px",

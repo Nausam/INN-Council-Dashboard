@@ -24,5 +24,13 @@ export const config = {
     "/reports/mosque/monthly",
     "/requests/leave",
     "/requests/overtime",
+    "/document-reciever",
+    "/document-reciever/:path*",
+    "/api/document-reciever",
+    "/api/document-reciever/:path*",
+    "/correspondence",
+    "/correspondence/:path*",
+    "/api/correspondence",
+    "/api/correspondence/:path*",
   ],
 };

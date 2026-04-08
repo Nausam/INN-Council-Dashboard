@@ -5,6 +5,7 @@ import {
   Calendar,
   Command,
   FileText,
+  Files,
   GalleryVerticalEnd,
   Home,
   MapPinned,
@@ -71,6 +72,12 @@ const data = {
           url: "/admin/app/iulaan",
         },
       ],
+    },
+    {
+      title: "Documents",
+      url: "#",
+      icon: Files,
+      items: [{ title: "Document receiver", url: "/document-reciever" }],
     },
     {
       title: "Employees",
