@@ -410,8 +410,22 @@ export default function Page() {
     Ibraheem: "މުދިމު: އިބްރާޙީމް ޙަލީމް / ހަވީރީނާޒް",
   };
 
+  const SIGNATURE_IMAGES: Partial<Record<ImamOptionKey, string>> = {
+    Shahidh: "/assets/images/shahidh.png",
+    Zahidh: "/assets/images/Zahidh.png",
+    Umair: "/assets/images/umair.png",
+  };
+
+  const SIGNATURE_HEIGHT_CLASSES: Partial<Record<ImamOptionKey, string>> = {
+    Shahidh: "h-8",
+    Zahidh: "h-8",
+    Umair: "h-8",
+  };
+
   const [imamKey, setImamKey] = useState<ImamOptionKey>("Shahidh");
   const imamText = IMAM_OPTIONS[imamKey];
+  const signatureSrc = SIGNATURE_IMAGES[imamKey];
+  const signatureHeightClass = SIGNATURE_HEIGHT_CLASSES[imamKey] ?? "h-7";
 
   return (
     <div dir="rtl" className="min-h-dvh bg-white p-6 font-dh1">
@@ -430,6 +444,12 @@ export default function Page() {
 
           thead { display: table-header-group; }
           tfoot { display: table-footer-group; }
+
+          /* ensure signature images render correctly when printing */
+          img {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
         }
 
         /* normal screen: show view, hide print clone */
@@ -1009,8 +1029,16 @@ export default function Page() {
                         </TableCell>,
                         <TableCell
                           key={`${g.key}-sig-${r.day}`}
-                          className={`${td} text-[16px]`}
-                        />,
+                          className={`${td} relative p-0`}
+                        >
+                          {signatureSrc ? (
+                            <img
+                              src={signatureSrc}
+                              alt="signature"
+                              className={`pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 ${signatureHeightClass} w-auto max-w-none object-contain`}
+                            />
+                          ) : null}
+                        </TableCell>,
                       ];
                     })}
                   </TableRow>
@@ -1169,8 +1197,16 @@ export default function Page() {
                         </TableCell>,
                         <TableCell
                           key={`${g.key}-sig-${r.day}`}
-                          className={`${td} text-[16px]`}
-                        />,
+                          className={`${td} relative p-0`}
+                        >
+                          {signatureSrc ? (
+                            <img
+                              src={signatureSrc}
+                              alt="signature"
+                              className={`pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 ${signatureHeightClass} w-auto max-w-none object-contain`}
+                            />
+                          ) : null}
+                        </TableCell>,
                       ];
                     })}
                   </TableRow>
