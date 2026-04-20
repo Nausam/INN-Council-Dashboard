@@ -19,6 +19,8 @@ export const config = {
     "/attendance/council",
     "/attendance/mosque",
     "/attendance/mosque/prayerTimes",
+    "/attendance/mosque/attendance-sheet",
+    "/attendance/mosque/ot-sheet",
     "/reports/council",
     "/reports/mosque/daily",
     "/reports/mosque/monthly",

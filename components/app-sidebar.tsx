@@ -101,6 +101,10 @@ const data = {
           title: "Attendance Sheet",
           url: "/attendance/mosque/attendance-sheet",
         },
+        {
+          title: "OT Sheet",
+          url: "/attendance/mosque/ot-sheet",
+        },
       ],
     },
     {
