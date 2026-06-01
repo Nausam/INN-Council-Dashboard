@@ -2,7 +2,7 @@ import {
   createSalarySlipRecord,
   fetchAllEmployees,
   type EmployeeDoc,
-} from "@/lib/appwrite/appwrite";
+} from "@/lib/firebase/hr";
 import {
   matchEmployeeBySlipFileName,
   type SlipMatchEmployee,

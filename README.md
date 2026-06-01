@@ -29,14 +29,24 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-## Salary Slips (optional)
+## Salary Slips
 
-The Salary Slips page lets employees view and download PDF slips by record card number. To enable it:
+The Salary Slips page lets employees view and download PDF slips by record card number.
 
-1. **Appwrite**: Create a `salary_slips` collection with attributes: `recordCardNumber` (string), `employeeId` (string, optional), `periodLabel` (string), `objectKey` (string), `fileName` (string, optional). Set `NEXT_PUBLIC_APPWRITE_SALARY_SLIPS_COLLECTION_ID` in `.env.local` to the collection ID.
-2. **Cloudflare R2**: Create an R2 bucket and [API token](https://developers.cloudflare.com/r2/api/tokens/). In `.env.local` set: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` (used for salary slips). Document receiver attachments use a separate bucket name in `R2_CORRESPONDENCE_BUCKET_NAME` (same R2 credentials).
+1. **Firestore** (`council-hr-dashboard`): collections `employees` and `salary_slips` with fields `recordCardNumber`, `employeeId`, `periodLabel`, `objectKey`, `fileName`.
+2. **Cloudflare R2**: set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`. Correspondence uses `R2_CORRESPONDENCE_BUCKET_NAME`.
+3. **Clerk**: set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` for dashboard auth.
+4. **Firebase Admin**: set `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, `FIRESTORE_DATABASE_ID=council-hr-dashboard`.
 
-Upload PDFs to R2 (e.g. key `slips/{recordCardNumber}/2025-01.pdf`) and register each slip via `POST /api/salary-slips` with `{ recordCardNumber, periodLabel, objectKey, fileName? }` or from the Appwrite console.
+Upload PDFs to R2 (e.g. `slips/{recordCardNumber}/2025-01.pdf`) and register via `POST /api/salary-slips` or the admin upload UI.
+
+### Migrating from Appwrite
+
+```bash
+npm run migrate:firestore   # export Appwrite -> Firestore
+npm run migrate:files       # Appwrite Storage -> R2 (land rent PDFs)
+npm run migrate:clerk       # Appwrite users -> Clerk
+```
 
 ## Deploy on Vercel
 

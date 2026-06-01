@@ -1,12 +1,11 @@
-import React from "react";
-
 const SkeletonDashboardCard: React.FC = () => (
-  <div className="p-6 shadow-lg rounded-md text-white animate-pulse border">
-    <div className="flex justify-between items-center">
-      <div className="h-10 w-10 bg-gray-300 rounded-full"></div>
-      <div className="h-6 w-32 bg-gray-300 rounded-md"></div>
+  <div className="council-card animate-pulse p-6">
+    <div className="mb-5 flex items-start justify-between">
+      <div className="h-12 w-12 rounded-2xl bg-slate-200" />
+      <div className="h-6 w-14 rounded-full bg-slate-200" />
     </div>
-    <div className="mt-2 h-8 w-8 bg-gray-300 rounded-full"></div>
+    <div className="mb-2 h-3 w-24 rounded bg-slate-200" />
+    <div className="h-9 w-16 rounded bg-slate-200" />
   </div>
 );
 

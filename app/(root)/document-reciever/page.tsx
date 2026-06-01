@@ -14,10 +14,13 @@ import { Button } from "@/components/ui/button";
 import StatCard from "@/components/Dashboard/StatCard";
 import { useToast } from "@/hooks/use-toast";
 import {
+  useCorrespondenceListQuery,
+  useCorrespondenceStatsQuery,
+  useQueryInvalidation,
+} from "@/hooks/queries";
+import {
   deleteCorrespondence,
   exportCorrespondenceCsv,
-  getCorrespondenceDashboardStats,
-  listCorrespondence,
 } from "@/lib/actions/correspondence.actions";
 import { isCorrespondenceOverdue } from "@/lib/correspondence/overdue";
 import { cn } from "@/lib/utils";
@@ -41,7 +44,7 @@ import {
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FaCheckCircle, FaExclamationTriangle, FaInbox } from "react-icons/fa";
 
 const PAGE_SIZE = 25;
@@ -177,16 +180,9 @@ function RegistryCardSkeleton() {
 
 export default function DocumentRecieverListPage() {
   const { toast } = useToast();
-  const [documents, setDocuments] = useState<CorrespondenceDoc[]>([]);
-  const [total, setTotal] = useState(0);
+  const { invalidateCorrespondence } = useQueryInvalidation();
   const [page, setPage] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
-  const [stats, setStats] = useState<{
-    pending: number;
-    overdue: number;
-    answeredThisWeek: number;
-  } | null>(null);
 
   const [status, setStatus] = useState<CorrespondenceStatus | "all">("all");
   const [receivedFrom, setReceivedFrom] = useState("");
@@ -197,58 +193,43 @@ export default function DocumentRecieverListPage() {
   );
   const [listDeleting, setListDeleting] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const raw = await getCorrespondenceDashboardStats();
-        const data = raw as {
-          pending: number;
-          overdue: number;
-          answeredThisWeek: number;
-        };
-        if (!cancelled) setStats(data);
-      } catch {
-        if (!cancelled) setStats(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const listParams = useMemo(
+    () => ({
+      limit: PAGE_SIZE,
+      offset: page * PAGE_SIZE,
+      status,
+      receivedFrom: receivedFrom || undefined,
+      receivedTo: receivedTo || undefined,
+      search: search || undefined,
+    }),
+    [page, status, receivedFrom, receivedTo, search],
+  );
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const raw = await listCorrespondence({
-        limit: PAGE_SIZE,
-        offset: page * PAGE_SIZE,
-        status,
-        receivedFrom: receivedFrom || undefined,
-        receivedTo: receivedTo || undefined,
-        search: search || undefined,
-      });
-      const data = raw as { documents: CorrespondenceDoc[]; total: number };
-      setDocuments(data.documents);
-      setTotal(data.total);
-    } catch (e) {
-      console.error(e);
-      toast({
-        variant: "destructive",
-        title: "Could not load documents",
-        description:
-          e instanceof Error ? e.message : "Check Appwrite collection env vars.",
-      });
-      setDocuments([]);
-      setTotal(0);
-    } finally {
-      setLoading(false);
-    }
-  }, [page, status, receivedFrom, receivedTo, search, toast]);
+  const {
+    data: listData,
+    isLoading,
+    isError,
+    error,
+  } = useCorrespondenceListQuery(listParams);
+
+  const { data: stats } = useCorrespondenceStatsQuery();
+
+  const documents = (listData?.documents ?? []) as CorrespondenceDoc[];
+  const total = listData?.total ?? 0;
+  const loading = isLoading;
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!isError) return;
+    console.error(error);
+    toast({
+      variant: "destructive",
+      title: "Could not load documents",
+      description:
+        error instanceof Error
+          ? error.message
+          : "Check Appwrite collection env vars.",
+    });
+  }, [isError, error, toast]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -306,7 +287,7 @@ export default function DocumentRecieverListPage() {
             "The registry entry and any stored attachment were removed.",
         });
         setPendingDelete(null);
-        await load();
+        await invalidateCorrespondence();
         return;
       }
       toast({

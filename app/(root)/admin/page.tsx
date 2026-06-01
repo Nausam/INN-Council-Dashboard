@@ -6,10 +6,11 @@ import ShowDropdown from "@/components/shared/ShowDropdown";
 import SkeletonAdminLeaveRequestCard from "@/components/skeletons/SkeletonAdminLeaveRequestCard";
 import { useCurrentUser } from "@/hooks/getCurrentUser";
 import {
-  fetchLeaveRequests,
-  updateLeaveRequest,
-} from "@/lib/appwrite/appwrite";
-import React, { useEffect, useState } from "react";
+  useAdminLeaveRequestsQuery,
+  useQueryInvalidation,
+} from "@/hooks/queries";
+import { updateLeaveRequest } from "@/lib/firebase/hr";
+import React, { useState } from "react";
 
 /* ---------- Types ---------- */
 
@@ -25,43 +26,23 @@ export type LeaveRequest = {
   actionBy?: string;
 };
 
-type FetchLeaveRequestsResult = {
-  requests: LeaveRequest[];
-  totalCount: number;
-};
-
 /* ---------- Component ---------- */
 
 const AdminLeaveApprovalPage: React.FC = () => {
-  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-
-  // Pagination state
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [itemsPerPage, setItemsPerPage] = useState<number>(4);
-  const [totalRequests, setTotalRequests] = useState<number>(0);
 
+  const offset = (currentPage - 1) * itemsPerPage;
+  const { data, isLoading } = useAdminLeaveRequestsQuery(itemsPerPage, offset);
+  const { invalidateLeaveRequests } = useQueryInvalidation();
   const { currentUser } = useCurrentUser();
 
-  const fetchRequests = async (): Promise<void> => {
-    setLoading(true);
-    try {
-      const offset = (currentPage - 1) * itemsPerPage;
-      const { requests, totalCount } = (await fetchLeaveRequests(
-        itemsPerPage,
-        offset
-      )) as FetchLeaveRequestsResult;
-
-      setLeaveRequests(requests);
-      setTotalRequests(totalCount);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const leaveRequests = (data?.requests ?? []) as LeaveRequest[];
+  const totalRequests = data?.totalCount ?? 0;
 
   const handleApproval = async (
     requestId: string,
-    status: "Approved" | "Rejected"
+    status: "Approved" | "Rejected",
   ): Promise<void> => {
     if (!currentUser?.fullName) {
       alert("Your user info is missing; cannot update this request.");
@@ -74,26 +55,11 @@ const AdminLeaveApprovalPage: React.FC = () => {
         actionBy: currentUser.fullName,
       });
 
-      // Optimistic UI update
-      setLeaveRequests((prev) =>
-        prev.map((r) =>
-          r.$id === requestId
-            ? { ...r, approvalStatus: status, actionBy: currentUser.fullName }
-            : r
-        )
-      );
-
-      // Re-fetch to stay in sync with server totals/pagination
-      fetchRequests();
+      await invalidateLeaveRequests();
     } catch {
       alert("Failed to update leave request.");
     }
   };
-
-  useEffect(() => {
-    fetchRequests();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, itemsPerPage]);
 
   return (
     <div className="w-full max-w-7xl mx-auto p-6">
@@ -111,7 +77,7 @@ const AdminLeaveApprovalPage: React.FC = () => {
         />
       </div>
 
-      {loading ? (
+      {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 mt-10">
           {Array.from({ length: 4 }).map((_, idx) => (
             <SkeletonAdminLeaveRequestCard key={idx} />

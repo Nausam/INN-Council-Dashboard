@@ -1,4 +1,4 @@
-import { Models } from "node-appwrite";
+import type { LandPaymentDoc as FBLandPaymentDoc, LandStatementDoc as FBLandStatementDoc, LegacyDocument } from "@/lib/firebase/types";
 
 export type LandRentOverviewRow = {
   leaseId: string;
@@ -32,39 +32,11 @@ export type LandLeaseOption = {
   tenantName: string;
 };
 
-export type LandPaymentDoc = Models.Document & {
-  leaseId: string;
-  statementId: string;
-  paidAt: string;
-  amount: number;
-  method?: string;
+export type LandPaymentDoc = FBLandPaymentDoc & {
   reference?: string;
-  note?: string;
-  receivedBy?: string;
 };
 
-export type LandStatementDoc = Models.Document & {
-  leaseId: string;
-  monthKey: string;
-  status: "OPEN" | "PAID";
-  createdAt: string;
-  createdBy?: string;
-
-  landName?: string;
-  tenantName?: string;
-  agreementNumber?: string;
-
-  startDate?: string;
-  endDate?: string;
-  releasedDate?: string;
-
-  sizeSqft?: number;
-  rateLariPerSqft?: number;
-  paymentDueDay?: number;
-  fineLariPerDay?: number;
-  monthlyRent?: number;
-
-  // ✅ add these columns (optional) in Appwrite
+export type LandStatementDoc = FBLandStatementDoc & {
   unpaidMonths?: number;
   outstandingFees?: number;
   fineDays?: number;

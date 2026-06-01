@@ -1,10 +1,9 @@
 "use server";
 
-import { createAdminClient } from "@/lib/appwrite";
-import { appwriteConfig } from "@/lib/appwrite/config";
-import { ID, Permission, Query, Role } from "node-appwrite";
-import { constructFileUrl, parseStringify } from "@/lib/utils";
-import { InputFile } from "node-appwrite/file";
+import { COLLECTIONS } from "@/lib/firebase/admin";
+import { createDocument, newDocId } from "@/lib/firebase/repository";
+import { uploadToR2 } from "@/lib/r2";
+import { parseStringify } from "@/lib/utils";
 
 type CreateRegistrationParams = {
   fullName: string;
@@ -16,69 +15,27 @@ type CreateRegistrationParams = {
   isRetailer: boolean;
 };
 
-// CREATE FINS
-export const createRegistration = async ({
-  fullName,
-  address,
-  contactNumber,
-  idCard,
-  isCitizen,
-  isCompany,
-  isRetailer,
-}: CreateRegistrationParams) => {
+export const createRegistration = async (params: CreateRegistrationParams) => {
   try {
-    const { databases } = await createAdminClient();
-
-    const documentId = ID.unique();
-
-    const resgistration = await databases.createDocument(
-      appwriteConfig.databaseId,
-      appwriteConfig.wasteManagementFormsId,
-      documentId,
-      {
-        fullName,
-        address,
-        contactNumber,
-        idCard,
-        isCitizen,
-        isCompany,
-        isRetailer,
-        // createdAt: new Date().toISOString(),
-      }
+    const registration = await createDocument(
+      COLLECTIONS.wasteManagementForms,
+      params as Record<string, unknown>,
     );
-
-    return parseStringify(resgistration);
+    return parseStringify(registration);
   } catch (error) {
-    console.error("Failed to create fin:", error);
-    throw new Error("Failed to create fin");
+    console.error("Failed to create registration:", error);
+    throw new Error("Failed to create registration");
   }
 };
 
-// UPLOAD PRODUCT IMAGE
 export const uploadImage = async (file: File): Promise<string> => {
-  const { storage } = await createAdminClient();
   try {
-    const inputFile = InputFile.fromBuffer(file, file.name);
-    // Define permissions
-    const permissions = [Permission.read(Role.any())];
-
-    const bucketFile = await storage.createFile(
-      appwriteConfig.bucketId,
-      ID.unique(),
-      inputFile,
-      permissions
-    );
-
-    const fileDocument = {
-      name: bucketFile.name,
-      url: constructFileUrl(bucketFile.$id),
-      size: bucketFile.sizeOriginal,
-      bucketFileId: bucketFile.$id,
-    };
-
-    return fileDocument.url;
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const objectKey = `waste/${newDocId()}/${file.name}`;
+    await uploadToR2(objectKey, buffer, file.type || "application/octet-stream");
+    return `/api/files/r2?key=${encodeURIComponent(objectKey)}&mode=view`;
   } catch (error) {
-    console.error("File upload failed:", error);
-    throw new Error("Failed to upload file");
+    console.error("Failed to upload image:", error);
+    throw new Error("Failed to upload image");
   }
 };

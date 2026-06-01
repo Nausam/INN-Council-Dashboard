@@ -6,8 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useEmployeesQuery, useQueryInvalidation } from "@/hooks/queries";
 import { createCorrespondence } from "@/lib/actions/correspondence.actions";
-import { fetchAllEmployees } from "@/lib/appwrite/appwrite";
 import { cn } from "@/lib/utils";
 import {
   CHANNEL_LABELS,
@@ -19,7 +19,7 @@ import {
 import { ArrowLeft, FilePlus2, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 
 type EmployeeOption = { $id: string; name: string };
 
@@ -41,24 +41,18 @@ const notesFieldClass = cn(
 export default function NewDocumentRecieverPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const { invalidateCorrespondence } = useQueryInvalidation();
   const [submitting, setSubmitting] = useState(false);
-  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+  const { data: employeesRaw = [] } = useEmployeesQuery();
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const list = await fetchAllEmployees();
-        setEmployees(
-          list.map((e) => ({
-            $id: e.$id,
-            name: typeof e.name === "string" ? e.name : "Unknown",
-          })),
-        );
-      } catch {
-        setEmployees([]);
-      }
-    })();
-  }, []);
+  const employees = useMemo<EmployeeOption[]>(
+    () =>
+      employeesRaw.map((e) => ({
+        $id: e.$id,
+        name: typeof e.name === "string" ? e.name : "Unknown",
+      })),
+    [employeesRaw],
+  );
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -67,6 +61,7 @@ export default function NewDocumentRecieverPage() {
       const fd = new FormData(e.currentTarget);
       const res = await createCorrespondence(fd);
       if (res.ok) {
+        invalidateCorrespondence();
         toast({ title: "Saved", description: "Document registered." });
         router.push(`/document-reciever/${res.id}`);
         return;

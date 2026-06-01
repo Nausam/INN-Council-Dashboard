@@ -5,7 +5,7 @@ import { fmtMoney } from "@/components/landRent/Statement/landRentStatement.util
 import {
   getPaymentSlipDownloadUrl,
   getPaymentSlipUrl,
-} from "@/lib/landrent/landRent.actions";
+} from "@/lib/landrent/landRent.urls";
 import { Download, Eye } from "lucide-react";
 
 function clampPct(n: number) {

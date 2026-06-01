@@ -1,33 +1,22 @@
-import { getCurrentUser } from "@/lib/actions/user.actions";
-import { createAdminClient } from "@/lib/appwrite";
-import { appwriteConfig } from "@/lib/appwrite/config";
+import { getAuthProfile } from "@/lib/actions/user.actions";
+import { COLLECTIONS } from "@/lib/firebase/admin";
+import { getDocument } from "@/lib/firebase/repository";
+import type { CorrespondenceDoc } from "@/types/correspondence";
 import {
   downloadCorrespondenceFromR2,
   isCorrespondenceR2Configured,
 } from "@/lib/r2";
 import { NextRequest, NextResponse } from "next/server";
 
-function requireCollectionId() {
-  const id = appwriteConfig.correspondenceCollectionId;
-  if (!id) return null;
-  return id;
-}
-
 export async function GET(
   _request: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const user = await getCurrentUser();
+  const user = await getAuthProfile();
   if (!user) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
-  const collectionId = requireCollectionId();
-  if (!collectionId) {
-    return new NextResponse("Document receiver is not configured", {
-      status: 503,
-    });
-  }
   if (!isCorrespondenceR2Configured()) {
     return new NextResponse(
       "Correspondence file storage (R2_CORRESPONDENCE_BUCKET_NAME) is not configured",
@@ -35,14 +24,12 @@ export async function GET(
     );
   }
 
-  const { databases } = await createAdminClient();
-  let doc: Record<string, unknown>;
+  let doc: CorrespondenceDoc;
   try {
-    doc = (await databases.getDocument(
-      appwriteConfig.databaseId,
-      collectionId,
+    doc = await getDocument<CorrespondenceDoc>(
+      COLLECTIONS.correspondence,
       params.id,
-    )) as unknown as Record<string, unknown>;
+    );
   } catch {
     return new NextResponse("Not found", { status: 404 });
   }

@@ -3,7 +3,7 @@
 import {
   getAgreementPdfDownloadUrl,
   getAgreementPdfUrl,
-} from "@/lib/landrent/landRent.actions";
+} from "@/lib/landrent/landRent.urls";
 import { Download, Eye, FileText, User2 } from "lucide-react";
 import Link from "next/link";
 import {

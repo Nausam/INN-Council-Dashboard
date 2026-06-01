@@ -11,11 +11,11 @@ import {
 } from "@/components/ui/table";
 import { EMPLOYEE_NAMES } from "@/constants";
 import {
-  EmployeeDoc,
-  fetchAllEmployees,
-  fetchAttendanceForMonth,
-} from "@/lib/appwrite/appwrite";
-import React, { useEffect, useState } from "react";
+  useCouncilAttendanceMonthQuery,
+  useEmployeesQuery,
+} from "@/hooks/queries";
+import type { EmployeeDoc } from "@/lib/firebase/hr";
+import React, { useMemo, useState } from "react";
 
 /* ======================= Types ======================= */
 
@@ -37,7 +37,7 @@ interface EmployeeDetails {
   address: string;
   designation: string;
   recordCardNumber: string;
-  joinedDate: string; // ISO date string
+  joinedDate: string;
   section: string;
 }
 
@@ -59,7 +59,7 @@ type EmployeeRef =
 
 /** Minimal shape of an attendance document we need here */
 interface AttendanceDoc {
-  date: string; // ISO
+  date: string;
   employeeId: EmployeeRef;
   minutesLate?: number | null;
   leaveType?: string | null;
@@ -105,7 +105,7 @@ function isAttendanceDoc(v: unknown): v is AttendanceDoc {
 
 function normalizeEmployee(
   ref: EmployeeRef,
-  map?: Map<string, EmployeeDetails>
+  map?: Map<string, EmployeeDetails>,
 ): EmployeeDetails | null {
   if (typeof ref === "string") {
     const found = map?.get(ref);
@@ -117,7 +117,7 @@ function normalizeEmployee(
     designation: ref.designation ?? "",
     recordCardNumber: ref.recordCardNumber ?? "",
     joinedDate: ref.joinedDate ?? "",
-    section: (ref.section ?? "").trim(), // keep raw but trimmed
+    section: (ref.section ?? "").trim(),
   };
 }
 
@@ -128,7 +128,6 @@ function asString(v: unknown): string {
 const norm = (s: string) => s.trim().toLowerCase();
 const ALLOWED_SECTIONS = new Set(["councillor", "admin", "waste management"]);
 
-// Lowercase, strip non-letters, collapse repeated letters (Imran/Imraan both match)
 const nameKey = (s: string) =>
   s
     .toLowerCase()
@@ -138,7 +137,6 @@ const nameKey = (s: string) =>
 
 const ORDER_INDEX = new Map(EMPLOYEE_NAMES.map((n, i) => [nameKey(n), i]));
 
-// Sort tuples by fixed order; unknown names go to the end (then A→Z)
 const cmpByEmployeeOrder = (a: ReportTuple, b: ReportTuple) => {
   const an = a[1].name ?? "";
   const bn = b[1].name ?? "";
@@ -148,140 +146,151 @@ const cmpByEmployeeOrder = (a: ReportTuple, b: ReportTuple) => {
   return an.localeCompare(bn);
 };
 
+function buildFullReport(
+  month: string,
+  raw: unknown,
+  employees: EmployeeDoc[],
+  selectedSection: string,
+  selectedEmployee: string,
+): ReportTuple[] {
+  const employeeMap = new Map<string, EmployeeDetails>(
+    employees.map((e) => [
+      e.$id,
+      {
+        name: e.name,
+        address: asString(e["address"]),
+        designation: asString(e.designation),
+        recordCardNumber: asString(e["recordCardNumber"]),
+        joinedDate: asString(e["joinedDate"]),
+        section: asString(e.section),
+      },
+    ]),
+  );
+
+  const docs: AttendanceDoc[] = Array.isArray(raw)
+    ? raw.filter(isAttendanceDoc)
+    : [];
+
+  const monthRecords = docs.filter((record) => {
+    const recordMonth = new Date(record.date).toISOString().slice(0, 7);
+    if (recordMonth !== month) return false;
+
+    const emp = normalizeEmployee(record.employeeId, employeeMap);
+    if (!emp) return false;
+
+    if (!ALLOWED_SECTIONS.has(norm(emp.section))) return false;
+
+    const sectionMatches =
+      selectedSection === "All" ||
+      norm(emp.section) === norm(selectedSection);
+
+    const employeeMatches =
+      selectedEmployee === "All" || emp.name === selectedEmployee;
+
+    return sectionMatches && employeeMatches;
+  });
+
+  const reportMap = new Map<string, ReportEntry>();
+
+  monthRecords.forEach((record) => {
+    const emp = normalizeEmployee(record.employeeId, employeeMap);
+    if (!emp) return;
+
+    if (!reportMap.has(emp.name)) {
+      reportMap.set(emp.name, {
+        sickLeave: 0,
+        annualLeave: 0,
+        certificateSickLeave: 0,
+        familyRelatedLeave: 0,
+        maternityLeave: 0,
+        paternityLeave: 0,
+        noPayLeave: 0,
+        officialLeave: 0,
+        minutesLate: 0,
+        totalAbsent: 0,
+        ...emp,
+      });
+    }
+
+    const entry = reportMap.get(emp.name)!;
+
+    const leave = (record.leaveType ?? "") as keyof LeaveReport;
+    if (leave && leave in entry) {
+      (entry[leave] as number) += 1;
+      entry.totalAbsent += 1;
+    }
+
+    if (typeof record.minutesLate === "number") {
+      entry.minutesLate += record.minutesLate;
+    }
+  });
+
+  return Array.from(reportMap.entries()).sort(cmpByEmployeeOrder);
+}
+
 /* ======================= Component ======================= */
 
 const CouncilReportsPage: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState<string>(
-    new Date().toISOString().slice(0, 7)
+    new Date().toISOString().slice(0, 7),
   );
   const [totalDays, setTotalDays] = useState<number>(0);
-
-  const [loading, setLoading] = useState<boolean>(false);
-  const [reportAvailable, setReportAvailable] = useState<boolean>(false);
+  const [queryMonth, setQueryMonth] = useState<string>("");
 
   const [selectedSection, setSelectedSection] = useState<string>("All");
   const [selectedEmployee, setSelectedEmployee] = useState<string>("All");
 
-  const [fullReportData, setFullReportData] = useState<ReportTuple[]>([]);
-  const [reportData, setReportData] = useState<ReportTuple[]>([]);
+  const { data: employees = [] } = useEmployeesQuery();
+  const {
+    data: rawAttendance,
+    isLoading,
+    isFetching,
+    isError,
+    isSuccess,
+    refetch,
+  } = useCouncilAttendanceMonthQuery(queryMonth);
 
-  const generateReport = async (month: string) => {
-    setLoading(true);
-    try {
-      // 1) get raw attendance rows (now correctly fetched for the month)
-      const raw = await fetchAttendanceForMonth(month);
+  const fullReportData = useMemo(() => {
+    if (!queryMonth || rawAttendance === undefined) return [];
+    return buildFullReport(
+      queryMonth,
+      rawAttendance,
+      employees,
+      selectedSection,
+      selectedEmployee,
+    );
+  }, [
+    queryMonth,
+    rawAttendance,
+    employees,
+    selectedSection,
+    selectedEmployee,
+  ]);
 
-      // 2) build an employee map to resolve string ids
-      const employees: EmployeeDoc[] = await fetchAllEmployees();
-      const employeeMap = new Map<string, EmployeeDetails>(
-        employees.map((e) => [
-          e.$id,
-          {
-            name: e.name,
-            address: asString(e["address"]), // unknown -> string safely
-            designation: asString(e.designation), // string | undefined -> string
-            recordCardNumber: asString(e["recordCardNumber"]),
-            joinedDate: asString(e["joinedDate"]),
-            section: asString(e.section), // string | undefined -> string
-          },
-        ])
-      );
-
-      const docs: AttendanceDoc[] = Array.isArray(raw)
-        ? raw.filter(isAttendanceDoc)
-        : [];
-
-      // filter by month and selected filters (using resolved employee)
-      const monthRecords = docs.filter((record) => {
-        const recordMonth = new Date(record.date).toISOString().slice(0, 7);
-        if (recordMonth !== month) return false;
-
-        const emp = normalizeEmployee(record.employeeId, employeeMap);
-        if (!emp) return false;
-
-        // Only Councillor/Admin
-        if (!ALLOWED_SECTIONS.has(norm(emp.section))) return false;
-
-        const sectionMatches =
-          selectedSection === "All" ||
-          norm(emp.section) === norm(selectedSection);
-
-        const employeeMatches =
-          selectedEmployee === "All" || emp.name === selectedEmployee;
-
-        return sectionMatches && employeeMatches;
-      });
-
-      // aggregate
-      const reportMap = new Map<string, ReportEntry>();
-
-      monthRecords.forEach((record) => {
-        const emp = normalizeEmployee(record.employeeId, employeeMap);
-        if (!emp) return;
-
-        if (!reportMap.has(emp.name)) {
-          reportMap.set(emp.name, {
-            sickLeave: 0,
-            annualLeave: 0,
-            certificateSickLeave: 0,
-            familyRelatedLeave: 0,
-            maternityLeave: 0,
-            paternityLeave: 0,
-            noPayLeave: 0,
-            officialLeave: 0,
-            minutesLate: 0,
-            totalAbsent: 0,
-            ...emp,
-          });
-        }
-
-        const entry = reportMap.get(emp.name)!;
-
-        const leave = (record.leaveType ?? "") as keyof LeaveReport;
-        if (leave && leave in entry) {
-          (entry[leave] as number) += 1;
-          entry.totalAbsent += 1;
-        }
-
-        if (typeof record.minutesLate === "number") {
-          entry.minutesLate += record.minutesLate;
-        }
-      });
-
-      const tuples: ReportTuple[] = Array.from(reportMap.entries()).sort(
-        cmpByEmployeeOrder
-      );
-      setFullReportData(tuples);
-      setReportData(tuples);
-      setReportAvailable(true);
-    } catch (err) {
-      console.error("Error generating report:", err);
-      setReportAvailable(false);
-      setFullReportData([]);
-      setReportData([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Apply UI filters to fullReportData
-  useEffect(() => {
-    if (fullReportData.length === 0) return;
-
-    const filtered = fullReportData
+  const reportData = useMemo(() => {
+    if (fullReportData.length === 0) return [];
+    return fullReportData
       .filter(([, stats]) => {
         const sectionMatches =
           selectedSection === "All" || stats.section === selectedSection;
-
         const employeeMatches =
           selectedEmployee === "All" || stats.name === selectedEmployee;
-
         return sectionMatches && employeeMatches;
       })
       .sort(cmpByEmployeeOrder);
+  }, [fullReportData, selectedSection, selectedEmployee]);
 
-    setReportData(filtered);
-  }, [selectedSection, selectedEmployee, fullReportData]);
+  const reportAvailable =
+    Boolean(queryMonth) && isSuccess && !isError && fullReportData.length > 0;
+  const loading = Boolean(queryMonth) && (isLoading || isFetching);
+
+  const handleGenerateReport = () => {
+    if (queryMonth === selectedMonth) {
+      void refetch();
+    } else {
+      setQueryMonth(selectedMonth);
+    }
+  };
 
   const downloadCSV = () => {
     if (reportData.length === 0) return;
@@ -347,7 +356,6 @@ const CouncilReportsPage: React.FC = () => {
       </h1>
 
       <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4">
-        {/* Select Month */}
         <div>
           <p className="text-sm font-medium text-gray-600 mb-2">Select Month</p>
           <input
@@ -358,7 +366,6 @@ const CouncilReportsPage: React.FC = () => {
           />
         </div>
 
-        {/* Total Working Days */}
         <div>
           <p className="text-sm font-medium text-gray-600 mb-2">
             Enter Total Working Days
@@ -372,7 +379,6 @@ const CouncilReportsPage: React.FC = () => {
           />
         </div>
 
-        {/* Select Employee */}
         <div>
           <p className="text-sm font-medium text-gray-600 mb-2">
             Select Employee
@@ -391,7 +397,6 @@ const CouncilReportsPage: React.FC = () => {
           </select>
         </div>
 
-        {/* Select Section */}
         <div>
           <p className="text-sm font-medium text-gray-600 mb-2">
             Select Section
@@ -407,10 +412,9 @@ const CouncilReportsPage: React.FC = () => {
           </select>
         </div>
 
-        {/* Buttons */}
         <div className="flex lg:col-span-2 xl:col-span-4 gap-4">
           <button
-            onClick={() => generateReport(selectedMonth)}
+            onClick={handleGenerateReport}
             className="custom-button h-12 w-full lg:w-auto"
           >
             Generate Report

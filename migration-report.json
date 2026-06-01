@@ -1,0 +1,106 @@
+{
+  "employees": {
+    "exported": 33,
+    "imported": 33
+  },
+  "attendance": {
+    "exported": 48,
+    "imported": 48
+  },
+  "mosque_attendance": {
+    "exported": 48,
+    "imported": 48
+  },
+  "prayer_times": {
+    "exported": 0,
+    "imported": 0
+  },
+  "leave_requests": {
+    "exported": 1,
+    "imported": 1
+  },
+  "waste_management_forms": {
+    "exported": 0,
+    "imported": 0
+  },
+  "punch_logs": {
+    "exported": 20,
+    "imported": 20
+  },
+  "salary_slips": {
+    "exported": 193,
+    "imported": 193
+  },
+  "correspondence": {
+    "exported": 0,
+    "imported": 0
+  },
+  "land_parcels": {
+    "exported": 0,
+    "imported": 0
+  },
+  "land_tenants": {
+    "exported": 0,
+    "imported": 0
+  },
+  "land_leases": {
+    "exported": 0,
+    "imported": 0
+  },
+  "land_payments": {
+    "exported": 0,
+    "imported": 0
+  },
+  "land_statements": {
+    "exported": 0,
+    "imported": 0
+  },
+  "council_ninmun": {
+    "exported": 0,
+    "imported": 0
+  },
+  "ninmun_votes": {
+    "exported": 0,
+    "imported": 0
+  },
+  "iulaan": {
+    "exported": 0,
+    "imported": 0
+  },
+  "services_competitions": {
+    "exported": 0,
+    "imported": 0
+  },
+  "waste_subscriptions": {
+    "exported": 144,
+    "imported": 144
+  },
+  "invoices": {
+    "exported": 19,
+    "imported": 19
+  },
+  "invoice_items": {
+    "exported": 175,
+    "imported": 175
+  },
+  "payments": {
+    "exported": 1,
+    "imported": 1
+  },
+  "payment_allocations": {
+    "exported": 8,
+    "imported": 8
+  },
+  "counters": {
+    "exported": 1,
+    "imported": 1
+  },
+  "audit_logs": {
+    "exported": 27,
+    "imported": 27
+  },
+  "waste_customers": {
+    "exported": 0,
+    "imported": 0
+  }
+}

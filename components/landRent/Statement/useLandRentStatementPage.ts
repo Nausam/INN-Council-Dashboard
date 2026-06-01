@@ -16,6 +16,7 @@ import {
   recalculateLandStatementFines,
   type LandLeaseOption,
 } from "@/lib/landrent/landRent.actions";
+import { useQueryInvalidation } from "@/hooks/queries";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -30,6 +31,7 @@ export type PreviewDetails = Awaited<
 export function useLandRentStatementPage() {
   const searchParams = useSearchParams();
   const latestInvoiceRef = useRef<HTMLDivElement>(null);
+  const { invalidateLandRent } = useQueryInvalidation();
 
   const [options, setOptions] = useState<LandLeaseOption[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(false);
@@ -201,6 +203,7 @@ export function useLandRentStatementPage() {
         });
       }
       await refreshAll();
+      invalidateLandRent(leaseId);
     } catch (e: any) {
       setError(e?.message ?? "Failed to recalculate fines.");
     } finally {
@@ -260,6 +263,7 @@ export function useLandRentStatementPage() {
       });
 
       await refreshAll();
+      invalidateLandRent(leaseId);
       setPaymentOk("Statement created.");
     } catch (e: any) {
       setError(
@@ -312,6 +316,7 @@ export function useLandRentStatementPage() {
       setPayNote("");
 
       await refreshAll();
+      invalidateLandRent(leaseId);
       setPaymentOk("Payment saved.");
     } catch (err: any) {
       setPaymentError(err?.message ?? "Failed to save payment.");

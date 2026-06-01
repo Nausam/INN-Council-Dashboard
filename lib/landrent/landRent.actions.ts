@@ -1,127 +1,36 @@
+"use server";
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Client, Databases, ID, Models, Query, Storage } from "appwrite";
 
-/* =============================== Config =============================== */
+import { COLLECTIONS } from "@/lib/firebase/admin";
+import {
+  createDocument,
+  getDocument,
+  listAllDocuments,
+  listDocuments,
+  newDocId,
+  updateDocument,
+  uploadBufferToR2,
+} from "@/lib/firebase/repository";
+import type {
+  LandLeaseDoc,
+  LandParcelDoc,
+  LandPaymentDoc,
+  LandStatementDoc,
+  LandStatementStatus,
+  LandTenantDoc,
+} from "@/lib/firebase/types";
 
-export const appwriteConfig = {
-  endpoint: "https://cloud.appwrite.io/v1",
-  projectId: "68fafb190023ef05bc17",
-  databaseId: "68fafc1000231aecbf69",
-
-  landParcelsCollectionId:
-    process.env.NEXT_PUBLIC_APPWRITE_LAND_PARCELS_COLLECTION ?? "",
-  landTenantsCollectionId:
-    process.env.NEXT_PUBLIC_APPWRITE_LAND_TENANTS_COLLECTION ?? "",
-  landLeasesCollectionId:
-    process.env.NEXT_PUBLIC_APPWRITE_LAND_LEASES_COLLECTION ?? "",
-  landPaymentsCollectionId:
-    process.env.NEXT_PUBLIC_APPWRITE_LAND_PAYMENTS_COLLECTION ?? "",
-  landStatementsCollectionId:
-    process.env.NEXT_PUBLIC_APPWRITE_LAND_STATEMENTS_COLLECTION ?? "",
-  agreementsBucketId: process.env.NEXT_PUBLIC_APPWRITE_AGREEMENTS_BUCKET ?? "",
-};
-
-const {
-  endpoint,
-  projectId,
-  databaseId,
-  landParcelsCollectionId,
-  landTenantsCollectionId,
-  landLeasesCollectionId,
-  landPaymentsCollectionId,
-  landStatementsCollectionId,
-  agreementsBucketId,
-} = appwriteConfig;
-
-const client = new Client();
-client.setEndpoint(endpoint).setProject(projectId);
-
-const databases = new Databases(client);
-
-const storage = new Storage(client);
+export type {
+  LandLeaseDoc,
+  LandParcelDoc,
+  LandPaymentDoc,
+  LandStatementDoc,
+  LandStatementStatus,
+  LandTenantDoc,
+} from "@/lib/firebase/types";
 
 /* =============================== Types =============================== */
-
-export type LandParcelDoc = Models.Document & {
-  name: string;
-  sizeSqft: number;
-};
-
-export type LandTenantDoc = Models.Document & {
-  fullName: string;
-};
-
-export type LandLeaseDoc = Models.Document & {
-  parcelId: string;
-  tenantId: string;
-
-  startDate: string; // ISO
-  endDate: string; // ISO
-  agreementNumber: string;
-
-  releasedDate?: string | null;
-
-  rateLariPerSqft: number;
-  paymentDueDay?: number;
-  fineLariPerDay?: number;
-
-  agreementPdfFileId?: string | null;
-  agreementPdfFilename?: string | null;
-
-  status?: string | null;
-};
-
-export type LandStatementStatus = "OPEN" | "PAID";
-
-export type LandStatementDoc = Models.Document & {
-  leaseId: string;
-  monthKey: string; // YYYY-MM
-  status: LandStatementStatus;
-
-  createdAt: string; // datetime (your custom field)
-  createdBy?: string | null;
-
-  // Denormalized fields (optional but you have them)
-  landName?: string | null;
-  tenantName?: string | null;
-  agreementNumber?: string | null;
-  startDate?: string | null;
-  endDate?: string | null;
-  releasedDate?: string | null;
-
-  sizeSqft?: number | null;
-  rateLariPerSqft?: number | null;
-  paymentDueDay?: number | null;
-  fineLariPerDay?: number | null;
-  monthlyRent?: number | null;
-
-  snapshot_totalRentPaymentMonthly?: number | null;
-  snapshot_monthlyRentPaymentAmount?: number | null;
-  snapshot_unpaidMonths?: number | null;
-  snapshot_outstandingFees?: number | null;
-  snapshot_numberOfFineDays?: number | null;
-  snapshot_fineAmount?: number | null;
-
-  snapshot_latestPaymentDate?: string | null;
-  snapshot_fineBreakdownJson?: string | null;
-
-  snapshot_capToEndDate?: boolean | null;
-};
-
-export type LandPaymentDoc = Models.Document & {
-  leaseId: string;
-  statementId: string;
-  paidAt: string;
-  amount: number;
-  method?: string;
-
-  note?: string;
-  receivedBy?: string;
-
-  slipFileId: string;
-  slipFileName: string;
-  slipMime?: string | null;
-};
 
 export type LandLeaseOption = {
   leaseId: string;
@@ -177,17 +86,12 @@ export type CreateLandRentPayload = {
 };
 
 export type CreatedLandRentBundle = {
-  tenant: Models.Document;
-  parcel: Models.Document;
-  lease: Models.Document;
+  tenant: LandTenantDoc;
+  parcel: LandParcelDoc;
+  lease: LandLeaseDoc;
 };
 
 /* =============================== Helpers =============================== */
-
-export function getPaymentSlipDownloadUrl(fileId: string): string {
-  if (!agreementsBucketId) return "";
-  return `${endpoint}/storage/buckets/${agreementsBucketId}/files/${fileId}/download?project=${projectId}`;
-}
 
 function parseDataUrl(dataUrl: string) {
   // "data:<mime>;base64,<data>"
@@ -200,80 +104,22 @@ async function uploadSlipFromDataUrl(
   dataUrl: string,
   filename: string,
 ): Promise<{ fileId: string; mime: string }> {
-  if (!agreementsBucketId) {
-    throw new Error("Missing NEXT_PUBLIC_APPWRITE_PAYMENT_SLIPS_BUCKET");
-  }
-
   const { mime, base64 } = parseDataUrl(dataUrl);
-
-  const byteCharacters = atob(base64);
-  const byteNumbers = new Array(byteCharacters.length);
-  for (let i = 0; i < byteCharacters.length; i++) {
-    byteNumbers[i] = byteCharacters.charCodeAt(i);
-  }
-  const byteArray = new Uint8Array(byteNumbers);
-  const blob = new Blob([byteArray], { type: mime });
-  const file = new File([blob], filename, { type: mime });
-
-  const result = await storage.createFile(
-    agreementsBucketId,
-    ID.unique(),
-    file,
-  );
-
-  return { fileId: result.$id, mime };
-}
-
-export function getPaymentSlipUrl(fileId: string): string {
-  if (!agreementsBucketId) return "";
-  return `${endpoint}/storage/buckets/${agreementsBucketId}/files/${fileId}/view?project=${projectId}`;
+  const buffer = Buffer.from(base64, "base64");
+  const objectKey = `land-rent/payment-slips/${newDocId()}/${filename}`;
+  const fileId = await uploadBufferToR2(objectKey, buffer, mime);
+  return { fileId, mime };
 }
 
 /* =============================== PDF Storage Helpers =============================== */
-
-export function getAgreementPdfDownloadUrl(fileId: string): string {
-  if (!agreementsBucketId) return "";
-  return `${endpoint}/storage/buckets/${agreementsBucketId}/files/${fileId}/download?project=${projectId}`;
-}
 
 async function uploadPdfFromBase64(
   base64Data: string,
   filename: string,
 ): Promise<string> {
-  if (!agreementsBucketId) {
-    throw new Error("Missing NEXT_PUBLIC_APPWRITE_AGREEMENTS_BUCKET");
-  }
-
-  const byteCharacters = atob(base64Data);
-  const byteNumbers = new Array(byteCharacters.length);
-  for (let i = 0; i < byteCharacters.length; i++) {
-    byteNumbers[i] = byteCharacters.charCodeAt(i);
-  }
-  const byteArray = new Uint8Array(byteNumbers);
-  const blob = new Blob([byteArray], { type: "application/pdf" });
-  const file = new File([blob], filename, { type: "application/pdf" });
-
-  const result = await storage.createFile(
-    agreementsBucketId,
-    ID.unique(),
-    file,
-  );
-
-  return result.$id;
-}
-
-export function getAgreementPdfUrl(fileId: string): string {
-  if (!agreementsBucketId) return "";
-  return `${endpoint}/storage/buckets/${agreementsBucketId}/files/${fileId}/view?project=${projectId}`;
-}
-
-async function deletePdfFile(fileId: string): Promise<void> {
-  if (!agreementsBucketId) return;
-  try {
-    await storage.deleteFile(agreementsBucketId, fileId);
-  } catch (error) {
-    console.warn("Failed to delete PDF file:", error);
-  }
+  const buffer = Buffer.from(base64Data, "base64");
+  const objectKey = `land-rent/agreements/${newDocId()}/${filename}`;
+  return uploadBufferToR2(objectKey, buffer, "application/pdf");
 }
 
 const MALDIVES_TZ = "Indian/Maldives";
@@ -292,15 +138,6 @@ const dateOnlyInTimeZoneUTC = (d: Date, timeZone = MALDIVES_TZ) => {
 
   return new Date(Date.UTC(y, m - 1, day));
 };
-
-function unwrapAppwriteErrorMessage(e: any) {
-  return (
-    e?.response?.message ||
-    e?.message ||
-    e?.response ||
-    "Unknown Appwrite error"
-  );
-}
 
 // Converts "YYYY-MM-DD" -> "YYYY-MM-DDT00:00:00.000Z"
 // Leaves full ISO datetimes as-is. Returns null for empty/invalid.
@@ -325,75 +162,11 @@ function toIsoDateTimeOrNull(v: any): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-// Smart create: if schema rejects unknown attributes, remove them and retry.
-// Also fixes datetime format errors when possible.
-async function createDocumentSmartRetry<T extends Models.Document>(
+async function createDocumentSmartRetry<T extends { $id: string }>(
   collectionId: string,
   data: Record<string, any>,
-  maxRetries = 20,
 ): Promise<T> {
-  const payload: Record<string, any> = { ...data }; // ✅ const is fine (we mutate keys)
-  const removed: string[] = [];
-
-  for (let i = 0; i < maxRetries; i += 1) {
-    try {
-      const doc = await databases.createDocument<T>(
-        databaseId,
-        collectionId,
-        ID.unique(),
-        payload as any, // ✅ Appwrite typing expects Omit<T, keyof Document>; we’re dynamic here
-      );
-
-      if (removed.length) {
-        console.warn(
-          `[land_statements] Created after stripping unknown fields:`,
-          removed,
-        );
-      }
-
-      return doc;
-    } catch (e: any) {
-      const msg = unwrapAppwriteErrorMessage(e);
-
-      // Unknown attribute: xxx
-      let m =
-        String(msg).match(/Unknown attribute:?[\s"]+([A-Za-z0-9_]+)/i) ||
-        String(msg).match(
-          /attribute[\s"]+([A-Za-z0-9_]+)[\s"]+is not allowed/i,
-        );
-
-      if (m?.[1]) {
-        const key = m[1];
-        if (key in payload) {
-          delete payload[key];
-          removed.push(key);
-          continue;
-        }
-      }
-
-      // Invalid attribute format (often datetime)
-      m = String(msg).match(/attribute[\s"]+([A-Za-z0-9_]+)[\s"]+.*invalid/i);
-      if (m?.[1]) {
-        const key = m[1];
-        if (key in payload) {
-          const fixed = toIsoDateTimeOrNull(payload[key]);
-          if (fixed) {
-            payload[key] = fixed;
-            continue;
-          }
-          delete payload[key];
-          removed.push(key);
-          continue;
-        }
-      }
-
-      throw new Error(msg);
-    }
-  }
-
-  throw new Error(
-    "Could not create statement: land_statements schema mismatches the payload (too many unknown fields).",
-  );
+  return createDocument<T>(collectionId, data);
 }
 
 function dateToMonthKeyUTC(d: Date) {
@@ -494,81 +267,32 @@ const fmtMonthYearUTC = (ms: Date) =>
     new Date(Date.UTC(ms.getUTCFullYear(), ms.getUTCMonth(), 1)),
   );
 
-/** Pagination helper. */
-const listAllDocuments = async <T extends Models.Document>(
-  collectionId: string,
-  queries: string[] = [],
-): Promise<T[]> => {
-  const results: T[] = [];
-  let offset = 0;
-  const limit = 100;
-  let hasMore = true;
-
-  while (hasMore) {
-    const res = await databases.listDocuments<T>(databaseId, collectionId, [
-      ...queries,
-      Query.limit(limit),
-      Query.offset(offset),
-    ]);
-
-    results.push(...res.documents);
-    hasMore = res.documents.length === limit;
-    offset += hasMore ? limit : 0;
-  }
-
-  return results;
-};
-
 /* =============================== Fetchers =============================== */
 
 export const fetchLandLeaseBundle = async (leaseId: string) => {
-  const lease = await databases.getDocument<LandLeaseDoc>(
-    databaseId,
-    landLeasesCollectionId,
+  const lease = await getDocument<LandLeaseDoc>(
+    COLLECTIONS.landLeases,
     leaseId,
   );
 
   const [parcel, tenant] = await Promise.all([
-    databases.getDocument<LandParcelDoc>(
-      databaseId,
-      landParcelsCollectionId,
-      lease.parcelId,
-    ),
-    databases.getDocument<LandTenantDoc>(
-      databaseId,
-      landTenantsCollectionId,
-      lease.tenantId,
-    ),
+    getDocument<LandParcelDoc>(COLLECTIONS.landParcels, lease.parcelId),
+    getDocument<LandTenantDoc>(COLLECTIONS.landTenants, lease.tenantId),
   ]);
 
   return { lease, parcel, tenant };
 };
 
 export const fetchLandLeaseOptions = async (): Promise<LandLeaseOption[]> => {
-  if (!landLeasesCollectionId)
-    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_LEASES_COLLECTION");
-  if (!landParcelsCollectionId)
-    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_PARCELS_COLLECTION");
-  if (!landTenantsCollectionId)
-    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_TENANTS_COLLECTION");
-
-  const leases = await listAllDocuments<LandLeaseDoc>(landLeasesCollectionId, [
-    Query.orderDesc("$createdAt"),
-  ]);
+  const leases = await listAllDocuments<LandLeaseDoc>(COLLECTIONS.landLeases, {
+    orderBy: [{ field: "$createdAt", direction: "desc" }],
+  });
 
   const opts = await Promise.all(
     leases.map(async (l) => {
       const [parcel, tenant] = await Promise.all([
-        databases.getDocument<LandParcelDoc>(
-          databaseId,
-          landParcelsCollectionId,
-          l.parcelId,
-        ),
-        databases.getDocument<LandTenantDoc>(
-          databaseId,
-          landTenantsCollectionId,
-          l.tenantId,
-        ),
+        getDocument<LandParcelDoc>(COLLECTIONS.landParcels, l.parcelId),
+        getDocument<LandTenantDoc>(COLLECTIONS.landTenants, l.tenantId),
       ]);
 
       return {
@@ -591,12 +315,12 @@ export const fetchLandLeaseOptions = async (): Promise<LandLeaseOption[]> => {
 /* =============================== Statements (NEW flow) =============================== */
 
 export const listLandStatementsForLease = async (leaseId: string) => {
-  if (!landStatementsCollectionId)
-    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_STATEMENTS_COLLECTION");
-
   const rows = await listAllDocuments<LandStatementDoc>(
-    landStatementsCollectionId,
-    [Query.equal("leaseId", leaseId), Query.orderAsc("monthKey")],
+    COLLECTIONS.landStatements,
+    {
+      where: [["leaseId", "==", leaseId]],
+      orderBy: [{ field: "monthKey", direction: "asc" }],
+    },
   );
 
   // Ensure stable order even if monthKey duplicates (shouldn't)
@@ -605,17 +329,15 @@ export const listLandStatementsForLease = async (leaseId: string) => {
 };
 
 export const fetchOpenLandStatementForLease = async (leaseId: string) => {
-  if (!landStatementsCollectionId)
-    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_STATEMENTS_COLLECTION");
-
-  const res = await databases.listDocuments<LandStatementDoc>(
-    databaseId,
-    landStatementsCollectionId,
-    [
-      Query.equal("leaseId", leaseId),
-      Query.equal("status", "OPEN"),
-      Query.limit(1),
-    ],
+  const res = await listDocuments<LandStatementDoc>(
+    COLLECTIONS.landStatements,
+    {
+      where: [
+        ["leaseId", "==", leaseId],
+        ["status", "==", "OPEN"],
+      ],
+      limit: 1,
+    },
   );
 
   return res.documents[0] ?? null;
@@ -867,9 +589,6 @@ export const createLandStatement = async (params: {
   createdBy?: string;
   capToEndDate?: boolean;
 }) => {
-  if (!landStatementsCollectionId)
-    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_STATEMENTS_COLLECTION");
-
   if (!monthKeyIsValid(params.monthKey)) throw new Error("Invalid monthKey.");
 
   const open = await fetchOpenLandStatementForLease(params.leaseId);
@@ -998,19 +717,16 @@ export const createLandStatement = async (params: {
   dataForCreate.createdBy = String(dataForCreate.createdBy ?? "").trim();
 
   return createDocumentSmartRetry<LandStatementDoc>(
-    landStatementsCollectionId,
+    COLLECTIONS.landStatements,
     dataForCreate,
   );
 };
 
 export const listLandPaymentsForStatement = async (statementId: string) => {
-  if (!landPaymentsCollectionId)
-    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_PAYMENTS_COLLECTION");
-
-  const rows = await listAllDocuments<LandPaymentDoc>(
-    landPaymentsCollectionId,
-    [Query.equal("statementId", statementId), Query.orderAsc("paidAt")],
-  );
+  const rows = await listAllDocuments<LandPaymentDoc>(COLLECTIONS.landPayments, {
+    where: [["statementId", "==", statementId]],
+    orderBy: [{ field: "paidAt", direction: "asc" }],
+  });
 
   return rows;
 };
@@ -1019,12 +735,8 @@ export const getLandStatementDetails = async (params: {
   statementId: string;
   capToEndDate?: boolean;
 }) => {
-  if (!landStatementsCollectionId)
-    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_STATEMENTS_COLLECTION");
-
-  const statement = await databases.getDocument<LandStatementDoc>(
-    databaseId,
-    landStatementsCollectionId,
+  const statement = await getDocument<LandStatementDoc>(
+    COLLECTIONS.landStatements,
     params.statementId,
   );
 
@@ -1142,24 +854,19 @@ export const getLandStatementDetails = async (params: {
 
     // Best-effort backfill (won't break if attributes not created yet)
     try {
-      await databases.updateDocument(
-        databaseId,
-        landStatementsCollectionId,
-        statement.$id,
-        {
-          snapshot_totalRentPaymentMonthly,
-          snapshot_monthlyRentPaymentAmount,
-          snapshot_unpaidMonths,
-          snapshot_outstandingFees,
-          snapshot_numberOfFineDays,
-          snapshot_fineAmount,
-          snapshot_latestPaymentDate,
-          snapshot_fineBreakdownJson: JSON.stringify(
-            snapshot_fineBreakdown ?? [],
-          ),
-          snapshot_capToEndDate: !!params.capToEndDate,
-        },
-      );
+      await updateDocument(COLLECTIONS.landStatements, statement.$id, {
+        snapshot_totalRentPaymentMonthly,
+        snapshot_monthlyRentPaymentAmount,
+        snapshot_unpaidMonths,
+        snapshot_outstandingFees,
+        snapshot_numberOfFineDays,
+        snapshot_fineAmount,
+        snapshot_latestPaymentDate,
+        snapshot_fineBreakdownJson: JSON.stringify(
+          snapshot_fineBreakdown ?? [],
+        ),
+        snapshot_capToEndDate: !!params.capToEndDate,
+      });
     } catch {
       // ignore (attributes may not exist yet)
     }
@@ -1223,12 +930,8 @@ export const recalculateLandStatementFines = async (params: {
   statementId: string;
   capToEndDate?: boolean;
 }) => {
-  if (!landStatementsCollectionId)
-    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_STATEMENTS_COLLECTION");
-
-  const statement = await databases.getDocument<LandStatementDoc>(
-    databaseId,
-    landStatementsCollectionId,
+  const statement = await getDocument<LandStatementDoc>(
+    COLLECTIONS.landStatements,
     params.statementId,
   );
 
@@ -1269,24 +972,19 @@ export const recalculateLandStatementFines = async (params: {
     ? (computed as any).fineBreakdown
     : [];
 
-  await databases.updateDocument(
-    databaseId,
-    landStatementsCollectionId,
-    params.statementId,
-    {
-      snapshot_totalRentPaymentMonthly,
-      snapshot_monthlyRentPaymentAmount,
-      snapshot_unpaidMonths,
-      snapshot_outstandingFees,
-      snapshot_numberOfFineDays,
-      snapshot_fineAmount,
-      snapshot_latestPaymentDate,
-      snapshot_fineBreakdownJson: JSON.stringify(
-        snapshot_fineBreakdown ?? [],
-      ),
-      snapshot_capToEndDate: !!params.capToEndDate,
-    },
-  );
+  await updateDocument(COLLECTIONS.landStatements, params.statementId, {
+    snapshot_totalRentPaymentMonthly,
+    snapshot_monthlyRentPaymentAmount,
+    snapshot_unpaidMonths,
+    snapshot_outstandingFees,
+    snapshot_numberOfFineDays,
+    snapshot_fineAmount,
+    snapshot_latestPaymentDate,
+    snapshot_fineBreakdownJson: JSON.stringify(
+      snapshot_fineBreakdown ?? [],
+    ),
+    snapshot_capToEndDate: !!params.capToEndDate,
+  });
 
   return { ok: true };
 };
@@ -1316,21 +1014,14 @@ const maybeMarkStatementPaid = async (
   statementId: string,
   capToEndDate?: boolean,
 ) => {
-  if (!landStatementsCollectionId) return;
-
   const details = await getLandStatementDetails({ statementId, capToEndDate });
   const alreadyPaid = details.statement.status === "PAID";
   const shouldBePaid = details.isPaid;
 
   if (!alreadyPaid && shouldBePaid) {
-    await databases.updateDocument(
-      databaseId,
-      landStatementsCollectionId,
-      statementId,
-      {
-        status: "PAID",
-      },
-    );
+    await updateDocument(COLLECTIONS.landStatements, statementId, {
+      status: "PAID",
+    });
   }
 };
 
@@ -1346,11 +1037,6 @@ export const createLandRentPayment = async (input: {
   slipFilename?: string | null;
   capToEndDate?: boolean; // used only for auto-mark-paid calc
 }) => {
-  if (!landPaymentsCollectionId)
-    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_PAYMENTS_COLLECTION");
-  if (!landStatementsCollectionId)
-    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_STATEMENTS_COLLECTION");
-
   const amount = Number(input.amount ?? 0);
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new Error("Payment amount must be greater than 0.");
@@ -1361,11 +1047,7 @@ export const createLandRentPayment = async (input: {
     throw new Error("Invalid paidAt date.");
   }
 
-  const st = await databases.getDocument<LandStatementDoc>(
-    databaseId,
-    landStatementsCollectionId,
-    input.statementId,
-  );
+  const st = await getDocument<LandStatementDoc>(COLLECTIONS.landStatements, input.statementId);
 
   if (st.status === "PAID") {
     throw new Error(
@@ -1386,24 +1068,19 @@ export const createLandRentPayment = async (input: {
   const slipMime = uploaded.mime;
   const slipFileName = input.slipFilename;
 
-  const created = await databases.createDocument<LandPaymentDoc>(
-    databaseId,
-    landPaymentsCollectionId,
-    ID.unique(),
-    {
-      leaseId: st.leaseId,
-      statementId: input.statementId,
-      paidAt: paidAt.toISOString(),
-      amount,
-      method: input.method ?? "",
-      reference: input.reference ?? "",
-      note: input.note ?? "",
-      receivedBy: input.receivedBy ?? "",
-      slipFileId,
-      slipFileName,
-      slipMime,
-    },
-  );
+  const created = await createDocument<LandPaymentDoc>(COLLECTIONS.landPayments, {
+    leaseId: st.leaseId,
+    statementId: input.statementId,
+    paidAt: paidAt.toISOString(),
+    amount,
+    method: input.method ?? "",
+    reference: input.reference ?? "",
+    note: input.note ?? "",
+    receivedBy: input.receivedBy ?? "",
+    slipFileId,
+    slipFileName,
+    slipMime,
+  });
 
   // After saving payment, mark statement PAID if fully settled
   await maybeMarkStatementPaid(input.statementId, input.capToEndDate);
@@ -1598,19 +1275,17 @@ export const fetchLandRentOverview = async (params?: {
 
   const capToEndDate = !!params?.capToEndDate;
 
-  const leases = await listAllDocuments<LandLeaseDoc>(landLeasesCollectionId, [
-    Query.orderDesc("$createdAt"),
-  ]);
+  const leases = await listAllDocuments<LandLeaseDoc>(COLLECTIONS.landLeases, {
+    orderBy: [{ field: "$createdAt", direction: "desc" }],
+  });
 
-  const parcels = await listAllDocuments<LandParcelDoc>(
-    landParcelsCollectionId,
-    [Query.orderAsc("$createdAt")],
-  );
+  const parcels = await listAllDocuments<LandParcelDoc>(COLLECTIONS.landParcels, {
+    orderBy: [{ field: "$createdAt", direction: "asc" }],
+  });
 
-  const tenants = await listAllDocuments<LandTenantDoc>(
-    landTenantsCollectionId,
-    [Query.orderAsc("$createdAt")],
-  );
+  const tenants = await listAllDocuments<LandTenantDoc>(COLLECTIONS.landTenants, {
+    orderBy: [{ field: "$createdAt", direction: "asc" }],
+  });
 
   const parcelById = new Map(parcels.map((p) => [p.$id, p]));
   const tenantById = new Map(tenants.map((t) => [t.$id, t]));
@@ -1668,14 +1343,15 @@ export const fetchLandRentOverview = async (params?: {
       }
 
       // 2) If a statement exists for the selected monthKey, use it (instead of preview)
-      const stForMonth = await databases.listDocuments<LandStatementDoc>(
-        databaseId,
-        landStatementsCollectionId,
-        [
-          Query.equal("leaseId", l.$id),
-          Query.equal("monthKey", mk),
-          Query.limit(1),
-        ],
+      const stForMonth = await listDocuments<LandStatementDoc>(
+        COLLECTIONS.landStatements,
+        {
+          where: [
+            ["leaseId", "==", l.$id],
+            ["monthKey", "==", mk],
+          ],
+          limit: 1,
+        },
       );
 
       const st = stForMonth.documents[0] ?? null;
@@ -1749,55 +1425,28 @@ export const fetchLandRentOverview = async (params?: {
 export async function createLandRentBundle(
   payload: CreateLandRentPayload,
 ): Promise<CreatedLandRentBundle> {
-  const db = databaseId;
+  const tenant = await createDocument<LandTenantDoc>(COLLECTIONS.landTenants, {
+    fullName: payload.tenant.fullName,
+  });
 
-  if (!landTenantsCollectionId) {
-    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_TENANTS_COLLECTION");
-  }
-  if (!landParcelsCollectionId) {
-    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_PARCELS_COLLECTION");
-  }
-  if (!landLeasesCollectionId) {
-    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_LEASES_COLLECTION");
-  }
+  const parcel = await createDocument<LandParcelDoc>(COLLECTIONS.landParcels, {
+    name: payload.parcel.name,
+    sizeSqft: payload.parcel.sizeSqft,
+  });
 
-  const tenant = await databases.createDocument(
-    db,
-    landTenantsCollectionId,
-    ID.unique(),
-    {
-      fullName: payload.tenant.fullName,
-    },
-  );
+  const lease = await createDocument<LandLeaseDoc>(COLLECTIONS.landLeases, {
+    parcelId: parcel.$id,
+    tenantId: tenant.$id,
 
-  const parcel = await databases.createDocument(
-    db,
-    landParcelsCollectionId,
-    ID.unique(),
-    {
-      name: payload.parcel.name,
-      sizeSqft: payload.parcel.sizeSqft,
-    },
-  );
+    startDate: payload.lease.startDate,
+    endDate: payload.lease.endDate,
+    agreementNumber: payload.lease.agreementNumber,
+    releasedDate: payload.lease.releasedDate ?? null,
 
-  const lease = await databases.createDocument(
-    db,
-    landLeasesCollectionId,
-    ID.unique(),
-    {
-      parcelId: parcel.$id,
-      tenantId: tenant.$id,
-
-      startDate: payload.lease.startDate,
-      endDate: payload.lease.endDate,
-      agreementNumber: payload.lease.agreementNumber,
-      releasedDate: payload.lease.releasedDate ?? null,
-
-      rateLariPerSqft: payload.lease.rateLariPerSqft,
-      paymentDueDay: payload.lease.paymentDueDay,
-      fineLariPerDay: payload.lease.fineLariPerDay,
-    },
-  );
+    rateLariPerSqft: payload.lease.rateLariPerSqft,
+    paymentDueDay: payload.lease.paymentDueDay,
+    fineLariPerDay: payload.lease.fineLariPerDay,
+  });
 
   return { tenant, parcel, lease };
 }
@@ -1831,13 +1480,6 @@ export const createLandRentHolder = async (input: {
   openingOutstandingFees: number;
   openingOutstandingTotal: number;
 }) => {
-  if (!landTenantsCollectionId)
-    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_TENANTS_COLLECTION");
-  if (!landParcelsCollectionId)
-    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_PARCELS_COLLECTION");
-  if (!landLeasesCollectionId)
-    throw new Error("Missing NEXT_PUBLIC_APPWRITE_LAND_LEASES_COLLECTION");
-
   const landName = String(input.landName ?? "").trim();
   const renterName = String(input.renterName ?? "").trim();
   const agreementNumber = String(input.agreementNumber ?? "").trim();
@@ -1879,65 +1521,53 @@ export const createLandRentHolder = async (input: {
     }
   }
 
-  try {
-    // 1) Tenant
-    const tenant = await createDocumentSmartRetry<LandTenantDoc>(
-      landTenantsCollectionId,
-      {
-        fullName: renterName,
-      },
-    );
+  // 1) Tenant
+  const tenant = await createDocumentSmartRetry<LandTenantDoc>(
+    COLLECTIONS.landTenants,
+    {
+      fullName: renterName,
+    },
+  );
 
-    // 2) Parcel
-    const parcel = await createDocumentSmartRetry<LandParcelDoc>(
-      landParcelsCollectionId,
-      {
-        name: landName,
-        sizeSqft,
-      },
-    );
+  // 2) Parcel
+  const parcel = await createDocumentSmartRetry<LandParcelDoc>(
+    COLLECTIONS.landParcels,
+    {
+      name: landName,
+      sizeSqft,
+    },
+  );
 
-    // 3) Lease
-    // NOTE: if your Appwrite lease schema does not have these opening fields yet,
-    // createDocumentSmartRetry will strip them. (But you should add lastPaymentDate at minimum.)
-    const lease = await createDocumentSmartRetry<LandLeaseDoc>(
-      landLeasesCollectionId,
-      {
-        parcelId: parcel.$id,
-        tenantId: tenant.$id,
+  // 3) Lease
+  const lease = await createDocumentSmartRetry<LandLeaseDoc>(
+    COLLECTIONS.landLeases,
+    {
+      parcelId: parcel.$id,
+      tenantId: tenant.$id,
 
-        startDate: startISO,
-        endDate: endISO,
-        agreementNumber,
-        releasedDate: releasedISO,
+      startDate: startISO,
+      endDate: endISO,
+      agreementNumber,
+      releasedDate: releasedISO,
 
-        rateLariPerSqft: rate,
-        paymentDueDay,
-        fineLariPerDay: finePerDay,
+      rateLariPerSqft: rate,
+      paymentDueDay,
+      fineLariPerDay: finePerDay,
 
-        // PDF fields
-        agreementPdfFileId,
-        agreementPdfFilename: input.agreementPdfFilename,
+      agreementPdfFileId,
+      agreementPdfFilename: input.agreementPdfFilename,
 
-        // Optional denorm/helpers (safe to keep; stripped if not in schema)
-        monthlyRent,
-        lastPaymentDate: lastPaidISO,
-        openingFineDays: Math.floor(Number(input.openingFineDays ?? 0)),
-        openingFineMonths: Math.floor(Number(input.openingFineMonths ?? 0)),
-        openingTotalFine: Number(input.openingTotalFine ?? 0),
-        openingOutstandingFees: Number(input.openingOutstandingFees ?? 0),
-        openingOutstandingTotal: Number(input.openingOutstandingTotal ?? 0),
+      monthlyRent,
+      lastPaymentDate: lastPaidISO,
+      openingFineDays: Math.floor(Number(input.openingFineDays ?? 0)),
+      openingFineMonths: Math.floor(Number(input.openingFineMonths ?? 0)),
+      openingTotalFine: Number(input.openingTotalFine ?? 0),
+      openingOutstandingFees: Number(input.openingOutstandingFees ?? 0),
+      openingOutstandingTotal: Number(input.openingOutstandingTotal ?? 0),
 
-        status: "ACTIVE",
-      } as any,
-    );
+      status: "ACTIVE",
+    } as any,
+  );
 
-    return { tenant, parcel, lease };
-  } catch (error) {
-    // If lease creation fails and we uploaded a PDF, clean it up
-    if (agreementPdfFileId) {
-      await deletePdfFile(agreementPdfFileId);
-    }
-    throw error;
-  }
+  return { tenant, parcel, lease };
 };

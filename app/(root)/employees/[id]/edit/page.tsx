@@ -1,12 +1,12 @@
 "use client";
 
 import EmployeeForm, { EmployeeFormData } from "@/components/EmployeeForm";
-import {
-  fetchEmployeeById,
-  updateEmployeeRecord,
-} from "@/lib/appwrite/appwrite";
+import SkeletonEmployeeForm from "@/components/skeletons/SkeletonEmployeeForm";
+import { PageShell } from "@/components/design-system";
+import { useEmployeeQuery } from "@/hooks/queries";
+import { updateEmployeeRecord } from "@/lib/firebase/hr";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 
 type EmployeeDoc = {
   $id: string;
@@ -54,29 +54,19 @@ const toFormValues = (emp: EmployeeDoc): EmployeeFormData => ({
 });
 
 const EmployeeEditPage = ({ params }: { params: { id: string } }) => {
-  const [loading, setLoading] = useState(false);
-  const [employeeData, setEmployeeData] = useState<EmployeeFormData | null>(
-    null
-  );
+  const [submitting, setSubmitting] = useState(false);
   const employeeId = params.id;
   const router = useRouter();
 
-  useEffect(() => {
-    const fetchEmployee = async () => {
-      try {
-        const emp = (await fetchEmployeeById(
-          employeeId
-        )) as unknown as EmployeeDoc;
-        setEmployeeData(toFormValues(emp));
-      } catch (error) {
-        console.error("Error fetching employee:", error);
-      }
-    };
-    fetchEmployee();
-  }, [employeeId]);
+  const { data, isLoading } = useEmployeeQuery(employeeId);
+  const employeeData = useMemo(
+    () =>
+      data ? toFormValues(data as unknown as EmployeeDoc) : null,
+    [data],
+  );
 
   const handleUpdateEmployee = async (formData: EmployeeFormData) => {
-    setLoading(true);
+    setSubmitting(true);
     try {
       await updateEmployeeRecord(employeeId, formData);
       alert("Employee updated successfully!");
@@ -85,23 +75,15 @@ const EmployeeEditPage = ({ params }: { params: { id: string } }) => {
       console.error("Error updating employee:", error);
       alert("Failed to update employee.");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
-  if (!employeeData) {
+  if (isLoading || !employeeData) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-50">
-        <div className="text-center">
-          <div className="mx-auto mb-4 h-16 w-16 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
-          <p className="text-lg font-semibold text-slate-900">
-            Loading employee data...
-          </p>
-          <p className="mt-1 text-sm text-slate-600">
-            Please wait while we fetch the details
-          </p>
-        </div>
-      </div>
+      <PageShell>
+        <SkeletonEmployeeForm />
+      </PageShell>
     );
   }
 
@@ -109,7 +91,7 @@ const EmployeeEditPage = ({ params }: { params: { id: string } }) => {
     <EmployeeForm
       initialData={employeeData}
       onSubmit={handleUpdateEmployee}
-      isLoading={loading}
+      isLoading={submitting}
     />
   );
 };

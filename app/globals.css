@@ -70,6 +70,18 @@ body {
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
+
+    /* Council design system tokens */
+    --council-primary: 173 80% 40%;
+    --council-primary-foreground: 0 0% 100%;
+    --council-primary-light: 166 76% 97%;
+    --council-ring: 166 76% 90%;
+    --council-surface: 0 0% 100%;
+    --council-muted: 215 16% 47%;
+    --radius-card: 1.5rem;
+    --radius-control: 0.75rem;
+    --shadow-card: 0 4px 24px -4px rgb(15 23 42 / 0.08);
+    --shadow-card-hover: 0 12px 32px -8px rgb(15 23 42 / 0.12);
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
     --chart-3: 197 37% 24%;
@@ -148,7 +160,7 @@ body {
 }
 
 @layer utilities {
-  /* micro-frame + wash */
+  /* @deprecated — prefer .council-page / CouncilCard; uses council teal wash */
   .surface {
     @apply rounded-2xl ring-1 ring-black/10 dark:ring-white/10
          bg-white/90 dark:bg-[#0b0c0f]/80 shadow-sm;
@@ -243,6 +255,7 @@ body {
     vertical-align: middle;
   }
 
+  /* @deprecated — prefer Button variant="council" or .council-btn-primary */
   .custom-button {
     @apply border px-4 py-2 rounded-md border-cyan-500 hover:bg-cyan-600 hover:text-white transition duration-300 shadow-md;
   }
@@ -411,4 +424,423 @@ html.pdf-export .avoid-break {
 
   /* do not print the note if it pushes content (optional) */
   /* #print-area .print-hide { display: none !important; } */
+}
+
+/* Clerk auth screens */
+.clerk-auth-root {
+  overflow: visible !important;
+}
+
+.clerk-auth-root .cl-rootBox,
+.clerk-auth-root .cl-cardBox,
+.clerk-auth-root .cl-card,
+.clerk-auth-root .cl-main,
+.clerk-auth-root .cl-socialButtons,
+.clerk-auth-root .cl-form {
+  overflow: visible !important;
+}
+
+.clerk-auth-root .cl-rootBox,
+.clerk-auth-root .cl-cardBox,
+.clerk-auth-root .cl-card {
+  width: 100%;
+  max-width: 100%;
+}
+
+.clerk-auth-root .cl-socialButtons {
+  overflow: visible !important;
+  padding-top: 0.75rem;
+  margin-top: 0.125rem;
+}
+
+.clerk-auth-root .cl-socialButtonsBlockButton {
+  position: relative;
+  overflow: visible !important;
+}
+
+.clerk-auth-root .cl-formButtonPrimary,
+.clerk-auth-root .cl-socialButtonsBlockButton {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: visible !important;
+}
+
+.clerk-auth-root .cl-footer,
+.clerk-auth-root .cl-devBar {
+  display: none !important;
+}
+
+@layer components {
+  .council-page {
+    @apply min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50;
+  }
+
+  .council-card {
+    @apply overflow-hidden rounded-3xl bg-gradient-to-br from-white to-slate-50/50 p-6 ring-1 ring-slate-200/50;
+    box-shadow: var(--shadow-card);
+  }
+
+  .council-card-interactive {
+    @apply cursor-pointer transition-[transform,box-shadow,ring-color] duration-200 ease-out hover:scale-[1.02] hover:shadow-lg hover:ring-slate-300/50;
+  }
+
+  .council-card-footer {
+    @apply flex items-center justify-between rounded-xl bg-slate-50/50 px-4 py-3 ring-1 ring-slate-200/50 transition-[background-color,ring-color,color] duration-200 group-hover:bg-teal-50/50 group-hover:ring-teal-200/50;
+  }
+
+  .council-input {
+    @apply w-full rounded-xl border border-slate-200 bg-white py-3 text-slate-900 shadow-sm transition-[border-color,box-shadow] duration-150 placeholder:text-slate-400 focus:border-teal-300 focus:outline-none focus:ring-4 focus:ring-teal-100;
+  }
+
+  .council-time-input {
+    appearance: none;
+    color-scheme: light;
+  }
+
+  .council-time-input::-webkit-calendar-picker-indicator {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+    opacity: 0;
+  }
+
+  .council-time-input::-webkit-datetime-edit-fields-wrapper {
+    padding: 0;
+  }
+
+  .council-time-input::-webkit-datetime-edit-hour-field,
+  .council-time-input::-webkit-datetime-edit-minute-field,
+  .council-time-input::-webkit-datetime-edit-ampm-field {
+    padding: 0;
+  }
+
+  .council-time-column {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(13, 148, 136, 0.35) transparent;
+  }
+
+  .council-time-column::-webkit-scrollbar {
+    width: 5px;
+  }
+
+  .council-time-column::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(13, 148, 136, 0.35);
+  }
+
+  .council-btn-primary {
+    @apply inline-flex items-center justify-center rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-teal-600/20 transition-[background-color,transform] duration-200 hover:bg-teal-700 active:scale-[0.98];
+  }
+
+  .council-btn-ghost {
+    @apply inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-[background-color,border-color,color] duration-200 hover:border-slate-300 hover:bg-slate-50;
+  }
+
+  .council-page-icon {
+    @apply flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-500 to-cyan-600 text-white shadow-lg shadow-teal-500/25;
+  }
+
+  .council-sidebar-panel {
+    box-shadow: var(--shadow-card);
+  }
+
+  .council-sidebar-header {
+    @apply relative z-10 shrink-0 border-b border-slate-200/80 bg-white px-4 py-4;
+  }
+
+  .council-sidebar-footer {
+    @apply relative z-10 border-t border-slate-200/80 bg-white p-3;
+  }
+
+  .council-sidebar-brand-icon {
+    @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white p-1.5 shadow-sm ring-1 ring-slate-200/80;
+  }
+
+  .council-popover-surface {
+    @apply rounded-2xl bg-white ring-1 ring-slate-200/60;
+    transform-origin: var(--radix-popover-content-transform-origin, top center);
+  }
+
+  .council-popover-surface[data-state="open"] {
+    animation: council-popover-in 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .council-popover-fast[data-state="open"] {
+    animation: council-popover-in-fast 0.08s ease-out both;
+  }
+
+  .council-popover-fast[data-state="closed"] {
+    animation: council-popover-out-fast 0.06s ease-in both;
+  }
+
+  .council-popover-surface[data-state="closed"] {
+    animation: council-popover-out 0.16s cubic-bezier(0.4, 0, 1, 1) both;
+  }
+
+  .council-select-content [data-radix-select-viewport] {
+    @apply scroll-py-1 p-1.5;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(13, 148, 136, 0.35) transparent;
+  }
+
+  .council-select-content [data-radix-select-viewport]::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .council-select-content [data-radix-select-viewport]::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(13, 148, 136, 0.35);
+  }
+
+  .council-date-popover .council-calendar {
+    animation: council-calendar-in 0.12s ease-out both;
+  }
+}
+
+/* Council sidebar motion + nav animations */
+
+.council-sidebar-shell {
+  transition: width 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.council-main-frame {
+  transition: padding-left 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.council-sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(13, 148, 136, 0.2) transparent;
+  overscroll-behavior: contain;
+}
+
+.council-sidebar-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+
+.council-sidebar-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(13, 148, 136, 0.2);
+}
+
+.council-sidebar-backdrop {
+  animation: council-fade-in 0.22s ease-out both;
+}
+
+.council-mobile-drawer {
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.council-sidebar-reveal {
+  display: grid;
+  transition:
+    grid-template-columns 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.18s ease-out;
+}
+
+.council-sidebar-reveal > * {
+  overflow: hidden;
+  min-width: 0;
+}
+
+.council-sidebar-reveal[data-hidden="true"] {
+  grid-template-columns: 0fr;
+  opacity: 0;
+}
+
+.council-sidebar-reveal[data-hidden="false"] {
+  grid-template-columns: 1fr;
+  opacity: 1;
+}
+
+.council-nav-enter.council-nav-enter-active > * {
+  animation: council-nav-enter 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.council-nav-enter.council-nav-enter-done > * {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+.council-nav-enter.council-nav-enter-active > *:nth-child(1) {
+  animation-delay: 0.02s;
+}
+.council-nav-enter.council-nav-enter-active > *:nth-child(2) {
+  animation-delay: 0.05s;
+}
+.council-nav-enter.council-nav-enter-active > *:nth-child(3) {
+  animation-delay: 0.08s;
+}
+.council-nav-enter.council-nav-enter-active > *:nth-child(4) {
+  animation-delay: 0.11s;
+}
+.council-nav-enter.council-nav-enter-active > *:nth-child(5) {
+  animation-delay: 0.14s;
+}
+.council-nav-enter.council-nav-enter-active > *:nth-child(6) {
+  animation-delay: 0.17s;
+}
+.council-nav-enter.council-nav-enter-active > *:nth-child(7) {
+  animation-delay: 0.2s;
+}
+.council-nav-enter.council-nav-enter-active > *:nth-child(8) {
+  animation-delay: 0.23s;
+}
+.council-nav-enter.council-nav-enter-active > *:nth-child(9) {
+  animation-delay: 0.26s;
+}
+.council-nav-enter.council-nav-enter-active > *:nth-child(10) {
+  animation-delay: 0.29s;
+}
+.council-nav-enter.council-nav-enter-active > *:nth-child(n + 11) {
+  animation-delay: 0.32s;
+}
+
+.council-nav-active-bar {
+  transform: translate3d(0, -50%, 0);
+  transform-origin: center center;
+  animation: council-bar-grow 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.council-subnav-grid {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.council-subnav-grid[data-open="true"] {
+  grid-template-rows: 1fr;
+}
+
+.council-subnav-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.council-subnav-grid[data-open="true"] .council-subnav-item {
+  opacity: 1;
+  transform: none;
+}
+
+@keyframes council-nav-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(-10px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes council-bar-grow {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -50%, 0) scaleY(0.25);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, -50%, 0) scaleY(1);
+  }
+}
+
+@keyframes council-sub-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(-6px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes council-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes council-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes council-popover-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+@keyframes council-popover-in-fast {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes council-popover-out-fast {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes council-calendar-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .council-sidebar-panel *,
+  .council-sidebar-panel,
+  .council-main-frame,
+  .council-sidebar-shell {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .council-nav-enter.council-nav-enter-active > *,
+  .council-nav-enter.council-nav-enter-done > * {
+    opacity: 1;
+    transform: none;
+    animation: none !important;
+  }
+
+  .council-popover-surface,
+  .council-popover-fast,
+  .council-date-popover .council-calendar {
+    animation: none !important;
+  }
 }

@@ -1,11 +1,16 @@
 "use client";
 
+import { CouncilCard } from "@/components/design-system";
 import { getCorrespondenceDashboardStats } from "@/lib/actions/correspondence.actions";
+import { typography } from "@/lib/design-tokens";
+import { cn } from "@/lib/utils";
+import { useAuth } from "@clerk/nextjs";
+import { ArrowRight, Inbox } from "lucide-react";
 import Link from "next/link";
-import { Inbox } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export function CorrespondenceDashboardStrip() {
+  const { isLoaded, isSignedIn } = useAuth();
   const [stats, setStats] = useState<{
     pending: number;
     overdue: number;
@@ -14,10 +19,16 @@ export function CorrespondenceDashboardStrip() {
   const [hidden, setHidden] = useState(false);
 
   useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+
     let cancelled = false;
     (async () => {
       try {
         const raw = await getCorrespondenceDashboardStats();
+        if (!raw) {
+          if (!cancelled) setHidden(true);
+          return;
+        }
         const data = raw as {
           pending: number;
           overdue: number;
@@ -31,59 +42,77 @@ export function CorrespondenceDashboardStrip() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isLoaded, isSignedIn]);
 
   if (hidden || !stats) return null;
 
+  const items = [
+    {
+      label: "Pending",
+      value: stats.pending,
+      className: "border-slate-200/80 bg-slate-50/80 text-slate-900",
+      labelClass: "text-slate-500",
+    },
+    {
+      label: "Overdue",
+      value: stats.overdue,
+      className: "border-amber-200/80 bg-amber-50/80 text-amber-950",
+      labelClass: "text-amber-800/70",
+    },
+    {
+      label: "Answered (week)",
+      value: stats.answeredThisWeek,
+      className: "border-emerald-200/80 bg-emerald-50/80 text-emerald-950",
+      labelClass: "text-emerald-800/70",
+    },
+  ];
+
   return (
-    <div className="mb-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3 text-slate-900">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-md">
+    <CouncilCard interactive="none" className="mb-8 p-0">
+      <div className="flex flex-col gap-4 border-b border-slate-200/80 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="council-page-icon h-11 w-11 rounded-xl">
             <Inbox className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold tracking-tight">
+            <h2 className="text-base font-black tracking-tight text-slate-900">
               Document receiver
             </h2>
-            <p className="text-xs text-slate-500">
+            <p className={cn(typography.body, "text-xs font-medium")}>
               Track documents received by the council
             </p>
           </div>
         </div>
         <Link
           href="/document-reciever"
-          className="text-sm font-semibold text-indigo-600 hover:text-indigo-800 hover:underline"
+          className="inline-flex items-center gap-1 text-sm font-bold text-teal-700 transition-colors duration-200 hover:text-teal-800"
         >
           Open registry
+          <ArrowRight className="h-4 w-4" />
         </Link>
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-xl border border-slate-100 bg-slate-50/80 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Pending
-          </p>
-          <p className="text-2xl font-semibold tabular-nums text-slate-900">
-            {stats.pending}
-          </p>
-        </div>
-        <div className="rounded-xl border border-amber-100 bg-amber-50/80 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-amber-900/70">
-            Overdue
-          </p>
-          <p className="text-2xl font-semibold tabular-nums text-amber-950">
-            {stats.overdue}
-          </p>
-        </div>
-        <div className="rounded-xl border border-emerald-100 bg-emerald-50/80 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-900/70">
-            Answered (week)
-          </p>
-          <p className="text-2xl font-semibold tabular-nums text-emerald-950">
-            {stats.answeredThisWeek}
-          </p>
-        </div>
+
+      <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-3 sm:p-6">
+        {items.map((item) => (
+          <div
+            key={item.label}
+            className={cn(
+              "rounded-xl border px-4 py-3 ring-1 ring-black/[0.03]",
+              item.className,
+            )}
+          >
+            <p
+              className={cn(
+                "text-[11px] font-bold uppercase tracking-wide",
+                item.labelClass,
+              )}
+            >
+              {item.label}
+            </p>
+            <p className="mt-1 text-2xl font-black tabular-nums">{item.value}</p>
+          </div>
+        ))}
       </div>
-    </div>
+    </CouncilCard>
   );
 }

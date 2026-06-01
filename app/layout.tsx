@@ -1,4 +1,6 @@
+import { QueryProvider } from "@/Providers/QueryProvider";
 import { UserProvider } from "@/Providers/UserProvider";
+import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import "./globals.css";
 
@@ -24,9 +26,13 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={plusJakarta.className}>
-        <UserProvider>
-          <main>{children}</main>
-        </UserProvider>
+        <ClerkProvider>
+          <QueryProvider>
+            <UserProvider>
+              <main>{children}</main>
+            </UserProvider>
+          </QueryProvider>
+        </ClerkProvider>
       </body>
     </html>
   );

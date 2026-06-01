@@ -15,15 +15,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import SkeletonDocumentDetail from "@/components/skeletons/SkeletonDocumentDetail";
 import { useToast } from "@/hooks/use-toast";
+import {
+  useCorrespondenceDetailQuery,
+  useEmployeesQuery,
+  useQueryInvalidation,
+} from "@/hooks/queries";
 import {
   archiveCorrespondence,
   deleteCorrespondence,
-  getCorrespondenceById,
   updateCorrespondence,
 } from "@/lib/actions/correspondence.actions";
 import { isCorrespondenceOverdue } from "@/lib/correspondence/overdue";
-import { fetchAllEmployees } from "@/lib/appwrite/appwrite";
 import { cn } from "@/lib/utils";
 import type { CorrespondenceDoc } from "@/types/correspondence";
 import {
@@ -45,7 +49,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type EmployeeOption = { $id: string; name: string };
 
@@ -69,55 +73,40 @@ export default function DocumentRecieverDetailPage() {
   const id = typeof params.id === "string" ? params.id : "";
   const router = useRouter();
   const { toast } = useToast();
+  const { invalidateCorrespondence } = useQueryInvalidation();
 
-  const [doc, setDoc] = useState<CorrespondenceDoc | null>(null);
-  const [loading, setLoading] = useState(true);
+  const {
+    data: doc,
+    isLoading,
+    isError,
+    error,
+  } = useCorrespondenceDetailQuery(id);
+  const { data: employeesRaw = [] } = useEmployeesQuery();
+
   const [saving, setSaving] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [removeFile, setRemoveFile] = useState(false);
 
-  const load = useCallback(async () => {
-    if (!id) return;
-    setLoading(true);
-    try {
-      const row = (await getCorrespondenceById(id)) as CorrespondenceDoc;
-      setDoc(row);
-      setRemoveFile(false);
-    } catch (e) {
-      console.error(e);
-      toast({
-        variant: "destructive",
-        title: "Not found",
-        description: "This document record could not be loaded.",
-      });
-      setDoc(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [id, toast]);
+  const employees = useMemo<EmployeeOption[]>(
+    () =>
+      employeesRaw.map((e) => ({
+        $id: e.$id,
+        name: typeof e.name === "string" ? e.name : "Unknown",
+      })),
+    [employeesRaw],
+  );
 
   useEffect(() => {
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const list = await fetchAllEmployees();
-        setEmployees(
-          list.map((e) => ({
-            $id: e.$id,
-            name: typeof e.name === "string" ? e.name : "Unknown",
-          })),
-        );
-      } catch {
-        setEmployees([]);
-      }
-    })();
-  }, []);
+    if (!isError) return;
+    console.error(error);
+    toast({
+      variant: "destructive",
+      title: "Not found",
+      description: "This document record could not be loaded.",
+    });
+  }, [isError, error, toast]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -129,7 +118,8 @@ export default function DocumentRecieverDetailPage() {
       const res = await updateCorrespondence(id, fd);
       if (res.ok) {
         toast({ title: "Updated" });
-        await load();
+        setRemoveFile(false);
+        await invalidateCorrespondence(id);
         return;
       }
       toast({
@@ -196,14 +186,14 @@ export default function DocumentRecieverDetailPage() {
     }
   }
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50">
         <div className="pointer-events-none fixed inset-0 overflow-hidden">
           <div className="absolute -left-48 -top-48 h-96 w-96 rounded-full bg-indigo-100/30 blur-3xl" />
         </div>
-        <div className="relative flex min-h-screen items-center justify-center">
-          <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
+        <div className="relative mx-auto max-w-2xl px-4 py-8 lg:px-8">
+          <SkeletonDocumentDetail />
         </div>
       </div>
     );

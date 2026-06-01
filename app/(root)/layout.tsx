@@ -1,5 +1,9 @@
-import { AppSidebar } from "@/components/app-sidebar";
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import {
+  CouncilMainFrame,
+  CouncilMobileHeader,
+  CouncilSidebar,
+  CouncilSidebarProvider,
+} from "@/components/council-sidebar";
 import { Toaster } from "@/components/ui/toaster";
 
 export default function RootLayout({
@@ -8,14 +12,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div>
-      <SidebarProvider>
-        <AppSidebar />
-        <SidebarTrigger />
-        <main className="w-full">
-          {children} <Toaster />
+    <CouncilSidebarProvider>
+      <CouncilSidebar />
+      <CouncilMainFrame>
+        <CouncilMobileHeader />
+        <main className="w-full flex-1">
+          {children}
+          <Toaster />
         </main>
-      </SidebarProvider>
-    </div>
+      </CouncilMainFrame>
+    </CouncilSidebarProvider>
   );
 }

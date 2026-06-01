@@ -12,7 +12,7 @@ import {
 import {
   getAgreementPdfUrl,
   getAgreementPdfDownloadUrl,
-} from "@/lib/landrent/landRent.actions";
+} from "@/lib/landrent/landRent.urls";
 
 export default function OverviewCards({
   rows,

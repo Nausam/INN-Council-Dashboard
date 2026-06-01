@@ -10,23 +10,20 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  EmployeeDoc,
-  fetchEmployeeById,
-  fetchMosqueAssistants,
-  fetchMosqueAttendanceForMonth,
-} from "@/lib/appwrite/appwrite";
-import React, { useEffect, useMemo, useState } from "react";
+  useEmployeesQuery,
+  useMosqueAssistantsQuery,
+  useMosqueAttendanceMonthQuery,
+} from "@/hooks/queries";
+import type { EmployeeDoc } from "@/lib/firebase/hr";
+import React, { useMemo, useState } from "react";
 
-/* ======================= Helpers ======================= */
 function toHoursMinutes(total: number) {
-  const safe = Math.max(0, Math.floor(total)); // guard
+  const safe = Math.max(0, Math.floor(total));
   return {
     hours: Math.floor(safe / 60),
     minutes: safe % 60,
   };
 }
-
-/* ======================= Types ======================= */
 
 type EmployeeRef =
   | string
@@ -39,7 +36,7 @@ type EmployeeRef =
     };
 
 type MosqueAttendanceDoc = {
-  date: string; // ISO string
+  date: string;
   employeeId: EmployeeRef;
   fathisMinutesLate: number;
   mendhuruMinutesLate: number;
@@ -67,50 +64,48 @@ type EmployeeDetails = {
 
 type ReportEntry = PrayerLateReport & EmployeeDetails;
 
-/* ======================= Normalizers (no any) ======================= */
-
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
 
 function getString(o: Record<string, unknown>, key: string): string {
-  const v = o[key];
-  return typeof v === "string" ? v : "";
+  const val = o[key];
+  return typeof val === "string" ? val : "";
 }
 
 function getNumber(o: Record<string, unknown>, key: string): number {
-  const v = o[key];
-  if (typeof v === "number") return v;
-  if (typeof v === "string") {
-    const n = Number(v);
+  const val = o[key];
+  if (typeof val === "number") return val;
+  if (typeof val === "string") {
+    const n = Number(val);
     return Number.isFinite(n) ? n : 0;
   }
   return 0;
 }
 
 function getEmployeeRef(o: Record<string, unknown>, key: string): EmployeeRef {
-  const v = o[key];
-  if (typeof v === "string") return v;
+  const val = o[key];
+  if (typeof val === "string") return val;
 
-  if (isRecord(v)) {
-    const $id = "$id" in v && typeof v.$id === "string" ? v.$id : "";
-    const name = "name" in v && typeof v.name === "string" ? v.name : "";
+  if (isRecord(val)) {
+    const $id = "$id" in val && typeof val.$id === "string" ? val.$id : "";
+    const name = "name" in val && typeof val.name === "string" ? val.name : "";
     const designation =
-      "designation" in v && typeof v.designation === "string"
-        ? v.designation
+      "designation" in val && typeof val.designation === "string"
+        ? val.designation
         : undefined;
     const joinedDate =
-      "joinedDate" in v && typeof v.joinedDate === "string"
-        ? v.joinedDate
+      "joinedDate" in val && typeof val.joinedDate === "string"
+        ? val.joinedDate
         : undefined;
     const section =
-      "section" in v && typeof v.section === "string" ? v.section : undefined;
+      "section" in val && typeof val.section === "string" ? val.section : undefined;
 
     if ($id || name || designation || joinedDate || section) {
       return { $id, name, designation, joinedDate, section };
     }
   }
-  return ""; // fallback: unresolved ref
+  return "";
 }
 
 function normalizeAttendance(raw: unknown): MosqueAttendanceDoc[] {
@@ -129,179 +124,144 @@ function normalizeAttendance(raw: unknown): MosqueAttendanceDoc[] {
   });
 }
 
-/* ======================= Component ======================= */
+function buildEmployeeInfoMap(
+  assistants: EmployeeDoc[],
+  allEmployees: EmployeeDoc[],
+): Map<string, { name: string; designation: string }> {
+  const idToInfo = new Map<string, { name: string; designation: string }>();
+
+  for (const e of assistants) {
+    idToInfo.set(e.$id, {
+      name: e.name,
+      designation: typeof e.designation === "string" ? e.designation : "",
+    });
+  }
+
+  for (const e of allEmployees) {
+    if (!idToInfo.has(e.$id)) {
+      idToInfo.set(e.$id, {
+        name: e.name,
+        designation: typeof e.designation === "string" ? e.designation : "",
+      });
+    }
+  }
+
+  return idToInfo;
+}
+
+function buildMosqueReport(
+  month: string,
+  raw: unknown,
+  idToInfo: Map<string, { name: string; designation: string }>,
+): Array<[string, ReportEntry]> {
+  const attendanceRecords = normalizeAttendance(raw);
+
+  const monthRecords = attendanceRecords.filter((record) => {
+    const recordMonth = new Date(record.date).toISOString().slice(0, 7);
+    return recordMonth === month;
+  });
+
+  if (monthRecords.length === 0) return [];
+
+  const reportMap = new Map<string, ReportEntry>();
+
+  for (const r of monthRecords) {
+    let key = "";
+    let name = "Unknown";
+    let designation = "";
+    let joinedDate = "";
+    let section = "";
+
+    if (typeof r.employeeId === "string") {
+      key = r.employeeId;
+      const info = idToInfo.get(r.employeeId);
+      if (info) {
+        name = info.name;
+        designation = info.designation;
+      } else {
+        name = "(Unknown)";
+      }
+    } else {
+      key = r.employeeId.$id || r.employeeId.name;
+      name = r.employeeId.name || r.employeeId.$id || "Unknown";
+      designation = r.employeeId.designation ?? "";
+      joinedDate = r.employeeId.joinedDate ?? "";
+      section = r.employeeId.section ?? "";
+    }
+
+    const current: ReportEntry = reportMap.get(key) ?? {
+      name,
+      designation,
+      joinedDate,
+      section,
+      fathisMinutesLate: 0,
+      mendhuruMinutesLate: 0,
+      asuruMinutesLate: 0,
+      maqribMinutesLate: 0,
+      ishaMinutesLate: 0,
+      totalMinutesLate: 0,
+      totalHoursLate: 0,
+    };
+
+    current.fathisMinutesLate += r.fathisMinutesLate;
+    current.mendhuruMinutesLate += r.mendhuruMinutesLate;
+    current.asuruMinutesLate += r.asuruMinutesLate;
+    current.maqribMinutesLate += r.maqribMinutesLate;
+    current.ishaMinutesLate += r.ishaMinutesLate;
+
+    const total =
+      current.fathisMinutesLate +
+      current.mendhuruMinutesLate +
+      current.asuruMinutesLate +
+      current.maqribMinutesLate +
+      current.ishaMinutesLate;
+
+    const { hours, minutes } = toHoursMinutes(total);
+    current.totalMinutesLate = minutes;
+    current.totalHoursLate = hours;
+
+    reportMap.set(key, current);
+  }
+
+  return Array.from(reportMap.entries());
+}
 
 const MosqueMonthlyReportsPage: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState<string>(
-    new Date().toISOString().slice(0, 7)
+    new Date().toISOString().slice(0, 7),
   );
-  const [loading, setLoading] = useState<boolean>(false);
-  const [reportAvailable, setReportAvailable] = useState<boolean>(false);
-  const [reportData, setReportData] = useState<Array<[string, ReportEntry]>>(
-    []
+  const [queryMonth, setQueryMonth] = useState<string>("");
+
+  const { data: assistants = [] } = useMosqueAssistantsQuery();
+  const { data: allEmployees = [] } = useEmployeesQuery();
+  const {
+    data: rawAttendance,
+    isLoading,
+    isFetching,
+    isError,
+    isSuccess,
+    refetch,
+  } = useMosqueAttendanceMonthQuery(queryMonth);
+
+  const idToInfo = useMemo(
+    () => buildEmployeeInfoMap(assistants, allEmployees),
+    [assistants, allEmployees],
   );
-  const [assistants, setAssistants] = useState<EmployeeDoc[]>([]);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const list = await fetchMosqueAssistants();
-        setAssistants(Array.isArray(list) ? list : []);
-      } catch (e) {
-        console.error("Failed to load mosque assistants:", e);
-        setAssistants([]);
-      }
-    })();
-  }, []);
+  const reportData = useMemo(() => {
+    if (!queryMonth || rawAttendance === undefined) return [];
+    return buildMosqueReport(queryMonth, rawAttendance, idToInfo);
+  }, [queryMonth, rawAttendance, idToInfo]);
 
-  const assistantsById = useMemo(() => {
-    // Base map from assistants query
-    return new Map<string, { name: string; designation: string }>(
-      assistants.map((e) => [
-        e.$id,
-        {
-          name: e.name,
-          designation: typeof e.designation === "string" ? e.designation : "",
-        },
-      ])
-    );
-  }, [assistants]);
+  const reportAvailable =
+    Boolean(queryMonth) && isSuccess && !isError && reportData.length > 0;
+  const loading = Boolean(queryMonth) && (isLoading || isFetching);
 
-  const generateReport = async (month: string): Promise<void> => {
-    setLoading(true);
-    try {
-      const raw = await fetchMosqueAttendanceForMonth(month);
-      const attendanceRecords = normalizeAttendance(raw);
-
-      // Keep only records in the chosen month (YYYY-MM)
-      const monthRecords = attendanceRecords.filter((record) => {
-        const recordMonth = new Date(record.date).toISOString().slice(0, 7);
-        return recordMonth === month;
-      });
-
-      if (monthRecords.length === 0) {
-        setReportAvailable(false);
-        setReportData([]);
-        setLoading(false);
-        return;
-      }
-
-      // ---- Build/extend id->name map so string ids resolve properly ----
-      const idToInfo = new Map(assistantsById); // start with assistants
-      const missingIds = new Set<string>();
-
-      for (const r of monthRecords) {
-        if (typeof r.employeeId === "string") {
-          if (!idToInfo.has(r.employeeId)) missingIds.add(r.employeeId);
-        } else {
-          // If we have an embedded object, keep that too
-          const emb = r.employeeId;
-          if (emb.$id && (emb.name || emb.designation)) {
-            idToInfo.set(emb.$id, {
-              name: emb.name || emb.$id,
-              designation: emb.designation ?? "",
-            });
-          }
-        }
-      }
-
-      if (missingIds.size > 0) {
-        const results = await Promise.allSettled(
-          Array.from(missingIds).map((id) => fetchEmployeeById(id))
-        );
-        results.forEach((res, i) => {
-          const id = Array.from(missingIds)[i];
-          if (
-            res.status === "fulfilled" &&
-            res.value &&
-            typeof res.value === "object"
-          ) {
-            const v = res.value as Partial<EmployeeDoc>;
-            const nm =
-              typeof v.name === "string" && v.name.trim() ? v.name : id;
-            const des = typeof v.designation === "string" ? v.designation : "";
-            idToInfo.set(id, { name: nm, designation: des });
-          } else {
-            // keep a readable fallback to avoid "(Unknown)"
-            if (!idToInfo.has(id))
-              idToInfo.set(id, { name: id, designation: "" });
-          }
-        });
-      }
-      // -----------------------------------------------------------------
-
-      // Aggregate by employee id (prefer stable key)
-      const reportMap = new Map<string, ReportEntry>();
-
-      for (const r of monthRecords) {
-        // Resolve details
-        let key = "";
-        let name = "Unknown";
-        let designation = "";
-        let joinedDate = "";
-        let section = "";
-
-        if (typeof r.employeeId === "string") {
-          key = r.employeeId;
-          const info = idToInfo.get(r.employeeId);
-          if (info) {
-            name = info.name;
-            designation = info.designation;
-          } else {
-            name = "(Unknown)";
-          }
-        } else {
-          key = r.employeeId.$id || r.employeeId.name;
-          name = r.employeeId.name || r.employeeId.$id || "Unknown";
-          designation = r.employeeId.designation ?? "";
-          joinedDate = r.employeeId.joinedDate ?? "";
-          section = r.employeeId.section ?? "";
-        }
-
-        const current: ReportEntry = reportMap.get(key) ?? {
-          name,
-          designation,
-          joinedDate,
-          section,
-          fathisMinutesLate: 0,
-          mendhuruMinutesLate: 0,
-          asuruMinutesLate: 0,
-          maqribMinutesLate: 0,
-          ishaMinutesLate: 0,
-          totalMinutesLate: 0,
-          totalHoursLate: 0,
-        };
-
-        current.fathisMinutesLate += r.fathisMinutesLate;
-        current.mendhuruMinutesLate += r.mendhuruMinutesLate;
-        current.asuruMinutesLate += r.asuruMinutesLate;
-        current.maqribMinutesLate += r.maqribMinutesLate;
-        current.ishaMinutesLate += r.ishaMinutesLate;
-
-        const total =
-          current.fathisMinutesLate +
-          current.mendhuruMinutesLate +
-          current.asuruMinutesLate +
-          current.maqribMinutesLate +
-          current.ishaMinutesLate;
-
-        const { hours, minutes } = toHoursMinutes(total);
-
-        // minutes column shows ONLY the remainder (0..59)
-        current.totalMinutesLate = minutes;
-        current.totalHoursLate = hours;
-
-        reportMap.set(key, current);
-      }
-
-      setReportData(Array.from(reportMap.entries()));
-      setReportAvailable(true);
-    } catch (err) {
-      console.error("Error generating mosque report:", err);
-      setReportAvailable(false);
-      setReportData([]);
-    } finally {
-      setLoading(false);
+  const handleGenerateReport = () => {
+    if (queryMonth === selectedMonth) {
+      void refetch();
+    } else {
+      setQueryMonth(selectedMonth);
     }
   };
 
@@ -363,7 +323,7 @@ const MosqueMonthlyReportsPage: React.FC = () => {
 
         <div className="flex items-end gap-4">
           <button
-            onClick={() => generateReport(selectedMonth)}
+            onClick={handleGenerateReport}
             className="custom-button h-12 w-full lg:w-auto"
           >
             Generate Report

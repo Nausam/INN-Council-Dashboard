@@ -1,7 +1,7 @@
 // components/Dashboard/LeaveDistributionChart.tsx
 "use client";
 
-import { fetchAttendanceForMonth } from "@/lib/appwrite/appwrite";
+import { useCouncilAttendanceMonthQuery } from "@/hooks/queries";
 import type { ChartData, ChartOptions } from "chart.js";
 import {
   ArcElement,
@@ -12,7 +12,7 @@ import {
   Title,
   Tooltip,
 } from "chart.js";
-import React, { useEffect, useState } from "react";
+import React, { useMemo } from "react";
 import { Pie } from "react-chartjs-2";
 
 ChartJS.register(
@@ -21,10 +21,8 @@ ChartJS.register(
   Legend,
   Title,
   CategoryScale,
-  LinearScale
+  LinearScale,
 );
-
-/* ---------------- Types ---------------- */
 
 type LeaveKey =
   | "sickLeave"
@@ -39,11 +37,9 @@ type LeaveKey =
 interface AttendanceRecord {
   $id: string;
   date: string;
-  // ... other fields you may have
   leaveType: LeaveKey | null;
 }
 
-/* Keep labels aligned with the internal keys by index */
 const LEAVE_KEYS: LeaveKey[] = [
   "sickLeave",
   "annualLeave",
@@ -78,68 +74,48 @@ const COLORS: string[] = [
 ];
 
 interface LeaveDistributionProps {
-  /** Month in "YYYY-MM" */
   month: string;
 }
 
 const LeaveDistributionChart: React.FC<LeaveDistributionProps> = ({
   month,
 }) => {
-  const [chartData, setChartData] = useState<ChartData<
-    "pie",
-    number[],
-    string
-  > | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const { data: attendanceRecords = [], isLoading, isError } =
+    useCouncilAttendanceMonthQuery(month);
 
-  useEffect(() => {
-    const getLeaveDistribution = async () => {
-      setLoading(true);
-      try {
-        const attendanceRecords = (await fetchAttendanceForMonth(
-          month
-        )) as AttendanceRecord[];
+  const chartData = useMemo<ChartData<"pie", number[], string> | null>(() => {
+    if (isError) return null;
 
-        const counts: Record<LeaveKey, number> = {
-          sickLeave: 0,
-          annualLeave: 0,
-          certificateSickLeave: 0,
-          familyRelatedLeave: 0,
-          maternityLeave: 0,
-          paternityLeave: 0,
-          noPayLeave: 0,
-          officialLeave: 0,
-        };
-
-        for (const rec of attendanceRecords) {
-          if (rec.leaveType && counts[rec.leaveType] !== undefined) {
-            counts[rec.leaveType] += 1;
-          }
-        }
-
-        const data: ChartData<"pie", number[], string> = {
-          labels: LEAVE_LABELS,
-          datasets: [
-            {
-              label: "Leave Distribution",
-              data: LEAVE_KEYS.map((k) => counts[k]),
-              backgroundColor: COLORS,
-              hoverOffset: 4,
-            },
-          ],
-        };
-
-        setChartData(data);
-      } catch (err) {
-        console.error("Error fetching leave data:", err);
-        setChartData(null);
-      } finally {
-        setLoading(false);
-      }
+    const records = attendanceRecords as AttendanceRecord[];
+    const counts: Record<LeaveKey, number> = {
+      sickLeave: 0,
+      annualLeave: 0,
+      certificateSickLeave: 0,
+      familyRelatedLeave: 0,
+      maternityLeave: 0,
+      paternityLeave: 0,
+      noPayLeave: 0,
+      officialLeave: 0,
     };
 
-    getLeaveDistribution();
-  }, [month]);
+    for (const rec of records) {
+      if (rec.leaveType && counts[rec.leaveType] !== undefined) {
+        counts[rec.leaveType] += 1;
+      }
+    }
+
+    return {
+      labels: LEAVE_LABELS,
+      datasets: [
+        {
+          label: "Leave Distribution",
+          data: LEAVE_KEYS.map((k) => counts[k]),
+          backgroundColor: COLORS,
+          hoverOffset: 4,
+        },
+      ],
+    };
+  }, [attendanceRecords, isError]);
 
   const options: ChartOptions<"pie"> = {
     responsive: true,
@@ -155,7 +131,7 @@ const LeaveDistributionChart: React.FC<LeaveDistributionProps> = ({
       <h3 className="text-2xl font-bold text-center mb-4">
         Leave Distribution for {month}
       </h3>
-      {loading ? (
+      {isLoading ? (
         <p>Loading...</p>
       ) : chartData ? (
         <Pie data={chartData} options={options} />

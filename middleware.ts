@@ -1,38 +1,29 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "./lib/actions/user.actions";
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 
-export async function middleware(request: NextRequest) {
-  const user = await getCurrentUser();
+const isPublicRoute = createRouteMatcher([
+  "/sign-in(.*)",
+  "/sign-up(.*)",
+  "/salary-slips(.*)",
+  "/api/salary-slips(.*)",
+  "/api/files/r2(.*)",
+]);
 
-  if (!user) {
-    return NextResponse.redirect(new URL("/sign-in", request.url));
+export default clerkMiddleware(async (auth, request) => {
+  // Server Actions POST to the current URL; auth redirects break action forwarding.
+  const isServerAction = request.headers.has("next-action");
+
+  if (!isPublicRoute(request) && !isServerAction) {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.redirect(new URL("/sign-in", request.url));
+    }
   }
-
-  return NextResponse.next();
-}
+});
 
 export const config = {
   matcher: [
-    "/",
-    "/employees",
-    "/employees/add",
-    "/attendance/council",
-    "/attendance/mosque",
-    "/attendance/mosque/prayerTimes",
-    "/attendance/mosque/attendance-sheet",
-    "/attendance/mosque/ot-sheet",
-    "/reports/council",
-    "/reports/mosque/daily",
-    "/reports/mosque/monthly",
-    "/requests/leave",
-    "/requests/overtime",
-    "/document-reciever",
-    "/document-reciever/:path*",
-    "/api/document-reciever",
-    "/api/document-reciever/:path*",
-    "/correspondence",
-    "/correspondence/:path*",
-    "/api/correspondence",
-    "/api/correspondence/:path*",
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    "/(api|trpc)(.*)",
   ],
 };

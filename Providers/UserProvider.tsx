@@ -1,10 +1,12 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
-import { getCurrentUser } from "@/lib/actions/user.actions";
+import { useUser as useClerkUser } from "@clerk/nextjs";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+
+import { getAuthProfile, type AuthProfile } from "@/lib/actions/user.actions";
 
 const UserContext = createContext({
-  currentUser: null,
+  currentUser: null as AuthProfile | null,
   isAdmin: false,
   loading: true,
 });
@@ -12,29 +14,61 @@ const UserContext = createContext({
 export const useUser = () => useContext(UserContext);
 
 export const UserProvider = ({ children }: { children: React.ReactNode }) => {
-  const [currentUser, setCurrentUser] = useState<any | null>(null);
+  const { user: clerkUser, isLoaded, isSignedIn } = useClerkUser();
   const [isAdmin, setIsAdmin] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [adminChecked, setAdminChecked] = useState(false);
 
   useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const user = await getCurrentUser();
-        setCurrentUser(user);
+    if (!isLoaded) return;
 
-        // Check if the user has the "admin" label
-        if (user?.labels?.includes("admin")) {
-          setIsAdmin(true);
-        }
-      } catch (error) {
-        console.error("Failed to fetch user:", error);
-      } finally {
-        setLoading(false);
-      }
+    if (!isSignedIn || !clerkUser) {
+      setIsAdmin(false);
+      setAdminChecked(true);
+      return;
+    }
+
+    let cancelled = false;
+    setAdminChecked(false);
+
+    getAuthProfile()
+      .then((profile) => {
+        if (!cancelled) setIsAdmin(Boolean(profile?.isAdmin));
+      })
+      .catch(() => {
+        if (!cancelled) setIsAdmin(false);
+      })
+      .finally(() => {
+        if (!cancelled) setAdminChecked(true);
+      });
+
+    return () => {
+      cancelled = true;
     };
+  }, [isLoaded, isSignedIn, clerkUser?.id]);
 
-    fetchUser();
-  }, []);
+  const currentUser = useMemo((): AuthProfile | null => {
+    if (!clerkUser) return null;
+
+    const email =
+      clerkUser.primaryEmailAddress?.emailAddress ??
+      clerkUser.emailAddresses[0]?.emailAddress ??
+      "";
+
+    const fullName =
+      clerkUser.fullName?.trim() ||
+      [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ").trim() ||
+      email ||
+      "User";
+
+    return {
+      id: clerkUser.id,
+      fullName,
+      email,
+      isAdmin,
+    };
+  }, [clerkUser, isAdmin]);
+
+  const loading = !isLoaded || (Boolean(clerkUser) && !adminChecked);
 
   return (
     <UserContext.Provider value={{ currentUser, isAdmin, loading }}>

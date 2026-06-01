@@ -1,7 +1,23 @@
+"use client";
+
+import { CouncilDatePicker, CouncilTimePicker } from "@/components/design-system";
+import { Button } from "@/components/ui/button";
+import { useQueryInvalidation } from "@/hooks/queries";
+import { savePrayerTimes } from "@/lib/firebase/hr";
+import { cn } from "@/lib/utils";
+import { Clock, Moon } from "lucide-react";
 import React, { useState } from "react";
-import { savePrayerTimes } from "@/lib/appwrite/appwrite";
+
+const PRAYER_FIELDS = [
+  { key: "fathisTime", label: "Fajr" },
+  { key: "mendhuruTime", label: "Dhuhr" },
+  { key: "asuruTime", label: "Asr" },
+  { key: "maqribTime", label: "Maghrib" },
+  { key: "ishaTime", label: "Isha" },
+] as const;
 
 const PrayerTimesForm = () => {
+  const { invalidatePrayerTimes } = useQueryInvalidation();
   const [formData, setFormData] = useState({
     date: "",
     fathisTime: "",
@@ -11,80 +27,63 @@ const PrayerTimesForm = () => {
     ishaTime: "",
   });
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await savePrayerTimes(formData);
+      const month = formData.date.slice(0, 7);
+      await invalidatePrayerTimes(formData.date, month);
       alert("Prayer times saved successfully.");
-    } catch (error) {
+    } catch {
       alert("Error saving prayer times. Please try again.");
     }
   };
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="w-full max-w-xl mx-auto p-6 rounded-lg bg-white"
-    >
-      <h2 className="text-2xl font-semibold text-gray-700 mb-6 text-center">
-        Add Prayer Times
+    <form onSubmit={handleSubmit} className="mx-auto w-full max-w-xl space-y-5">
+      <h2 className="text-center text-2xl font-black tracking-tight text-slate-900">
+        Add prayer times
       </h2>
 
-      {/* Date Input */}
-      <div className="mb-6">
+      <div>
         <label
-          htmlFor="date"
-          className="block text-sm font-medium text-gray-600 mb-2"
+          htmlFor="prayer-date"
+          className="mb-2 block text-sm font-semibold text-slate-700"
         >
-          Date:
+          Date
         </label>
-        <input
-          type="date"
-          name="date"
+        <CouncilDatePicker
+          id="prayer-date"
           value={formData.date}
-          onChange={handleInputChange}
-          className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-500 focus:outline-none"
+          onChange={(date) => setFormData((prev) => ({ ...prev, date }))}
+          placeholder="Select date"
           required
         />
       </div>
 
-      {/* Prayer Time Inputs */}
-      {[
-        "fathisTime",
-        "mendhuruTime",
-        "asuruTime",
-        "maqribTime",
-        "ishaTime",
-      ].map((timeKey) => (
-        <div key={timeKey} className="mb-6">
+      {PRAYER_FIELDS.map(({ key, label }) => (
+        <div key={key}>
           <label
-            htmlFor={timeKey}
-            className="block text-sm font-medium text-gray-600 mb-2"
+            htmlFor={key}
+            className={cn("mb-2 block text-sm font-semibold text-slate-700")}
           >
-            {timeKey.replace("Time", " Time")}:
+            {label}
           </label>
-          <input
-            type="time"
-            name={timeKey}
-            value={formData[timeKey as keyof typeof formData]}
-            onChange={handleInputChange}
-            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-500 focus:outline-none"
+          <CouncilTimePicker
+            id={key}
+            value={formData[key]}
+            onChange={(time) =>
+              setFormData((prev) => ({ ...prev, [key]: time }))
+            }
+            icon={key === "fathisTime" || key === "ishaTime" ? Moon : Clock}
+            placeholder={`Set ${label.toLowerCase()} time`}
           />
         </div>
       ))}
 
-      {/* Submit Button */}
-      <button
-        type="submit"
-        className="w-full h-14 custom-button text-black font-normal"
-      >
-        Save Prayer Times
-      </button>
+      <Button type="submit" variant="council" className="h-11 w-full rounded-xl">
+        Save prayer times
+      </Button>
     </form>
   );
 };

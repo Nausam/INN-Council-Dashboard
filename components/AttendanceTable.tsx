@@ -2,6 +2,10 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { AttendanceChangesBanner } from "@/components/attendance/attendance-changes-banner";
+import { AttendanceLeaveSelect } from "@/components/attendance/attendance-leave-select";
+import { AttendanceTimeInput } from "@/components/attendance/attendance-time-input";
+import { AvatarGlow, CouncilCard } from "@/components/design-system";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,6 +17,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -21,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useEmployeesQuery, useQueryInvalidation } from "@/hooks/queries";
 import { useToast } from "@/hooks/use-toast";
 import {
   deductLeave,
@@ -28,19 +34,18 @@ import {
   EmployeeDoc,
   fetchEmployeeById,
   updateAttendanceRecord,
-} from "@/lib/appwrite/appwrite";
+} from "@/lib/firebase/hr";
+import { cn } from "@/lib/utils";
 import { useUser } from "@/Providers/UserProvider";
 import {
-  Clock,
-  UserCheck,
-  Trash2,
   AlertCircle,
-  Users,
+  Briefcase,
+  Recycle,
   Save,
-  ChevronDown,
-  Sparkles,
+  Trash2,
+  UserCheck,
+  Users,
 } from "lucide-react";
-
 /* ---------------- Helpers ---------------- */
 const ADDITIVE_LEAVES = [
   "maternityLeave",
@@ -169,6 +174,9 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
   const [submitting, setSubmitting] = useState(false);
   const { isAdmin } = useUser();
   const { toast } = useToast();
+  const { invalidateCouncilAttendance, invalidateEmployees } =
+    useQueryInvalidation();
+  const monthKey = date.slice(0, 7);
 
   const [employeeCache, setEmployeeCache] = useState<
     Record<string, { name: string; section?: string }>
@@ -219,48 +227,22 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     return Array.from(ids);
   }, [attendanceUpdates, employeeCache]);
 
+  const { data: allEmployees } = useEmployeesQuery();
+
   useEffect(() => {
-    if (unresolvedIds.length === 0) return;
-    (async () => {
-      try {
-        const results = await Promise.all(
-          unresolvedIds.map(async (id) => {
-            try {
-              const doc = await fetchEmployeeById(id);
-              const anyDoc = doc as Record<string, unknown>;
-              const name =
-                String(
-                  (anyDoc.name as string) ??
-                    (anyDoc["fullName"] as string) ??
-                    (anyDoc["displayName"] as string) ??
-                    ""
-                ) || "Unknown";
-              const section =
-                String(
-                  (anyDoc.section as string) ??
-                    (anyDoc["Section"] as string) ??
-                    (anyDoc["department"] as string) ??
-                    (anyDoc["Department"] as string) ??
-                    (anyDoc["role"] as string) ??
-                    ""
-                ) || "";
-              return { id, name, section };
-            } catch {
-              return { id, name: "Unknown", section: "" };
-            }
-          })
-        );
-        setEmployeeCache((prev) => {
-          const next = { ...prev };
-          for (const r of results)
-            next[r.id] = { name: r.name, section: r.section };
-          return next;
-        });
-      } catch {
-        /* ignore */
+    if (!allEmployees?.length || unresolvedIds.length === 0) return;
+
+    const lookup: Record<string, { name: string; section?: string }> = {};
+    for (const emp of allEmployees) {
+      if (unresolvedIds.includes(emp.$id)) {
+        lookup[emp.$id] = { name: emp.name, section: emp.section };
       }
-    })();
-  }, [unresolvedIds]);
+    }
+
+    if (Object.keys(lookup).length > 0) {
+      setEmployeeCache((prev) => ({ ...prev, ...lookup }));
+    }
+  }, [allEmployees, unresolvedIds]);
 
   /* ---------------- Custom order + section-first sort ---------------- */
   const employeeOrder = [
@@ -448,6 +430,15 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
         })
       );
 
+      const affectedEmployeeIds = new Set(
+        changed.map((r) => idFromRef(r.employeeId)),
+      );
+
+      await invalidateCouncilAttendance(date, monthKey);
+      await Promise.all(
+        Array.from(affectedEmployeeIds).map((id) => invalidateEmployees(id)),
+      );
+
       toast({
         title: "Success",
         description: "All attendance records updated.",
@@ -496,23 +487,21 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
 
   const SectionHeadingRow = ({
     title,
-    icon,
+    icon: Icon,
   }: {
     title: string;
-    icon: React.ReactNode;
+    icon: React.ComponentType<{ className?: string }>;
   }) => (
-    <TableRow className="bg-slate-50/60 hover:bg-slate-50/60">
+    <TableRow className="bg-teal-50/40 hover:bg-teal-50/40">
       <TableCell colSpan={4} className="px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm font-black text-slate-900">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-white/80 text-slate-700 shadow-sm ring-1 ring-slate-200/60 backdrop-blur">
-              {icon}
-            </span>
-            <span className="tracking-tight">{title}</span>
-          </div>
-
-          <span className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-indigo-50 to-violet-50 px-3 py-1 text-xs font-bold text-indigo-700 ring-1 ring-indigo-200/50">
-            <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
+        <div className="flex items-center gap-3">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-teal-50 text-teal-600 ring-1 ring-teal-100">
+            <Icon className="h-4 w-4" />
+          </span>
+          <span className="text-sm font-black tracking-tight text-slate-900">
+            {title}
+          </span>
+          <span className="rounded-full bg-white px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-teal-700 ring-1 ring-teal-100">
             Section
           </span>
         </div>
@@ -523,7 +512,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
   const renderSection = (
     title: string,
     rows: AttendanceRecord[],
-    icon: React.ReactNode
+    icon: React.ComponentType<{ className?: string }>,
   ) => {
     if (!rows.length) return null;
     const sorted = sortWithin(rows);
@@ -538,13 +527,12 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
           return (
             <TableRow
               key={record.$id}
-              className={[
-                "transition-all duration-200 ease-out",
+              className={cn(
+                "transition-colors duration-150",
                 isChanged
                   ? "bg-amber-50/60 hover:bg-amber-50"
                   : "hover:bg-slate-50/70",
-              ].join(" ")}
-              style={{ willChange: "transform" }}
+              )}
             >
               <TableCell className="px-4 py-3 text-sm font-bold text-slate-500">
                 {rowCounter}
@@ -552,12 +540,11 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
 
               <TableCell className="px-4 py-3">
                 <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <div className="absolute inset-0 rounded-2xl bg-indigo-500 opacity-30 blur-xl" />
-                    <div className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 text-sm font-black text-white shadow-lg shadow-indigo-500/30 ring-2 ring-white">
-                      {nameFromRecord(record).charAt(0).toUpperCase()}
-                    </div>
-                  </div>
+                  <AvatarGlow
+                    name={nameFromRecord(record)}
+                    size="sm"
+                    className="group-hover:scale-100"
+                  />
 
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
@@ -566,7 +553,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
                       </span>
 
                       {isChanged && (
-                        <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800 ring-1 ring-amber-200/60">
+                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-800 ring-1 ring-amber-200/60">
                           Modified
                         </span>
                       )}
@@ -581,17 +568,12 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
 
               <TableCell className="px-4 py-3">
                 {!record.leaveType ? (
-                  <div className="relative group">
-                    <Clock className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400 transition-colors duration-200 group-hover:text-indigo-500" />
-                    <input
-                      type="time"
-                      className="w-full rounded-2xl border-2 border-slate-200 bg-white py-3 pl-12 pr-4 text-sm font-semibold text-slate-900 shadow-sm transition-all duration-200 ease-out placeholder-slate-400 hover:border-slate-300 focus:border-indigo-400 focus:outline-none focus:ring-4 focus:ring-indigo-100"
-                      value={formatTimeForInput(record.signInTime)}
-                      onChange={(e) =>
-                        handleSignInChange(record.$id, e.target.value)
-                      }
-                    />
-                  </div>
+                  <AttendanceTimeInput
+                    value={formatTimeForInput(record.signInTime)}
+                    onChange={(value) =>
+                      handleSignInChange(record.$id, value)
+                    }
+                  />
                 ) : (
                   <span className="text-sm font-semibold text-slate-400">
                     —
@@ -600,27 +582,17 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
               </TableCell>
 
               <TableCell className="px-4 py-3">
-                <div className="group relative">
-                  <select
-                    value={
-                      record.leaveType
-                        ? reverseLeaveTypeMapping[record.leaveType] ?? ""
-                        : ""
-                    }
-                    onChange={(e) =>
-                      handleLeaveChange(record.$id, e.target.value)
-                    }
-                    className="w-full appearance-none rounded-2xl border-2 border-slate-200 bg-white py-3 pl-4 pr-10 text-sm font-semibold text-slate-700 shadow-sm transition-all duration-200 ease-out hover:border-slate-300 focus:border-indigo-400 focus:outline-none focus:ring-4 focus:ring-indigo-100"
-                  >
-                    <option value="">✓ Present</option>
-                    {leaveTypes.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400 transition-colors duration-200 group-hover:text-indigo-500" />
-                </div>
+                <AttendanceLeaveSelect
+                  value={
+                    record.leaveType
+                      ? reverseLeaveTypeMapping[record.leaveType] ?? ""
+                      : ""
+                  }
+                  onValueChange={(label) =>
+                    handleLeaveChange(record.$id, label)
+                  }
+                  leaveOptions={leaveTypes}
+                />
               </TableCell>
             </TableRow>
           );
@@ -636,172 +608,91 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
 
   return (
     <div className="space-y-6">
-      {/* Modified banner (glass) */}
-      {changedCount > 0 && (
-        <div
-          className="group relative overflow-hidden rounded-3xl bg-white/80 p-4 shadow-md ring-1 ring-amber-200/60 backdrop-blur-xl transition-all duration-300 ease-out hover:shadow-xl"
-          style={{
-            willChange: "transform",
-            animation: "fadeInUp 420ms ease-out",
-          }}
-        >
-          <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-amber-500 opacity-0 blur-3xl transition-all duration-500 group-hover:opacity-15" />
-          <div className="relative z-10 flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 ring-1 ring-amber-200/60">
-              <AlertCircle className="h-6 w-6" />
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-black text-slate-900">
-                {changedCount} {changedCount === 1 ? "record" : "records"}{" "}
-                modified
-              </p>
-              <p className="text-xs font-semibold text-slate-600">
-                Don&apos;t forget to submit your changes.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      <AttendanceChangesBanner count={changedCount} />
 
-      {/* Table (glass card) */}
-      <div
-        className="group relative overflow-hidden rounded-3xl bg-white/80 shadow-md ring-1 ring-slate-200/50 backdrop-blur-xl transition-all duration-300 ease-out hover:shadow-xl hover:ring-slate-300/50"
-        style={{
-          willChange: "transform",
-          animation: "fadeInUp 420ms ease-out 60ms both",
-        }}
-      >
-        <div className="pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full bg-indigo-500 opacity-0 blur-3xl transition-all duration-500 group-hover:opacity-15" />
-        <div
-          className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/40 to-transparent transition-transform duration-700 group-hover:translate-x-full"
-          style={{ width: "50%" }}
-        />
-
+      <CouncilCard interactive="none" className="overflow-hidden p-0">
         <Table>
           <TableHeader>
-            <TableRow className="bg-slate-50/70 hover:bg-slate-50/70">
-              <TableHead className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-600">
+            <TableRow className="bg-slate-50/80 hover:bg-slate-50/80">
+              <TableHead className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
                 #
               </TableHead>
-              <TableHead className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-600">
+              <TableHead className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
                 Employee
               </TableHead>
-              <TableHead className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-600">
-                Sign In
+              <TableHead className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
+                Sign in
               </TableHead>
-              <TableHead className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-600">
+              <TableHead className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
                 Status
               </TableHead>
             </TableRow>
           </TableHeader>
 
           <TableBody>
-            {renderSection(
-              "Council",
-              councillor,
-              <Users className="h-4 w-4 text-violet-600" />
-            )}
-            {renderSection(
-              "Admin",
-              admin,
-              <UserCheck className="h-4 w-4 text-blue-600" />
-            )}
-            {renderSection(
-              "Waste Management",
-              waste,
-              <Users className="h-4 w-4 text-emerald-600" />
-            )}
-            {renderSection(
-              "Other",
-              sortWithin(other),
-              <Users className="h-4 w-4 text-slate-600" />
-            )}
+            {renderSection("Council", councillor, Users)}
+            {renderSection("Admin", admin, Briefcase)}
+            {renderSection("Waste Management", waste, Recycle)}
+            {renderSection("Other", sortWithin(other), UserCheck)}
           </TableBody>
         </Table>
-      </div>
+      </CouncilCard>
 
-      {/* Action bar */}
-      <div
-        className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
-        style={{ animation: "fadeInUp 420ms ease-out 120ms both" }}
-      >
-        <button
-          className={[
-            "group inline-flex items-center justify-center gap-2 rounded-2xl",
-            "bg-gradient-to-r from-indigo-500 to-violet-500 px-6 py-3",
-            "text-sm font-bold text-white shadow-lg shadow-indigo-500/30",
-            "transition-all duration-200 ease-out hover:scale-105 hover:shadow-xl hover:shadow-indigo-500/40",
-            submitting ? "cursor-not-allowed opacity-50" : "",
-          ].join(" ")}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Button
+          type="button"
+          variant="council"
+          className="h-11 rounded-xl px-6"
           onClick={handleSubmitAttendance}
           disabled={submitting}
         >
-          <Save className="h-5 w-5" />
-          {submitting ? "Submitting..." : "Submit Attendance"}
-        </button>
+          <Save className="h-4 w-4" />
+          {submitting ? "Submitting..." : "Submit attendance"}
+        </Button>
 
         {isAdmin && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <button
-                className={[
-                  "group inline-flex items-center justify-center gap-2 rounded-2xl",
-                  "border-2 border-red-200 bg-white/80 px-6 py-3",
-                  "text-sm font-bold text-red-600 shadow-sm backdrop-blur-sm",
-                  "transition-all duration-200 ease-out hover:scale-105 hover:bg-red-50 hover:shadow-md",
-                  submitting ? "cursor-not-allowed opacity-50" : "",
-                ].join(" ")}
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 rounded-xl border-red-200 px-6 text-red-600 hover:bg-red-50 hover:text-red-700"
                 disabled={submitting}
               >
-                <Trash2 className="h-5 w-5" />
-                Delete Attendance
-              </button>
+                <Trash2 className="h-4 w-4" />
+                Delete sheet
+              </Button>
             </AlertDialogTrigger>
 
-            <AlertDialogContent className="rounded-3xl border-0 bg-white/90 shadow-2xl ring-1 ring-slate-200/60 backdrop-blur-2xl">
+            <AlertDialogContent className="rounded-3xl border-0 bg-white shadow-xl ring-1 ring-slate-200/60">
               <AlertDialogHeader>
-                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-3xl bg-red-100 text-red-700 ring-1 ring-red-200/60">
-                  <AlertCircle className="h-7 w-7" />
+                <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-100 text-red-600 ring-1 ring-red-200/60">
+                  <AlertCircle className="h-6 w-6" />
                 </div>
-                <AlertDialogTitle className="text-2xl font-black tracking-tight text-slate-900">
-                  Are you absolutely sure?
+                <AlertDialogTitle className="text-xl font-black tracking-tight text-slate-900">
+                  Delete attendance sheet?
                 </AlertDialogTitle>
                 <AlertDialogDescription className="text-sm font-medium text-slate-600">
-                  This action cannot be undone. This will permanently delete
-                  today&apos;s attendance and remove your data from the
-                  database.
+                  This permanently removes all attendance records for this date.
+                  This action cannot be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
 
               <AlertDialogFooter className="gap-2">
-                <AlertDialogCancel className="rounded-2xl border-2 border-slate-200 bg-white/80 font-bold text-slate-700 shadow-sm backdrop-blur-sm transition-all duration-200 hover:bg-white hover:shadow-md">
+                <AlertDialogCancel className="h-10 rounded-xl">
                   Cancel
                 </AlertDialogCancel>
-
                 <AlertDialogAction
-                  className="rounded-2xl bg-gradient-to-r from-red-500 to-rose-500 px-6 font-bold text-white shadow-lg transition-all duration-200 hover:shadow-xl"
+                  className="h-10 rounded-xl bg-red-600 hover:bg-red-700"
                   onClick={handleDeleteAllAttendances}
                 >
-                  Delete Attendance
+                  Delete sheet
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
         )}
       </div>
-
-      <style jsx>{`
-        @keyframes fadeInUp {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-      `}</style>
     </div>
   );
 };

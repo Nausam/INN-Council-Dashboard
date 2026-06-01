@@ -1,38 +1,34 @@
 import React from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const SkeletonProgressBar: React.FC = () => (
-  <div className="mb-6">
-    <div className="flex justify-between mb-2">
-      <div className="h-6 w-24 bg-gray-300 rounded-md"></div>{" "}
-      {/* Matches text size */}
-      <div className="h-6 w-16 bg-gray-300 rounded-md"></div>{" "}
-      {/* Matches percentage */}
+  <div className="space-y-3">
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <div className="h-10 w-10 rounded-xl bg-slate-200" />
+        <div className="space-y-2">
+          <div className="h-4 w-24 rounded bg-slate-200" />
+          <div className="h-3 w-32 rounded bg-slate-200" />
+        </div>
+      </div>
+      <div className="h-8 w-12 rounded-xl bg-slate-200" />
     </div>
-    <div className="relative h-8 rounded-full bg-gray-200 shadow-inner">
-      <div className="absolute top-0 left-0 h-full w-0 bg-gray-300 rounded-full"></div>
-    </div>
+    <div className="h-2.5 rounded-full bg-slate-200" />
   </div>
 );
 
 const SkeletonProgressSection: React.FC = () => {
   return (
-    <Card
-      style={{
-        background: "linear-gradient(to bottom right, #fdfdfd, #f8f8f8)",
-      }}
-      className="w-full mx-auto mt-8 shadow-lg rounded-md border-none p-6"
-    >
-      <CardHeader>
-        <div className="h-8 w-48 bg-gray-300 rounded mb-4"></div>{" "}
-        {/* Matches title size */}
-      </CardHeader>
-      <CardContent className="space-y-6">
+    <div className="council-card animate-pulse p-6 lg:p-8">
+      <div className="mb-8 border-b border-slate-200/80 pb-6">
+        <div className="h-6 w-48 rounded bg-slate-200" />
+        <div className="mt-2 h-4 w-64 rounded bg-slate-200" />
+      </div>
+      <div className="space-y-8">
         <SkeletonProgressBar />
         <SkeletonProgressBar />
         <SkeletonProgressBar />
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 };
 

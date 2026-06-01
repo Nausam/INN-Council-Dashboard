@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { ninmunService } from "@/lib/appwrite/app/ninmim.actions";
+import { ninmunService } from "@/lib/council/ninmim.actions";
 import { NinmunVoteValue } from "@/lib/types/database";
 import {
   AlertCircle,

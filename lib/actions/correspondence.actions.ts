@@ -1,8 +1,17 @@
 "use server";
 
-import { getCurrentUser } from "@/lib/actions/user.actions";
-import { createAdminClient } from "@/lib/appwrite";
-import { appwriteConfig } from "@/lib/appwrite/config";
+import { getAuthProfile } from "@/lib/actions/user.actions";
+import { COLLECTIONS } from "@/lib/firebase/admin";
+import {
+  createDocument,
+  deleteDocument,
+  getDocument,
+  listAllDocuments,
+  listDocuments,
+  newDocId,
+  updateDocument,
+  type WhereClause,
+} from "@/lib/firebase/repository";
 import { isCorrespondenceOverdue } from "@/lib/correspondence/overdue";
 import {
   deleteCorrespondenceFromR2,
@@ -19,7 +28,8 @@ import {
   type CorrespondenceStatus,
 } from "@/types/correspondence";
 import { endOfWeek, startOfWeek } from "date-fns";
-import { ID, Query } from "node-appwrite";
+
+const COLLECTION = COLLECTIONS.correspondence;
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const ALLOWED_MIME = new Set([
@@ -32,22 +42,14 @@ const ALLOWED_MIME = new Set([
 const CHANNEL_SET = new Set<string>(CORRESPONDENCE_CHANNELS);
 const STATUS_SET = new Set<string>(CORRESPONDENCE_STATUSES);
 
-function requireCollectionId() {
-  const id = appwriteConfig.correspondenceCollectionId;
-  if (!id) {
-    throw new Error(
-      "NEXT_PUBLIC_APPWRITE_CORRESPONDENCE_COLLECTION is not configured.",
-    );
-  }
-  return id;
-}
+type CorrespondenceRow = Record<string, unknown> & { $id: string };
 
 async function requireStaffUser() {
-  const user = await getCurrentUser();
-  if (!user || typeof user !== "object" || !("$id" in user)) {
+  const profile = await getAuthProfile();
+  if (!profile) {
     throw new Error("Unauthorized");
   }
-  return user as { $id: string };
+  return { id: profile.id };
 }
 
 function parseChannel(v: string): CorrespondenceChannel {
@@ -77,10 +79,7 @@ function toIsoDateTimeRequired(value: string): string {
   return d.toISOString();
 }
 
-async function generateReferenceNumber(
-  databases: Awaited<ReturnType<typeof createAdminClient>>["databases"],
-  collectionId: string,
-) {
+async function generateReferenceNumber() {
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, "0");
@@ -89,16 +88,15 @@ async function generateReferenceNumber(
 
   let nextSequence = 1;
   try {
-    const latestForMonth = await databases.listDocuments(
-      appwriteConfig.databaseId,
-      collectionId,
-      [
-        Query.startsWith("referenceNumber", monthlyPrefix),
-        Query.orderDesc("referenceNumber"),
-        Query.limit(1),
+    const { documents } = await listDocuments<CorrespondenceRow>(COLLECTION, {
+      where: [
+        ["referenceNumber", ">=", monthlyPrefix],
+        ["referenceNumber", "<", `${monthlyPrefix}\uf8ff`],
       ],
-    );
-    const latestRef = String(latestForMonth.documents[0]?.referenceNumber ?? "");
+      orderBy: [{ field: "referenceNumber", direction: "desc" }],
+      limit: 1,
+    });
+    const latestRef = String(documents[0]?.referenceNumber ?? "");
     const match = latestRef.match(/^DOC-\d{4}-\d{4}(\d+)$/);
     if (match) {
       const current = Number(match[1]);
@@ -113,6 +111,49 @@ async function generateReferenceNumber(
 
   const sequencePart = String(nextSequence).padStart(2, "0");
   return `DOC-${year}-${month}${day}${sequencePart}`;
+}
+
+function buildCorrespondenceFilters(params: {
+  status?: CorrespondenceStatus | "all";
+  receivedFrom?: string;
+  receivedTo?: string;
+}): { where: WhereClause[] } {
+  const where: WhereClause[] = [];
+
+  if (params.status && params.status !== "all") {
+    where.push(["status", "==", params.status]);
+  }
+
+  if (params.receivedFrom?.trim()) {
+    where.push([
+      "receivedAt",
+      ">=",
+      toIsoDateTimeRequired(params.receivedFrom.trim()),
+    ]);
+  }
+  if (params.receivedTo?.trim()) {
+    where.push([
+      "receivedAt",
+      "<=",
+      toIsoDateTimeRequired(params.receivedTo.trim()),
+    ]);
+  }
+
+  return { where };
+}
+
+function filterBySearch(
+  docs: CorrespondenceDoc[],
+  search?: string,
+): CorrespondenceDoc[] {
+  const q = search?.trim().toLowerCase();
+  if (!q) return docs;
+  return docs.filter(
+    (d) =>
+      d.subject.toLowerCase().includes(q) ||
+      d.senderName.toLowerCase().includes(q) ||
+      d.referenceNumber.toLowerCase().includes(q),
+  );
 }
 
 function mapChannelLoose(v: unknown): CorrespondenceChannel {
@@ -206,7 +247,7 @@ async function uploadAttachment(file: File) {
       "File storage is not configured. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, and R2_CORRESPONDENCE_BUCKET_NAME.",
     );
   }
-  const objectKey = `document-receiver/${ID.unique()}/${sanitizeCorrespondenceObjectName(file.name)}`;
+  const objectKey = `document-receiver/${newDocId()}/${sanitizeCorrespondenceObjectName(file.name)}`;
   const buf = Buffer.from(await file.arrayBuffer());
   await uploadCorrespondenceToR2(objectKey, buf, file.type);
   return {
@@ -240,8 +281,6 @@ function nextAnsweredAt(
 export async function createCorrespondence(formData: FormData) {
   try {
     const staff = await requireStaffUser();
-    const { databases } = await createAdminClient();
-    const collectionId = requireCollectionId();
 
     const subject = String(formData.get("subject") ?? "")
       .trim()
@@ -276,7 +315,7 @@ export async function createCorrespondence(formData: FormData) {
       .trim()
       .slice(0, CORRESPONDENCE_FIELD_LIMITS.referenceNumber);
     if (!referenceNumber) {
-      referenceNumber = await generateReferenceNumber(databases, collectionId);
+      referenceNumber = await generateReferenceNumber();
     }
 
     const assignedRaw = String(formData.get("assignedToUserId") ?? "").trim();
@@ -297,29 +336,24 @@ export async function createCorrespondence(formData: FormData) {
       fileSize = up.fileSize;
     }
 
-    const doc = await databases.createDocument(
-      appwriteConfig.databaseId,
-      collectionId,
-      ID.unique(),
-      {
-        referenceNumber,
-        channel,
-        subject,
-        senderName,
-        senderOrganization: senderOrganization || null,
-        receivedAt,
-        dueAt,
-        status,
-        answeredAt,
-        notes,
-        assignedToUserId,
-        storageFileId,
-        fileName,
-        fileSize,
-        createdByUserId: staff.$id,
-        updatedAt: now,
-      },
-    );
+    const doc = await createDocument<CorrespondenceRow>(COLLECTION, {
+      referenceNumber,
+      channel,
+      subject,
+      senderName,
+      senderOrganization: senderOrganization || null,
+      receivedAt,
+      dueAt,
+      status,
+      answeredAt,
+      notes,
+      assignedToUserId,
+      storageFileId,
+      fileName,
+      fileSize,
+      createdByUserId: staff.id,
+      updatedAt: now,
+    });
 
     return { ok: true as const, id: doc.$id };
   } catch (e) {
@@ -340,88 +374,36 @@ export type ListCorrespondenceParams = {
 
 export async function listCorrespondence(params: ListCorrespondenceParams = {}) {
   await requireStaffUser();
-  const { databases } = await createAdminClient();
-  const collectionId = requireCollectionId();
 
   const limit = Math.min(Math.max(params.limit ?? 25, 1), 100);
   const offset = Math.max(params.offset ?? 0, 0);
 
-  const queries: string[] = [
-    Query.orderDesc("receivedAt"),
-    Query.limit(limit),
-    Query.offset(offset),
-  ];
+  const { where } = buildCorrespondenceFilters(params);
+  const rows = await listAllDocuments<CorrespondenceRow>(COLLECTION, {
+    where,
+    orderBy: [{ field: "receivedAt", direction: "desc" }],
+  });
 
-  if (params.status && params.status !== "all") {
-    queries.push(Query.equal("status", params.status));
-  }
+  const filtered = filterBySearch(rows.map((d) => mapRow(d)), params.search);
+  const documents = filtered.slice(offset, offset + limit);
 
-  if (params.receivedFrom?.trim()) {
-    queries.push(
-      Query.greaterThanEqual(
-        "receivedAt",
-        toIsoDateTimeRequired(params.receivedFrom.trim()),
-      ),
-    );
-  }
-  if (params.receivedTo?.trim()) {
-    queries.push(
-      Query.lessThanEqual(
-        "receivedAt",
-        toIsoDateTimeRequired(params.receivedTo.trim()),
-      ),
-    );
-  }
-
-  const search = params.search?.trim();
-  if (search) {
-    queries.push(
-      Query.or([
-        Query.contains("subject", search),
-        Query.contains("senderName", search),
-        Query.contains("referenceNumber", search),
-      ]),
-    );
-  }
-
-  const res = await databases.listDocuments(
-    appwriteConfig.databaseId,
-    collectionId,
-    queries,
-  );
-
-  const documents = res.documents.map((d) =>
-    mapRow(d as unknown as Record<string, unknown>),
-  );
-  return parseStringify({ documents, total: res.total });
+  return parseStringify({ documents, total: filtered.length });
 }
 
 export async function getCorrespondenceById(id: string) {
   await requireStaffUser();
-  const { databases } = await createAdminClient();
-  const collectionId = requireCollectionId();
-  const doc = await databases.getDocument(
-    appwriteConfig.databaseId,
-    collectionId,
-    id,
-  );
+  const doc = await getDocument<CorrespondenceRow>(COLLECTION, id);
   return parseStringify(
-    mapRow(doc as unknown as Record<string, unknown>),
+    mapRow(doc),
   ) as CorrespondenceDoc;
 }
 
 export async function updateCorrespondence(id: string, formData: FormData) {
   try {
     await requireStaffUser();
-    const { databases } = await createAdminClient();
-    const collectionId = requireCollectionId();
 
-    const existing = await databases.getDocument(
-      appwriteConfig.databaseId,
-      collectionId,
-      id,
-    );
-    const prev = mapRow(existing as unknown as Record<string, unknown>);
+    const existing = await getDocument<CorrespondenceRow>(COLLECTION, id);
+    const prev = mapRow(existing);
 
     const subject = String(formData.get("subject") ?? "")
       .trim()
@@ -484,28 +466,23 @@ export async function updateCorrespondence(id: string, formData: FormData) {
       fileSize = up.fileSize;
     }
 
-    await databases.updateDocument(
-      appwriteConfig.databaseId,
-      collectionId,
-      id,
-      {
-        referenceNumber,
-        channel,
-        subject,
-        senderName,
-        senderOrganization: senderOrganization || null,
-        receivedAt,
-        dueAt,
-        status,
-        answeredAt,
-        notes,
-        assignedToUserId,
-        storageFileId,
-        fileName,
-        fileSize,
-        updatedAt: now,
-      },
-    );
+    await updateDocument(COLLECTION, id, {
+      referenceNumber,
+      channel,
+      subject,
+      senderName,
+      senderOrganization: senderOrganization || null,
+      receivedAt,
+      dueAt,
+      status,
+      answeredAt,
+      notes,
+      assignedToUserId,
+      storageFileId,
+      fileName,
+      fileSize,
+      updatedAt: now,
+    });
 
     return { ok: true as const };
   } catch (e) {
@@ -518,18 +495,11 @@ export async function updateCorrespondence(id: string, formData: FormData) {
 export async function archiveCorrespondence(id: string) {
   try {
     await requireStaffUser();
-    const { databases } = await createAdminClient();
-    const collectionId = requireCollectionId();
     const now = new Date().toISOString();
-    await databases.updateDocument(
-      appwriteConfig.databaseId,
-      collectionId,
-      id,
-      {
-        status: "archived",
-        updatedAt: now,
-      },
-    );
+    await updateDocument(COLLECTION, id, {
+      status: "archived",
+      updatedAt: now,
+    });
     return { ok: true as const };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to archive";
@@ -537,32 +507,22 @@ export async function archiveCorrespondence(id: string) {
   }
 }
 
-/** Removes the Appwrite document and any attachment object in R2. */
+/** Removes the record and any attachment object in R2. */
 export async function deleteCorrespondence(id: string) {
   try {
     await requireStaffUser();
-    const { databases } = await createAdminClient();
-    const collectionId = requireCollectionId();
 
-    let existing: unknown;
+    let existing: CorrespondenceRow;
     try {
-      existing = await databases.getDocument(
-        appwriteConfig.databaseId,
-        collectionId,
-        id,
-      );
+      existing = await getDocument<CorrespondenceRow>(COLLECTION, id);
     } catch {
       return { ok: false as const, error: "Record not found" };
     }
 
-    const prev = mapRow(existing as unknown as Record<string, unknown>);
+    const prev = mapRow(existing);
     await deleteAttachment(prev.storageFileId);
 
-    await databases.deleteDocument(
-      appwriteConfig.databaseId,
-      collectionId,
-      id,
-    );
+    await deleteDocument(COLLECTION, id);
 
     return { ok: true as const };
   } catch (e) {
@@ -576,50 +536,15 @@ export async function exportCorrespondenceCsv(
   params: Omit<ListCorrespondenceParams, "limit" | "offset"> = {},
 ) {
   await requireStaffUser();
-  const { databases } = await createAdminClient();
-  const collectionId = requireCollectionId();
 
-  const queries: string[] = [Query.orderDesc("receivedAt"), Query.limit(5000)];
+  const { where } = buildCorrespondenceFilters(params);
+  const rows = await listAllDocuments<CorrespondenceRow>(COLLECTION, {
+    where,
+    orderBy: [{ field: "receivedAt", direction: "desc" }],
+  });
 
-  if (params.status && params.status !== "all") {
-    queries.push(Query.equal("status", params.status));
-  }
-  if (params.receivedFrom?.trim()) {
-    queries.push(
-      Query.greaterThanEqual(
-        "receivedAt",
-        toIsoDateTimeRequired(params.receivedFrom.trim()),
-      ),
-    );
-  }
-  if (params.receivedTo?.trim()) {
-    queries.push(
-      Query.lessThanEqual(
-        "receivedAt",
-        toIsoDateTimeRequired(params.receivedTo.trim()),
-      ),
-    );
-  }
-  const search = params.search?.trim();
-  if (search) {
-    queries.push(
-      Query.or([
-        Query.contains("subject", search),
-        Query.contains("senderName", search),
-        Query.contains("referenceNumber", search),
-      ]),
-    );
-  }
-
-  const res = await databases.listDocuments(
-    appwriteConfig.databaseId,
-    collectionId,
-    queries,
-  );
-
-  const rows = res.documents.map((d) =>
-    mapRow(d as unknown as Record<string, unknown>),
-  );
+  const filtered = filterBySearch(rows.map((d) => mapRow(d)), params.search);
+  const limited = filtered.slice(0, 5000);
 
   const esc = (v: string | number | null | undefined) => {
     const s = v == null ? "" : String(v);
@@ -644,7 +569,7 @@ export async function exportCorrespondenceCsv(
 
   const lines = [
     header.join(","),
-    ...rows.map((r) =>
+    ...limited.map((r) =>
       [
         esc(r.referenceNumber),
         esc(r.channel),
@@ -666,46 +591,36 @@ export async function exportCorrespondenceCsv(
 }
 
 export async function getCorrespondenceDashboardStats() {
-  await requireStaffUser();
-  const { databases } = await createAdminClient();
-  const collectionId = requireCollectionId();
+  const profile = await getAuthProfile();
+  if (!profile) return null;
+
   const now = new Date().toISOString();
 
-  const pendingRes = await databases.listDocuments(
-    appwriteConfig.databaseId,
-    collectionId,
-    [Query.equal("status", "pending"), Query.limit(1)],
-  );
+  const pendingDocs = await listAllDocuments<CorrespondenceRow>(COLLECTION, {
+    where: [["status", "==", "pending"]],
+  });
 
-  const overdueRes = await databases.listDocuments(
-    appwriteConfig.databaseId,
-    collectionId,
-    [
-      Query.equal("status", "pending"),
-      Query.isNotNull("dueAt"),
-      Query.lessThan("dueAt", now),
-      Query.limit(1),
+  const overdueDocs = await listAllDocuments<CorrespondenceRow>(COLLECTION, {
+    where: [
+      ["status", "==", "pending"],
+      ["dueAt", "<", now],
     ],
-  );
+  });
 
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 }).toISOString();
   const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 }).toISOString();
 
-  const answeredWeekRes = await databases.listDocuments(
-    appwriteConfig.databaseId,
-    collectionId,
-    [
-      Query.equal("status", "answered"),
-      Query.isNotNull("answeredAt"),
-      Query.greaterThanEqual("answeredAt", weekStart),
-      Query.lessThanEqual("answeredAt", weekEnd),
-      Query.limit(1),
+  const answeredWeekDocs = await listAllDocuments<CorrespondenceRow>(COLLECTION, {
+    where: [
+      ["status", "==", "answered"],
+      ["answeredAt", ">=", weekStart],
+      ["answeredAt", "<=", weekEnd],
     ],
-  );
+  });
 
   return parseStringify({
-    pending: pendingRes.total,
-    overdue: overdueRes.total,
-    answeredThisWeek: answeredWeekRes.total,
+    pending: pendingDocs.length,
+    overdue: overdueDocs.length,
+    answeredThisWeek: answeredWeekDocs.length,
   });
 }

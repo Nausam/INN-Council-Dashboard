@@ -1,4 +1,4 @@
-import { listRecordCardNumbersWithSlipForPeriod } from "@/lib/appwrite/appwrite";
+import { listRecordCardNumbersWithSlipForPeriod } from "@/lib/firebase/hr";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {

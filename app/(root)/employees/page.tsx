@@ -1,10 +1,10 @@
 "use client";
 
 import EmployeeCard from "@/components/EmployeeCard";
-import { useCurrentUser } from "@/hooks/getCurrentUser";
-import { fetchAllEmployees } from "@/lib/appwrite/appwrite";
+import SkeletonEmployeesPage from "@/components/skeletons/SkeletonEmployeesPage";
+import { useEmployeesQuery } from "@/hooks/queries";
 import { useRouter } from "next/navigation";
-import React, { useEffect, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Search, Users, Filter } from "lucide-react";
 
 /* ===== Types & helpers ===== */
@@ -38,147 +38,129 @@ function toEmployee(doc: unknown): Employee | null {
   return { $id: id, name, designation, section };
 }
 
+// Fixed order
+const employeeOrder = [
+  "Ahmed Azmeen",
+  "Ahmed Ruzaan",
+  "Ibrahim Nuhan",
+  "Aminath Samaha",
+  "Aishath Samaha",
+  "Imran Shareef",
+  "Aminath Shazuly",
+  "Fazeel Ahmed",
+  "Hussain Sazeen",
+  "Mohamed Suhail",
+  "Aminath Shaliya",
+  "Fathimath Jazlee",
+  "Aminath Nuha",
+  "Hussain Nausam",
+  "Fathimath Zeyba",
+  "Fathimath Usaira",
+  "Mohamed Waheedh",
+  "Aishath Shaila",
+  "Azlifa Saleem",
+  "Aishath Shabaana",
+  "Aishath Naahidha",
+  "Aishath Simaana",
+  "Fazeela Naseer",
+  "Buruhan",
+  "Ubaidh",
+];
+
+function sortEmployeesByOrder(list: Employee[]): Employee[] {
+  const indexMap = employeeOrder.reduce<Record<string, number>>(
+    (acc, name, idx) => {
+      acc[name.toLowerCase()] = idx;
+      return acc;
+    },
+    {},
+  );
+
+  return [...list].sort((a, b) => {
+    const ia = indexMap[a.name.toLowerCase()] ?? employeeOrder.length;
+    const ib = indexMap[b.name.toLowerCase()] ?? employeeOrder.length;
+    return ia - ib;
+  });
+}
+
 /* ===== Page ===== */
 
 const EmployeesPage: React.FC = () => {
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
   const [selectedDesignation, setSelectedDesignation] = useState<string>("All");
   const [selectedSection, setSelectedSection] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
-  const { currentUser, loading: userLoading, isAdmin } = useCurrentUser();
+  const { data: rawEmployees, isLoading } = useEmployeesQuery();
   const router = useRouter();
 
-  // Fixed order
-  const employeeOrder = [
-    "Ahmed Azmeen",
-    "Ahmed Ruzaan",
-    "Ibrahim Nuhan",
-    "Aminath Samaha",
-    "Aishath Samaha",
-    "Imran Shareef",
-    "Aminath Shazuly",
-    "Fazeel Ahmed",
-    "Hussain Sazeen",
-    "Mohamed Suhail",
-    "Aminath Shaliya",
-    "Fathimath Jazlee",
-    "Aminath Nuha",
-    "Hussain Nausam",
-    "Fathimath Zeyba",
-    "Fathimath Usaira",
-    "Mohamed Waheedh",
-    "Aishath Shaila",
-    "Azlifa Saleem",
-    "Aishath Shabaana",
-    "Aishath Naahidha",
-    "Aishath Simaana",
-    "Fazeela Naseer",
-    "Buruhan",
-    "Ubaidh",
-  ];
+  const employees = useMemo(() => {
+    const normalized: Employee[] = (Array.isArray(rawEmployees) ? rawEmployees : [])
+      .map(toEmployee)
+      .filter((e): e is Employee => e !== null);
 
-  // Sort employees based on the desired order
-  function sortEmployeesByOrder(list: Employee[]): Employee[] {
-    const indexMap = employeeOrder.reduce<Record<string, number>>(
-      (acc, name, idx) => {
-        acc[name.toLowerCase()] = idx;
-        return acc;
-      },
-      {}
-    );
+    return sortEmployeesByOrder(normalized);
+  }, [rawEmployees]);
 
-    return [...list].sort((a, b) => {
-      const ia = indexMap[a.name.toLowerCase()] ?? employeeOrder.length;
-      const ib = indexMap[b.name.toLowerCase()] ?? employeeOrder.length;
-      return ia - ib;
-    });
-  }
+  const filteredEmployees = useMemo(() => {
+    let filtered = employees;
 
-  // Fetch all employees on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        setLoading(true);
-        const raw = await fetchAllEmployees();
-        const normalized: Employee[] = (Array.isArray(raw) ? raw : [])
-          .map(toEmployee)
-          .filter((e): e is Employee => e !== null);
+    if (selectedDesignation !== "All") {
+      filtered = filtered.filter((e) => e.designation === selectedDesignation);
+    }
+    if (selectedSection !== "All") {
+      filtered = filtered.filter((e) => e.section === selectedSection);
+    }
+    if (searchQuery.trim() !== "") {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (e) =>
+          e.name.toLowerCase().includes(query) ||
+          e.designation.toLowerCase().includes(query) ||
+          e.section.toLowerCase().includes(query),
+      );
+    }
 
-        const sorted = sortEmployeesByOrder(normalized);
-        setEmployees(sorted);
-        setFilteredEmployees(sorted);
-      } catch (err) {
-        console.error("Error fetching employees:", err);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+    return sortEmployeesByOrder(filtered);
+  }, [employees, selectedDesignation, selectedSection, searchQuery]);
 
   const handleCardClick = (employeeId: string) => {
     router.push(`/employees/${employeeId}`);
   };
 
-  const applyFilters = (
-    designation: string,
-    section: string,
-    search: string
-  ) => {
-    let filtered = employees;
-
-    if (designation !== "All") {
-      filtered = filtered.filter((e) => e.designation === designation);
-    }
-    if (section !== "All") {
-      filtered = filtered.filter((e) => e.section === section);
-    }
-    if (search.trim() !== "") {
-      const query = search.toLowerCase();
-      filtered = filtered.filter(
-        (e) =>
-          e.name.toLowerCase().includes(query) ||
-          e.designation.toLowerCase().includes(query) ||
-          e.section.toLowerCase().includes(query)
-      );
-    }
-
-    setFilteredEmployees(sortEmployeesByOrder(filtered));
-  };
-
   const handleDesignationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const designation = e.target.value;
-    setSelectedDesignation(designation);
-    applyFilters(designation, selectedSection, searchQuery);
+    setSelectedDesignation(e.target.value);
   };
 
   const handleSectionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const section = e.target.value;
-    setSelectedSection(section);
-    applyFilters(selectedDesignation, section, searchQuery);
+    setSelectedSection(e.target.value);
   };
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const search = e.target.value;
-    setSearchQuery(search);
-    applyFilters(selectedDesignation, selectedSection, search);
+    setSearchQuery(e.target.value);
   };
 
   const resetFilters = () => {
     setSelectedDesignation("All");
     setSelectedSection("All");
     setSearchQuery("");
-    setFilteredEmployees(sortEmployeesByOrder(employees));
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50">
+        <div className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
+          <SkeletonEmployeesPage />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50">
       <div className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
         {/* Header Section */}
         <div className="mb-12">
-          <div className="flex items-center gap-4 mb-4">
+          <div className="mb-4 flex items-center gap-4">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-lg">
               <Users className="h-7 w-7" />
             </div>
@@ -187,11 +169,9 @@ const EmployeesPage: React.FC = () => {
                 Employees
               </h1>
               <p className="mt-1 text-slate-600">
-                {loading
-                  ? "Loading..."
-                  : `${filteredEmployees.length} ${
-                      filteredEmployees.length === 1 ? "employee" : "employees"
-                    }`}
+                {`${filteredEmployees.length} ${
+                  filteredEmployees.length === 1 ? "employee" : "employees"
+                }`}
               </p>
             </div>
           </div>
@@ -292,7 +272,7 @@ const EmployeesPage: React.FC = () => {
               searchQuery !== "") && (
               <button
                 onClick={resetFilters}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition-all hover:bg-slate-50 hover:border-slate-300"
+                className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50"
               >
                 Reset Filters
               </button>
@@ -301,13 +281,7 @@ const EmployeesPage: React.FC = () => {
         </div>
 
         {/* Employee Grid */}
-        {loading ? (
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 9 }).map((_, i) => (
-              <SkeletonCard key={i} />
-            ))}
-          </div>
-        ) : filteredEmployees.length > 0 ? (
+        {filteredEmployees.length > 0 ? (
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
             {filteredEmployees.map((e) => (
               <EmployeeCard
@@ -321,7 +295,7 @@ const EmployeesPage: React.FC = () => {
             ))}
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 py-16 px-6">
+          <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 px-6 py-16">
             <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100">
               <Search className="h-8 w-8 text-slate-400" />
             </div>
@@ -345,24 +319,3 @@ const EmployeesPage: React.FC = () => {
 };
 
 export default EmployeesPage;
-
-const SkeletonCard: React.FC = () => (
-  <div className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-    <div className="animate-pulse">
-      <div className="mb-4 flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <div className="h-12 w-12 rounded-full bg-slate-200" />
-          <div className="space-y-2">
-            <div className="h-5 w-32 rounded bg-slate-200" />
-            <div className="h-4 w-24 rounded bg-slate-200" />
-          </div>
-        </div>
-        <div className="h-8 w-8 rounded-lg bg-slate-200" />
-      </div>
-      <div className="space-y-2">
-        <div className="h-4 w-full rounded bg-slate-200" />
-        <div className="h-4 w-3/4 rounded bg-slate-200" />
-      </div>
-    </div>
-  </div>
-);

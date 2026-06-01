@@ -2,7 +2,7 @@ import {
   createSalarySlipRecord,
   fetchEmployeeByRecordCardNumber,
   listSalarySlipsByRecordCard,
-} from "@/lib/appwrite/appwrite";
+} from "@/lib/firebase/hr";
 import {
   getPresignedDownloadUrl,
   getPresignedViewUrl,

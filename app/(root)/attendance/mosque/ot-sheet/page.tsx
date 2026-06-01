@@ -11,13 +11,7 @@ import {
   TableRow,
   TableCell,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { OtSheetControlsPanel } from "@/components/mosque/ot-sheet-controls-panel";
 
 type HHMM = { h: number | ""; m: number | "" };
 
@@ -697,6 +691,29 @@ export default function Page() {
     return groups;
   }, [rangeDates]);
 
+  const controlsRangeSubtitle = useMemo(() => {
+    if (!firstDate || !lastDate) return "";
+    return `${firstDate.day} ${ENGLISH_MONTHS[prevMonth0]} ${prevYear} → ${lastDate.day} ${ENGLISH_MONTHS[endMonth]} ${endYear}`;
+  }, [firstDate, lastDate, prevMonth0, prevYear, endMonth, endYear]);
+
+  const emptyDayOptions = useMemo(() => {
+    const dates =
+      sortedHolidayDates.length === 0 ? rangeDates : sortedHolidayDates;
+    return dates.map((d) => ({
+      value: d.iso,
+      label: englishDateLabel(d.year, d.month0, d.day),
+    }));
+  }, [sortedHolidayDates, rangeDates]);
+
+  const imamSelectOptions = useMemo(
+    () =>
+      (Object.keys(IMAM_INFO) as ImamOptionKey[]).map((key) => ({
+        value: key,
+        label: IMAM_LABEL[key],
+      })),
+    [],
+  );
+
   return (
     <div dir="rtl" className="min-h-dvh bg-white p-6 font-dh1">
       <style>{`
@@ -732,406 +749,51 @@ export default function Page() {
       `}</style>
 
       <div className="mx-auto w-full max-w-[1400px] overflow-auto">
-        {/* ===== Controls ===== */}
-        <div className="no-print mb-6">
-          <div className="relative overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-xl shadow-slate-900/5">
-            <div className="absolute inset-0 bg-gradient-to-br from-amber-50/40 via-transparent to-rose-50/40 pointer-events-none" />
-
-            <div className="relative p-6">
-              <div className="mb-6 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 shadow-lg shadow-amber-500/25">
-                    <svg
-                      className="h-6 w-6 text-white"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-900">
-                      OT ޝީޓް ކޮންޓްރޯލް
-                    </h3>
-                    <p className="text-sm text-slate-600">
-                      {`${firstDate.day} ${ENGLISH_MONTHS[prevMonth0]} ${prevYear} → ${lastDate.day} ${ENGLISH_MONTHS[endMonth]} ${endYear}`}
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={printOnePage}
-                  className="group relative inline-flex h-12 items-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-8 font-bold text-white shadow-lg shadow-slate-900/25 transition-all hover:-translate-y-0.5 hover:shadow-xl"
-                >
-                  <svg
-                    className="h-5 w-5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"
-                    />
-                  </svg>
-                  ޕްރިންޓް
-                </button>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
-                {/* Imam */}
-                <div>
-                  <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-600">
-                    އިމާމް
-                  </label>
-                  <Select
-                    value={imamKey}
-                    onValueChange={(v) => setImamKey(v as ImamOptionKey)}
-                  >
-                    <SelectTrigger className="h-11 w-full rounded-xl border-2 border-slate-200 bg-white px-4 text-sm font-semibold">
-                      <SelectValue placeholder="Select imam" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(Object.keys(IMAM_INFO) as ImamOptionKey[]).map((k) => (
-                        <SelectItem key={k} value={k}>
-                          {IMAM_LABEL[k]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* End Month */}
-                <div>
-                  <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-600">
-                    މަސް (10ވަނަ ދުވަހުން ނިމޭ)
-                  </label>
-                  <Select
-                    value={String(endMonth)}
-                    onValueChange={(v) => setEndMonth(Number(v))}
-                  >
-                    <SelectTrigger className="h-11 w-full rounded-xl border-2 border-slate-200 bg-white px-4 text-sm font-semibold">
-                      <SelectValue placeholder="Select end month" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {MONTHS.map((m) => (
-                        <SelectItem key={m.value} value={String(m.value)}>
-                          {m.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* End Year */}
-                <div>
-                  <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-600">
-                    އަހަރު
-                  </label>
-                  <input
-                    className="h-11 w-full rounded-xl border-2 border-slate-200 bg-white px-4 text-center text-sm font-bold"
-                    type="number"
-                    value={endYear}
-                    onChange={(e) =>
-                      setEndYear(Number(e.target.value || now.getFullYear()))
-                    }
-                  />
-                </div>
-
-                {/* OT minutes */}
-                <div>
-                  <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-600">
-                    OT (މިނަޓް)
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={480}
-                    step={1}
-                    value={otMinutes}
-                    onChange={(e) =>
-                      setOtMinutes(clampInt(Number(e.target.value), 0, 480))
-                    }
-                    className="h-11 w-full rounded-xl border-2 border-slate-200 bg-white px-4 text-center text-sm font-bold"
-                  />
-                </div>
-
-                {/* View Range */}
-                <div>
-                  <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-600">
-                    View
-                  </label>
-                  <select
-                    className="h-11 w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-4 text-sm font-semibold"
-                    value={viewSelect}
-                    onChange={(e) => setViewSelect(e.target.value as RangeKey)}
-                  >
-                    <option value="A">{ranges.A.label}</option>
-                    <option value="B">{ranges.B.label}</option>
-                    <option value="BOTH">{ranges.BOTH.label}</option>
-                  </select>
-                </div>
-
-                {/* Print Range */}
-                <div>
-                  <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-600">
-                    Print
-                  </label>
-                  <select
-                    className="h-11 w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-4 text-sm font-semibold"
-                    value={printSelect}
-                    onChange={(e) =>
-                      setPrintSelect(e.target.value as RangeKey)
-                    }
-                  >
-                    <option value="A">{ranges.A.label}</option>
-                    <option value="B">{ranges.B.label}</option>
-                    <option value="BOTH">{ranges.BOTH.label}</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Employee fields */}
-              <div className="mt-4 grid gap-4 md:grid-cols-3">
-                <div>
-                  <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-600">
-                    ނަން
-                  </label>
-                  <input
-                    className="h-11 w-full rounded-xl border-2 border-slate-200 bg-white px-4 text-sm font-semibold"
-                    value={empName}
-                    onChange={(e) => setEmpName(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-600">
-                    މަޤާމް
-                  </label>
-                  <input
-                    className="h-11 w-full rounded-xl border-2 border-slate-200 bg-white px-4 text-sm font-semibold"
-                    value={empPosition}
-                    onChange={(e) => setEmpPosition(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-600">
-                    އައިޑީ ނަންބަރު
-                  </label>
-                  <input
-                    className="h-11 w-full rounded-xl border-2 border-slate-200 bg-white px-4 text-sm font-semibold"
-                    value={empId}
-                    onChange={(e) => setEmpId(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {/* Holiday picker */}
-              <div className="mt-6 overflow-hidden rounded-2xl border-2 border-slate-200 bg-gradient-to-br from-slate-50 to-white">
-                <div className="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-3">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-600 text-white">
-                      <svg
-                        className="h-4 w-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                        />
-                      </svg>
-                    </div>
-                    <h4 className="text-sm font-bold text-slate-900">
-                      ބަންދު ދުވަސްތައް (Click to toggle)
-                    </h4>
-                    <span className="ml-2 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-800">
-                      {sortedHolidayDates.length} day
-                      {sortedHolidayDates.length === 1 ? "" : "s"}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setHolidayDates(new Set())}
-                    className="rounded-lg border-2 border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-red-300 hover:bg-red-50 hover:text-red-700"
-                  >
-                    Clear All
-                  </button>
-                </div>
-
-                <div className="space-y-4 p-4">
-                  {rangeByMonth.map((grp) => (
-                    <div key={`${grp.year}-${grp.month0}`}>
-                      <div className="mb-2 flex items-center gap-2">
-                        <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
-                          {ENGLISH_MONTHS[grp.month0]} {grp.year}
-                        </span>
-                        <span className="h-px flex-1 bg-slate-200" />
-                      </div>
-                      <div className="grid grid-cols-7 gap-2 sm:grid-cols-10 md:grid-cols-15 lg:grid-cols-15">
-                        {grp.items.map((d) => {
-                          const isHoliday = holidayDates.has(d.iso);
-                          const isWeekend =
-                            d.weekday === 5 || d.weekday === 6;
-                          return (
-                            <button
-                              key={d.iso}
-                              type="button"
-                              onClick={() => toggleHoliday(d.iso)}
-                              className={[
-                                "flex flex-col items-center justify-center rounded-lg border-2 px-1 py-1.5 text-xs font-bold transition-all",
-                                isHoliday
-                                  ? "border-amber-500 bg-amber-100 text-amber-900 shadow-sm"
-                                  : isWeekend
-                                    ? "border-slate-300 bg-slate-50 text-slate-600 hover:border-amber-300"
-                                    : "border-slate-200 bg-white text-slate-700 hover:border-amber-300",
-                              ].join(" ")}
-                              title={DHIVEHI_WEEKDAYS[d.weekday]}
-                            >
-                              <span className="text-sm">{d.day}</span>
-                              <span className="text-[10px] opacity-70">
-                                {DHIVEHI_WEEKDAYS[d.weekday]}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Empty rules */}
-              <div className="mt-6 overflow-hidden rounded-2xl border-2 border-slate-200 bg-gradient-to-br from-slate-50 to-white">
-                <div className="border-b border-slate-200 bg-white px-5 py-3">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-white">
-                      <svg
-                        className="h-4 w-4"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M6 18L18 6M6 6l12 12"
-                        />
-                      </svg>
-                    </div>
-                    <h4 className="text-sm font-bold text-slate-900">
-                      Exclude Prayers
-                    </h4>
-                    <span className="ml-auto rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-bold text-slate-700">
-                      {Object.keys(emptyRules).length} active
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-5">
-                  <div className="flex flex-wrap items-end gap-3">
-                    <div className="flex-1 min-w-[160px]">
-                      <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-600">
-                        Day
-                      </label>
-                      <select
-                        className="h-11 w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-4 text-sm font-semibold"
-                        value={emptyIso}
-                        onChange={(e) => setEmptyIso(e.target.value)}
-                      >
-                        {(sortedHolidayDates.length === 0
-                          ? rangeDates
-                          : sortedHolidayDates
-                        ).map((d) => (
-                          <option key={d.iso} value={d.iso}>
-                            {englishDateLabel(d.year, d.month0, d.day)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="flex-1 min-w-[140px]">
-                      <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-600">
-                        Prayer
-                      </label>
-                      <select
-                        className="h-11 w-full appearance-none rounded-xl border-2 border-slate-200 bg-white px-4 text-sm font-semibold"
-                        value={emptyPrayer}
-                        onChange={(e) =>
-                          setEmptyPrayer(e.target.value as PrayerSelect)
-                        }
-                      >
-                        <option value="ALL">All prayers</option>
-                        {GROUPS.map((g) => (
-                          <option key={g.key} value={g.key}>
-                            {g.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => addEmptyRule(emptyIso, emptyPrayer)}
-                      className="h-11 rounded-xl bg-slate-900 px-6 text-sm font-bold text-white shadow-lg hover:bg-slate-800"
-                    >
-                      Apply
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setEmptyRules({})}
-                      className="h-11 rounded-xl border-2 border-slate-200 bg-white px-6 text-sm font-bold text-slate-700 hover:border-red-300 hover:bg-red-50 hover:text-red-700"
-                    >
-                      Clear All
-                    </button>
-                  </div>
-
-                  {Object.keys(emptyRules).length > 0 ? (
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {Object.entries(emptyRules)
-                        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-                        .map(([iso, rules]) => {
-                          const keys = GROUPS.filter((g) => rules[g.key]).map(
-                            (g) => g.key,
-                          );
-                          const parts = iso.split("-");
-                          const label =
-                            keys.length === GROUPS.length
-                              ? `${parts[2]}/${parts[1]}: All`
-                              : `${parts[2]}/${parts[1]}: ${keys.map(groupLabel).join("، ")}`;
-                          return (
-                            <button
-                              key={iso}
-                              type="button"
-                              onClick={() => removeEmptyRule(iso, "ALL")}
-                              className="rounded-full border border-neutral-300 bg-white px-3 py-1 text-sm hover:bg-neutral-50"
-                              title="Remove"
-                            >
-                              {label} ✕
-                            </button>
-                          );
-                        })}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <OtSheetControlsPanel
+          rangeSubtitle={controlsRangeSubtitle}
+          endMonth={endMonth}
+          onEndMonthChange={setEndMonth}
+          months={MONTHS}
+          endYear={endYear}
+          onEndYearChange={(value) => setEndYear(value || now.getFullYear())}
+          otMinutes={otMinutes}
+          onOtMinutesChange={(value) => setOtMinutes(clampInt(value, 0, 480))}
+          viewSelect={viewSelect}
+          onViewSelectChange={setViewSelect}
+          printSelect={printSelect}
+          onPrintSelectChange={setPrintSelect}
+          ranges={ranges}
+          imamKey={imamKey}
+          onImamKeyChange={setImamKey}
+          imamOptions={imamSelectOptions}
+          empName={empName}
+          onEmpNameChange={setEmpName}
+          empPosition={empPosition}
+          onEmpPositionChange={setEmpPosition}
+          empId={empId}
+          onEmpIdChange={setEmpId}
+          holidayDates={holidayDates}
+          onToggleHoliday={toggleHoliday}
+          onClearHolidays={() => setHolidayDates(new Set())}
+          holidayCount={sortedHolidayDates.length}
+          rangeByMonth={rangeByMonth}
+          englishMonths={ENGLISH_MONTHS}
+          weekdayLabels={DHIVEHI_WEEKDAYS}
+          emptyIso={emptyIso}
+          onEmptyIsoChange={setEmptyIso}
+          dayOptions={emptyDayOptions}
+          emptyPrayer={emptyPrayer}
+          onEmptyPrayerChange={(value) =>
+            setEmptyPrayer(value as PrayerSelect)
+          }
+          prayerGroups={GROUPS}
+          emptyRules={emptyRules}
+          onApplyEmptyRule={() => addEmptyRule(emptyIso, emptyPrayer)}
+          onClearEmptyRules={() => setEmptyRules({})}
+          onRemoveEmptyRule={(iso) => removeEmptyRule(iso, "ALL")}
+          groupLabel={(key) => groupLabel(key as GroupKey)}
+          onPrint={printOnePage}
+        />
 
         {/* ===== Screen view (selected view range only) ===== */}
         <div id="view-area" className="bg-white">

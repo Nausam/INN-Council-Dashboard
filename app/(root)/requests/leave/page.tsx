@@ -2,31 +2,19 @@
 
 import React, { useEffect, useState } from "react";
 
-import {
-  createLeaveRequest,
-  fetchUserLeaveRequests,
-} from "@/lib/appwrite/appwrite";
+import { createLeaveRequest } from "@/lib/firebase/hr";
 
-import type { Models } from "node-appwrite";
-
+import type { LeaveRequest } from "@/lib/firebase/types";
 import LeaveRequestCard from "@/components/Leave/LeaveRequestCard";
 import LeaveRequestModal from "@/components/Modals/LeaveRequestModal";
 import Pagination from "@/components/shared/Pagination";
 import ShowDropdown from "@/components/shared/ShowDropdown";
 import SkeletonLeaveRequestCard from "@/components/skeletons/SkeletonLeaveRequestCard";
-import { getCurrentUser } from "@/lib/actions/user.actions";
-
-/** Document shape returned from your leave-requests collection */
-type LeaveRequest = Models.Document & {
-  fullName: string;
-  leaveType: string;
-  reason: string;
-  totalDays: number;
-  startDate: string; // ISO
-  endDate: string; // ISO
-  approvalStatus: "Approved" | "Rejected" | "Pending";
-  actionBy?: string;
-};
+import {
+  useQueryInvalidation,
+  useUserLeaveRequestsQuery,
+} from "@/hooks/queries";
+import { getAuthProfile } from "@/lib/actions/user.actions";
 
 /** Minimal shape you pass down to the modal (extend if you use more fields) */
 type CurrentUser = {
@@ -36,50 +24,39 @@ type CurrentUser = {
 } | null;
 
 const LeaveRequestPage: React.FC = () => {
-  const [allRequests, setAllRequests] = useState<LeaveRequest[]>([]);
   const [currentUser, setCurrentUser] = useState<CurrentUser>(null);
-  const [loading, setLoading] = useState<boolean>(true);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
 
-  // Pagination states
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [itemsPerPage, setItemsPerPage] = useState<number>(3);
-  const [totalRequests, setTotalRequests] = useState<number>(0);
 
-  const fetchRequests = async (page = 1): Promise<void> => {
-    setLoading(true);
-    const offset = (page - 1) * itemsPerPage;
+  const offset = (currentPage - 1) * itemsPerPage;
+  const { data, isLoading } = useUserLeaveRequestsQuery(
+    "",
+    itemsPerPage,
+    offset,
+  );
+  const { invalidateLeaveRequests } = useQueryInvalidation();
 
-    try {
-      const { requests, totalCount } = await fetchUserLeaveRequests(
-        "", // no status filter
-        itemsPerPage,
-        offset
-      );
-      // requests already typed in appwrite helper
-      setAllRequests(requests as LeaveRequest[]);
-      setTotalRequests(totalCount);
-    } catch (error) {
-      console.error("Error fetching data:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const allRequests = (data?.requests ?? []) as LeaveRequest[];
+  const totalRequests = data?.totalCount ?? 0;
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const user = await getCurrentUser();
-        setCurrentUser(user as CurrentUser);
+        const user = await getAuthProfile();
+        setCurrentUser(
+          user
+            ? { fullName: user.fullName, email: user.email, accountId: user.id }
+            : null,
+        );
       } catch (error) {
         console.error("Error fetching current user:", error);
       }
     };
 
-    fetchRequests(currentPage);
     fetchData();
-    // re-run when page or page size changes
-  }, [currentPage, itemsPerPage]);
+  }, []);
 
   const handleFormSubmit = async (formData: {
     fullName: string;
@@ -99,12 +76,9 @@ const LeaveRequestPage: React.FC = () => {
         endDate: formData.endDate,
       });
       setIsModalOpen(false);
-      setLoading(true);
-      await fetchRequests(currentPage);
+      await invalidateLeaveRequests();
     } catch {
       alert("Failed to submit leave request. Please try again.");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -141,7 +115,7 @@ const LeaveRequestPage: React.FC = () => {
 
       {/* List / skeletons */}
       <div className="max-w-7xl mx-auto p-4 mt-10">
-        {loading ? (
+        {isLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {Array.from({ length: 3 }).map((_, index) => (
               <SkeletonLeaveRequestCard key={index} />
@@ -157,7 +131,12 @@ const LeaveRequestPage: React.FC = () => {
                 totalDays={request.totalDays}
                 startDate={request.startDate}
                 endDate={request.endDate}
-                status={request.approvalStatus}
+                status={
+                  request.approvalStatus as
+                    | "Approved"
+                    | "Rejected"
+                    | "Pending"
+                }
               />
             ))}
           </div>

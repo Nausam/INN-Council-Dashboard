@@ -1,0 +1,65 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "employees",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "recordCardNumber", "order": "ASCENDING" }]
+    },
+    {
+      "collectionGroup": "salary_slips",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "recordCardNumber", "order": "ASCENDING" },
+        { "fieldPath": "periodLabel", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "salary_slips",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "periodLabel", "order": "ASCENDING" }]
+    },
+    {
+      "collectionGroup": "attendance",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "date", "order": "ASCENDING" }]
+    },
+    {
+      "collectionGroup": "correspondence",
+      "queryScope": "COLLECTION",
+      "fields": [{ "fieldPath": "referenceNumber", "order": "ASCENDING" }]
+    },
+    {
+      "collectionGroup": "punch_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "deviceUserId", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "mosque_attendance",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "employeeId", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "invoices",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "serviceType", "order": "ASCENDING" },
+        { "fieldPath": "invoiceNo", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "land_statements",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "leaseId", "order": "ASCENDING" },
+        { "fieldPath": "monthKey", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

@@ -10,7 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
-import { iulaanService } from "@/lib/appwrite/app/iulaan.actions";
+import { iulaanService } from "@/lib/council/iulaan.actions";
 import {
   AlertCircle,
   FileText,

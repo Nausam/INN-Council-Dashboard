@@ -1,6 +1,13 @@
 export interface MosqueAttendanceRecord {
   $id: string;
-  employeeId: { name: string; $id: string; section: string };
+  employeeId:
+    | string
+    | {
+        name: string;
+        $id: string;
+        section?: string;
+        designation?: string;
+      };
   fathisSignInTime: string | null;
   mendhuruSignInTime: string | null;
   asuruSignInTime: string | null;
@@ -14,7 +21,7 @@ export interface MosqueAttendanceRecord {
   previousLeaveType: string | null;
   leaveDeducted: boolean;
   leaveType: string | null;
-  changed: boolean;
+  changed?: boolean;
 }
 
 export interface MosqueAttendanceTableProps {

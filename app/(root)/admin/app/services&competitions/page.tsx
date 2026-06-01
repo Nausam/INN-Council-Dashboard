@@ -3,7 +3,7 @@
 import DirectoryItemForm, {
   DirectoryItemFormValues,
 } from "@/components/council-app/DirectoryItemForm";
-import { servicesCompetitionsService } from "@/lib/appwrite/app/services.actions";
+import { servicesCompetitionsService } from "@/lib/council/services.actions";
 import { useRouter } from "next/navigation";
 
 const ServicesCompetitions = () => {

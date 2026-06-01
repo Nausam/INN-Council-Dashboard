@@ -7,6 +7,13 @@ const config: Config = {
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./lib/**/*.{js,ts}",
+  ],
+  safelist: [
+    {
+      pattern:
+        /^(from|to|bg|text|ring)-(rose|orange|amber|teal|green|cyan|purple|violet|blue|emerald|slate)-(50|100|200|300|400|500|600|700)$/,
+    },
   ],
   theme: {
     extend: {
@@ -18,6 +25,14 @@ const config: Config = {
       colors: {
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
+        council: {
+          DEFAULT: "hsl(var(--council-primary))",
+          foreground: "hsl(var(--council-primary-foreground))",
+          light: "hsl(var(--council-primary-light))",
+          ring: "hsl(var(--council-ring))",
+          muted: "hsl(var(--council-muted))",
+          surface: "hsl(var(--council-surface))",
+        },
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
@@ -71,6 +86,12 @@ const config: Config = {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+        card: "var(--radius-card)",
+        control: "var(--radius-control)",
+      },
+      boxShadow: {
+        card: "var(--shadow-card)",
+        "card-hover": "var(--shadow-card-hover)",
       },
     },
   },

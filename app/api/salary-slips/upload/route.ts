@@ -1,7 +1,7 @@
 import {
   createSalarySlipRecord,
   fetchEmployeeByRecordCardNumber,
-} from "@/lib/appwrite/appwrite";
+} from "@/lib/firebase/hr";
 import { uploadToR2 } from "@/lib/r2";
 import { NextRequest, NextResponse } from "next/server";
 

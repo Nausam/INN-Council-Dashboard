@@ -3,14 +3,17 @@
 
 import { unstable_noStore as noStore } from "next/cache";
 
-import {
-  BILLING,
-  CUSTOMERS,
-  createBillingAdmin,
-  createCustomersAdmin,
-} from "@/lib/appwrite/server";
+import { COLLECTIONS } from "@/lib/firebase/admin";
 import type { WasteFrequency } from "@/lib/billing/waste.types";
-import { ID, Query } from "node-appwrite";
+import {
+  createDocument,
+  getDocument,
+  listAllDocuments,
+  listDocuments,
+  type ListQueryOptions,
+  type WhereClause,
+  updateDocument,
+} from "@/lib/firebase/repository";
 
 export type WasteInvoiceStatus =
   | "ISSUED"
@@ -19,6 +22,8 @@ export type WasteInvoiceStatus =
   | "PAID"
   | "WAIVED"
   | "CANCELLED";
+
+const UNPAID_INVOICE_STATUSES = ["ISSUED", "OVERDUE", "PARTIALLY_PAID"];
 
 function ymNow() {
   const d = new Date();
@@ -67,14 +72,54 @@ function isDueByFrequency(params: {
   return true;
 }
 
+async function fetchDocumentsByIds<T extends { $id: string }>(
+  collectionPath: string,
+  ids: string[],
+): Promise<T[]> {
+  const unique = Array.from(new Set(ids.filter(Boolean)));
+  if (!unique.length) return [];
+
+  const docs: T[] = [];
+  for (const id of unique) {
+    try {
+      docs.push(await getDocument<T>(collectionPath, id));
+    } catch {
+      // skip missing documents
+    }
+  }
+  return docs;
+}
+
+async function listByFieldIn<T extends { $id: string }>(
+  collectionPath: string,
+  field: string,
+  values: string[],
+  options: Omit<ListQueryOptions, "where"> & { where?: WhereClause[] } = {},
+): Promise<T[]> {
+  const results: T[] = [];
+  const chunkSize = 30;
+
+  for (let i = 0; i < values.length; i += chunkSize) {
+    const chunk = values.slice(i, i + chunkSize);
+    if (!chunk.length) continue;
+
+    const res = await listDocuments<T>(collectionPath, {
+      ...options,
+      where: [...(options.where ?? []), [field, "in", chunk]],
+    });
+    results.push(...res.documents);
+  }
+
+  return results;
+}
+
 async function audit(
   action: string,
   entityType: string,
   entityId: string,
-  meta: unknown
+  meta: unknown,
 ) {
-  const { db } = createBillingAdmin();
-  await db.createDocument(BILLING.dbId, BILLING.colAudit, ID.unique(), {
+  await createDocument(COLLECTIONS.auditLogs, {
     actorUserId: "system",
     action,
     entityType,
@@ -85,16 +130,15 @@ async function audit(
 }
 
 async function nextInvoiceNo(year: number) {
-  const { db } = createBillingAdmin();
   const key = `WASTE-${year}`;
 
-  const existing = await db.listDocuments(BILLING.dbId, BILLING.colCounters, [
-    Query.equal("key", key),
-    Query.limit(1),
-  ]);
+  const existing = await listDocuments(COLLECTIONS.counters, {
+    where: [["key", "==", key]],
+    limit: 1,
+  });
 
   if (existing.total === 0) {
-    await db.createDocument(BILLING.dbId, BILLING.colCounters, ID.unique(), {
+    await createDocument(COLLECTIONS.counters, {
       key,
       nextNumber: 2,
     });
@@ -104,22 +148,25 @@ async function nextInvoiceNo(year: number) {
   const doc = existing.documents[0] as any;
   const n = Number(doc.nextNumber ?? 1);
 
-  await db.updateDocument(BILLING.dbId, BILLING.colCounters, doc.$id, {
+  await updateDocument(COLLECTIONS.counters, doc.$id, {
     nextNumber: n + 1,
   });
 
   return `WM-${year}-${String(n).padStart(6, "0")}`;
 }
 
-async function getLastWasteInvoiceSeq(db: any, year: string) {
+async function getLastWasteInvoiceSeq(year: string) {
   const prefix = `WM-${year}-`;
 
-  const r = await db.listDocuments(BILLING.dbId, BILLING.colInvoices, [
-    Query.equal("serviceType", "WASTE"),
-    Query.startsWith("invoiceNo", prefix),
-    Query.orderDesc("invoiceNo"),
-    Query.limit(1),
-  ]);
+  const r = await listDocuments(COLLECTIONS.invoices, {
+    where: [
+      ["serviceType", "==", "WASTE"],
+      ["invoiceNo", ">=", prefix],
+      ["invoiceNo", "<", `${prefix}\uf8ff`],
+    ],
+    orderBy: [{ field: "invoiceNo", direction: "desc" }],
+    limit: 1,
+  });
 
   const last = (r.documents?.[0] as any)?.invoiceNo as string | undefined;
   if (!last || !last.startsWith(prefix)) return 0;
@@ -139,28 +186,24 @@ export async function listWasteCustomersWithSubs(limit?: any) {
     typeof limit === "number"
       ? limit
       : typeof limit === "string"
-      ? parseInt(limit, 10)
-      : NaN;
+        ? parseInt(limit, 10)
+        : NaN;
 
   const safeLimit = Number.isFinite(parsed)
     ? Math.min(5000, Math.max(1, Math.floor(parsed)))
     : 5000;
 
-  const { db } = createBillingAdmin();
-  const { db: customersDb } = createCustomersAdmin();
-
-  const customersRes = await customersDb.listDocuments(
-    CUSTOMERS.dbId,
-    CUSTOMERS.colWasteCustomers,
-    [Query.limit(safeLimit), Query.orderAsc("fullName")]
-  );
+  const customersRes = await listDocuments(COLLECTIONS.wasteCustomers, {
+    orderBy: [{ field: "fullName", direction: "asc" }],
+    limit: safeLimit,
+  });
 
   const customers = customersRes.documents as any[];
 
-  const subsRes = await db.listDocuments(BILLING.dbId, BILLING.colWasteSubs, [
-    Query.equal("status", "ACTIVE"),
-    Query.limit(5000),
-  ]);
+  const subsRes = await listDocuments(COLLECTIONS.wasteSubscriptions, {
+    where: [["status", "==", "ACTIVE"]],
+    limit: 5000,
+  });
 
   const subs = subsRes.documents as any[];
   const subByCustomerId = new Map<string, any>();
@@ -206,18 +249,16 @@ export async function upsertWasteSubscription(input: {
   startMonth?: string;
   endMonth?: string; // optional from UI later
 }) {
-  const { db } = createBillingAdmin();
-
   const startMonth = input.startMonth ?? ymNow();
 
   // If your Appwrite schema requires endMonth, this makes it valid.
   // If endMonth is optional, this is still fine.
   const endMonth = input.endMonth?.trim() || "9999-12";
 
-  const existing = await db.listDocuments(BILLING.dbId, BILLING.colWasteSubs, [
-    Query.equal("customerId", input.customerId),
-    Query.limit(1),
-  ]);
+  const existing = await listDocuments(COLLECTIONS.wasteSubscriptions, {
+    where: [["customerId", "==", input.customerId]],
+    limit: 1,
+  });
 
   const payload = {
     customerId: input.customerId,
@@ -229,28 +270,22 @@ export async function upsertWasteSubscription(input: {
   };
 
   if (existing.total === 0) {
-    const created = await db.createDocument(
-      BILLING.dbId,
-      BILLING.colWasteSubs,
-      ID.unique(),
-      payload
+    const created = await createDocument(
+      COLLECTIONS.wasteSubscriptions,
+      payload,
     );
     await audit(
       "WASTE_SUB_CREATED",
       "waste_subscription",
       created.$id,
-      payload
+      payload,
     );
     return created;
   }
 
   const sub = existing.documents[0] as any;
-  const updated = await db.updateDocument(
-    BILLING.dbId,
-    BILLING.colWasteSubs,
-    sub.$id,
-    payload
-  );
+  await updateDocument(COLLECTIONS.wasteSubscriptions, sub.$id, payload);
+  const updated = await getDocument(COLLECTIONS.wasteSubscriptions, sub.$id);
   await audit("WASTE_SUB_UPDATED", "waste_subscription", updated.$id, payload);
   return updated;
 }
@@ -269,22 +304,15 @@ export async function generateWasteInvoicesForMonth(params: {
 
   const dueInDays = Math.max(0, Math.round(params.dueInDays ?? 10));
 
-  const { db } = createBillingAdmin();
-  const { db: customersDb } = createCustomersAdmin();
-
   // 1) Load active subscriptions (optionally for one customer)
-  const subQueries: any[] = [
-    Query.equal("status", "ACTIVE"),
-    Query.limit(5000),
-  ];
+  const subWhere: WhereClause[] = [["status", "==", "ACTIVE"]];
   if (params.customerId)
-    subQueries.push(Query.equal("customerId", params.customerId));
+    subWhere.push(["customerId", "==", params.customerId]);
 
-  const subsRes = await db.listDocuments(
-    BILLING.dbId,
-    BILLING.colWasteSubs,
-    subQueries
-  );
+  const subsRes = await listDocuments(COLLECTIONS.wasteSubscriptions, {
+    where: subWhere,
+    limit: 5000,
+  });
   const subs = subsRes.documents as any[];
 
   if (subs.length === 0) {
@@ -297,24 +325,17 @@ export async function generateWasteInvoicesForMonth(params: {
 
   // 2) Batch fetch customers
   const customerIds = Array.from(
-    new Set(subs.map((s) => String(s.customerId)).filter(Boolean))
+    new Set(subs.map((s) => String(s.customerId)).filter(Boolean)),
   );
 
   const customerById = new Map<string, any>();
   if (customerIds.length) {
-    const chunkSize = 100;
-    for (let i = 0; i < customerIds.length; i += chunkSize) {
-      const chunk = customerIds.slice(i, i + chunkSize);
-
-      const cRes = await customersDb.listDocuments(
-        CUSTOMERS.dbId,
-        CUSTOMERS.colWasteCustomers,
-        [Query.equal("$id", chunk), Query.limit(100)]
-      );
-
-      for (const c of cRes.documents as any[]) {
-        customerById.set(String(c.$id), c);
-      }
+    const customers = await fetchDocumentsByIds<any>(
+      COLLECTIONS.wasteCustomers,
+      customerIds,
+    );
+    for (const c of customers) {
+      customerById.set(String(c.$id), c);
     }
   }
 
@@ -323,7 +344,7 @@ export async function generateWasteInvoicesForMonth(params: {
 
   // ✅ invoice numbering: WM-YYYY-000001
   const year = periodMonth.slice(0, 4);
-  let seq = (await getLastWasteInvoiceSeq(db, year)) + 1;
+  let seq = (await getLastWasteInvoiceSeq(year)) + 1;
 
   // 3) For each subscription, decide if it should generate
   for (const sub of subs) {
@@ -361,12 +382,14 @@ export async function generateWasteInvoicesForMonth(params: {
     }
 
     // Rule 3: must not already exist
-    const exists = await db.listDocuments(BILLING.dbId, BILLING.colInvoices, [
-      Query.equal("serviceType", "WASTE"),
-      Query.equal("customerId", customerId),
-      Query.equal("periodMonth", periodMonth),
-      Query.limit(1),
-    ]);
+    const exists = await listDocuments(COLLECTIONS.invoices, {
+      where: [
+        ["serviceType", "==", "WASTE"],
+        ["customerId", "==", customerId],
+        ["periodMonth", "==", periodMonth],
+      ],
+      limit: 1,
+    });
 
     if (exists.total > 0) {
       skippedCount++;
@@ -376,7 +399,7 @@ export async function generateWasteInvoicesForMonth(params: {
     // Create invoice
     const issueDate = new Date().toISOString();
     const dueDate = new Date(
-      Date.now() + dueInDays * 24 * 60 * 60 * 1000
+      Date.now() + dueInDays * 24 * 60 * 60 * 1000,
     ).toISOString();
 
     const fee = Math.max(0, Math.round(Number(sub.feeMvr ?? 0)));
@@ -407,25 +430,15 @@ export async function generateWasteInvoicesForMonth(params: {
       status: "ISSUED",
     };
 
-    const inv = await db.createDocument(
-      BILLING.dbId,
-      BILLING.colInvoices,
-      ID.unique(),
-      invoicePayload
-    );
+    const inv = await createDocument(COLLECTIONS.invoices, invoicePayload);
 
-    await db.createDocument(
-      BILLING.dbId,
-      BILLING.colInvoiceItems,
-      ID.unique(),
-      {
-        invoiceId: inv.$id,
-        label: `Waste Management Fee (${periodMonth})`,
-        qty: 1,
-        unitMvr: fee,
-        lineTotalMvr: fee,
-      }
-    );
+    await createDocument(COLLECTIONS.invoiceItems, {
+      invoiceId: inv.$id,
+      label: `Waste Management Fee (${periodMonth})`,
+      qty: 1,
+      unitMvr: fee,
+      lineTotalMvr: fee,
+    });
 
     // ✅ increment only after successful create
     seq++;
@@ -450,44 +463,34 @@ export async function listWasteInvoices(params?: {
 }) {
   noStore();
 
-  const { db } = createBillingAdmin();
   const limit = Math.min(200, Math.max(1, params?.limit ?? 200));
 
-  const queries: any[] = [
-    Query.equal("serviceType", "WASTE"),
-    Query.orderDesc("issueDate"),
-    Query.limit(limit),
-  ];
+  const where: WhereClause[] = [["serviceType", "==", "WASTE"]];
 
   if (params?.periodMonth)
-    queries.push(Query.equal("periodMonth", params.periodMonth));
-  if (params?.status) queries.push(Query.equal("status", params.status));
+    where.push(["periodMonth", "==", params.periodMonth]);
+  if (params?.status) where.push(["status", "==", params.status]);
   if (params?.customerId)
-    queries.push(Query.equal("customerId", params.customerId));
+    where.push(["customerId", "==", params.customerId]);
 
-  const res = await db.listDocuments(
-    BILLING.dbId,
-    BILLING.colInvoices,
-    queries
-  );
+  const res = await listDocuments(COLLECTIONS.invoices, {
+    where,
+    orderBy: [{ field: "issueDate", direction: "desc" }],
+    limit,
+  });
   return res.documents as any[];
 }
 
 export async function getWasteInvoiceWithItems(invoiceId: string) {
   noStore();
-  const { db } = createBillingAdmin();
 
-  const invoice = await db.getDocument(
-    BILLING.dbId,
-    BILLING.colInvoices,
-    invoiceId
-  );
+  const invoice = await getDocument(COLLECTIONS.invoices, invoiceId);
 
-  const items = await db.listDocuments(BILLING.dbId, BILLING.colInvoiceItems, [
-    Query.equal("invoiceId", invoiceId),
-    Query.orderAsc("label"),
-    Query.limit(200),
-  ]);
+  const items = await listDocuments(COLLECTIONS.invoiceItems, {
+    where: [["invoiceId", "==", invoiceId]],
+    orderBy: [{ field: "label", direction: "asc" }],
+    limit: 200,
+  });
 
   return { invoice, items: items.documents };
 }
@@ -496,20 +499,19 @@ export async function getWasteInvoiceSummary(params?: {
   periodMonth?: string;
 }) {
   noStore();
-  const { db } = createBillingAdmin();
 
-  const base = [Query.equal("serviceType", "WASTE"), Query.limit(5000)];
+  const where: WhereClause[] = [["serviceType", "==", "WASTE"]];
   if (params?.periodMonth)
-    base.push(Query.equal("periodMonth", params.periodMonth));
+    where.push(["periodMonth", "==", params.periodMonth]);
 
-  const res = await db.listDocuments(BILLING.dbId, BILLING.colInvoices, base);
+  const res = await listAllDocuments(COLLECTIONS.invoices, { where });
 
   let total = 0;
   let totalAmount = 0;
   let totalPaid = 0;
   let totalBalance = 0;
 
-  for (const d of res.documents as any[]) {
+  for (const d of res as any[]) {
     total++;
     totalAmount += Number(d.totalMvr ?? 0);
     totalPaid += Number(d.paidMvr ?? 0);
@@ -522,28 +524,25 @@ export async function getWasteInvoiceSummary(params?: {
 export async function markWasteInvoicesOverdue(params?: { asOf?: string }) {
   noStore();
 
-  const { db } = createBillingAdmin();
-
   const asOfIso = params?.asOf?.trim() || new Date().toISOString();
   const asOfDate = new Date(asOfIso);
 
-  const res = await db.listDocuments(BILLING.dbId, BILLING.colInvoices, [
-    Query.equal("serviceType", "WASTE"),
-    Query.notEqual("status", "PAID"),
-    Query.notEqual("status", "CANCELLED"),
-    Query.notEqual("status", "WAIVED"),
-    Query.limit(5000),
-  ]);
+  const res = await listAllDocuments(COLLECTIONS.invoices, {
+    where: [
+      ["serviceType", "==", "WASTE"],
+      ["status", "in", UNPAID_INVOICE_STATUSES],
+    ],
+  });
 
   let updated = 0;
 
-  for (const inv of res.documents as any[]) {
+  for (const inv of res as any[]) {
     const due = new Date(inv.dueDate);
     const balance = Number(inv.balanceMvr ?? 0);
 
     if (balance > 0 && due.getTime() < asOfDate.getTime()) {
       if (inv.status !== "OVERDUE") {
-        await db.updateDocument(BILLING.dbId, BILLING.colInvoices, inv.$id, {
+        await updateDocument(COLLECTIONS.invoices, inv.$id, {
           status: "OVERDUE",
         });
         updated++;
@@ -564,13 +563,11 @@ export async function listWasteCustomersLight(params?: { limit?: number }) {
   noStore();
 
   const limit = Math.min(500, Math.max(1, params?.limit ?? 500));
-  const { db: customersDb } = createCustomersAdmin();
 
-  const res = await customersDb.listDocuments(
-    CUSTOMERS.dbId,
-    CUSTOMERS.colWasteCustomers,
-    [Query.limit(limit), Query.orderAsc("fullName")]
-  );
+  const res = await listDocuments(COLLECTIONS.wasteCustomers, {
+    orderBy: [{ field: "fullName", direction: "asc" }],
+    limit,
+  });
 
   return res.documents as any[];
 }
@@ -578,25 +575,21 @@ export async function listWasteCustomersLight(params?: { limit?: number }) {
 export async function listCustomerUnpaidWasteInvoices(customerId: string) {
   noStore();
 
-  const { db } = createBillingAdmin();
-
-  const res = await db.listDocuments(BILLING.dbId, BILLING.colInvoices, [
-    Query.equal("serviceType", "WASTE"),
-    Query.equal("customerId", customerId),
-
-    Query.notEqual("status", "PAID"),
-    Query.notEqual("status", "CANCELLED"),
-    Query.notEqual("status", "WAIVED"),
-
-    Query.orderAsc("issueDate"),
-    Query.limit(200),
-  ]);
+  const res = await listDocuments(COLLECTIONS.invoices, {
+    where: [
+      ["serviceType", "==", "WASTE"],
+      ["customerId", "==", customerId],
+      ["status", "in", UNPAID_INVOICE_STATUSES],
+    ],
+    orderBy: [{ field: "issueDate", direction: "asc" }],
+    limit: 200,
+  });
 
   const invoices = res.documents as any[];
 
   const totalBalance = invoices.reduce(
     (sum, i) => sum + Number(i.balanceMvr ?? 0),
-    0
+    0,
   );
 
   return { invoices, totalBalance };
@@ -614,41 +607,32 @@ export async function recordWastePayment(params: {
 }) {
   noStore();
 
-  const { db } = createBillingAdmin();
-
   const amount = Math.max(0, Math.round(params.amountMvr));
   if (amount <= 0) throw new Error("Amount must be greater than 0");
 
   // 1) Create payment row
-  const payment = await db.createDocument(
-    BILLING.dbId,
-    BILLING.colPayments,
-    ID.unique(),
-    {
-      customerId: params.customerId,
-      receivedAt: new Date().toISOString(),
-      amountMvr: amount,
-      method: params.method,
-      reference: params.reference?.trim() || "",
+  const payment = await createDocument(COLLECTIONS.payments, {
+    customerId: params.customerId,
+    receivedAt: new Date().toISOString(),
+    amountMvr: amount,
+    method: params.method,
+    reference: params.reference?.trim() || "",
 
-      // If your table column is required, keep a non-empty string.
-      receivedByUserId: params.receivedByUserId?.trim() || "system",
-      notes: params.notes?.trim() || "",
-    }
-  );
+    // If your table column is required, keep a non-empty string.
+    receivedByUserId: params.receivedByUserId?.trim() || "system",
+    notes: params.notes?.trim() || "",
+  });
 
   // 2) Get unpaid invoices (oldest first)
-  const unpaid = await db.listDocuments(BILLING.dbId, BILLING.colInvoices, [
-    Query.equal("serviceType", "WASTE"),
-    Query.equal("customerId", params.customerId),
-
-    Query.notEqual("status", "PAID"),
-    Query.notEqual("status", "CANCELLED"),
-    Query.notEqual("status", "WAIVED"),
-
-    Query.orderAsc("issueDate"),
-    Query.limit(200),
-  ]);
+  const unpaid = await listDocuments(COLLECTIONS.invoices, {
+    where: [
+      ["serviceType", "==", "WASTE"],
+      ["customerId", "==", params.customerId],
+      ["status", "in", UNPAID_INVOICE_STATUSES],
+    ],
+    orderBy: [{ field: "issueDate", direction: "asc" }],
+    limit: 200,
+  });
 
   let remaining = amount;
   const allocations: { invoiceId: string; allocatedMvr: number }[] = [];
@@ -667,16 +651,15 @@ export async function recordWastePayment(params: {
 
   // 4) Write allocations + update invoices
   for (const a of allocations) {
-    await db.createDocument(BILLING.dbId, BILLING.colAllocations, ID.unique(), {
+    await createDocument(COLLECTIONS.paymentAllocations, {
       paymentId: payment.$id,
       invoiceId: a.invoiceId,
       allocatedMvr: a.allocatedMvr,
     });
 
-    const inv = (await db.getDocument(
-      BILLING.dbId,
-      BILLING.colInvoices,
-      a.invoiceId
+    const inv = (await getDocument(
+      COLLECTIONS.invoices,
+      a.invoiceId,
     )) as any;
 
     const paid = Number(inv.paidMvr ?? 0) + a.allocatedMvr;
@@ -687,10 +670,10 @@ export async function recordWastePayment(params: {
       balance === 0
         ? "PAID"
         : paid > 0
-        ? "PARTIALLY_PAID"
-        : (inv.status as string);
+          ? "PARTIALLY_PAID"
+          : (inv.status as string);
 
-    await db.updateDocument(BILLING.dbId, BILLING.colInvoices, a.invoiceId, {
+    await updateDocument(COLLECTIONS.invoices, a.invoiceId, {
       paidMvr: paid,
       balanceMvr: balance,
       status: nextStatus,
@@ -717,44 +700,27 @@ export async function recordWastePayment(params: {
 export async function getWastePaymentReceipt(paymentId: string) {
   noStore();
 
-  const { db } = createBillingAdmin();
+  const payment = await getDocument(COLLECTIONS.payments, paymentId);
 
-  const payment = await db.getDocument(
-    BILLING.dbId,
-    BILLING.colPayments,
-    paymentId
-  );
-
-  const allocRes = await db.listDocuments(
-    BILLING.dbId,
-    BILLING.colAllocations,
-    [
-      Query.equal("paymentId", paymentId),
-      Query.orderAsc("$createdAt"),
-      Query.limit(500),
-    ]
-  );
+  const allocRes = await listDocuments(COLLECTIONS.paymentAllocations, {
+    where: [["paymentId", "==", paymentId]],
+    orderBy: [{ field: "$createdAt", direction: "asc" }],
+    limit: 500,
+  });
 
   const allocations = allocRes.documents as any[];
 
   const invoiceIds = Array.from(
-    new Set(allocations.map((a) => String(a.invoiceId)).filter(Boolean))
+    new Set(allocations.map((a) => String(a.invoiceId)).filter(Boolean)),
   );
 
   const invoiceById = new Map<string, any>();
-  const chunkSize = 100;
-
-  for (let i = 0; i < invoiceIds.length; i += chunkSize) {
-    const chunk = invoiceIds.slice(i, i + chunkSize);
-
-    const invRes = await db.listDocuments(BILLING.dbId, BILLING.colInvoices, [
-      Query.equal("$id", chunk),
-      Query.limit(100),
-    ]);
-
-    for (const inv of invRes.documents as any[]) {
-      invoiceById.set(String(inv.$id), inv);
-    }
+  const invoices = await fetchDocumentsByIds<any>(
+    COLLECTIONS.invoices,
+    invoiceIds,
+  );
+  for (const inv of invoices) {
+    invoiceById.set(String(inv.$id), inv);
   }
 
   const enriched = allocations.map((a) => {
@@ -777,9 +743,6 @@ export async function listWastePayments(params?: {
 }) {
   noStore();
 
-  const { db } = createBillingAdmin();
-  const { db: customersDb } = createCustomersAdmin();
-
   const limit = Math.min(200, Math.max(1, params?.limit ?? 200));
   const month = (params?.month || ymNow()).trim();
   const method = params?.method || "ALL";
@@ -790,63 +753,48 @@ export async function listWastePayments(params?: {
   const start = new Date(Date.UTC(yy, (mm || 1) - 1, 1, 0, 0, 0));
   const end = new Date(Date.UTC(yy, mm || 1, 1, 0, 0, 0)); // next month
 
-  const queries = [
-    Query.greaterThanEqual("receivedAt", start.toISOString()),
-    Query.lessThan("receivedAt", end.toISOString()),
-    Query.orderDesc("receivedAt"),
-    Query.limit(limit),
+  const where: WhereClause[] = [
+    ["receivedAt", ">=", start.toISOString()],
+    ["receivedAt", "<", end.toISOString()],
   ];
 
-  if (method !== "ALL") queries.push(Query.equal("method", method));
+  if (method !== "ALL") where.push(["method", "==", method]);
 
-  const payRes = await db.listDocuments(
-    BILLING.dbId,
-    BILLING.colPayments,
-    queries
-  );
+  const payRes = await listDocuments(COLLECTIONS.payments, {
+    where,
+    orderBy: [{ field: "receivedAt", direction: "desc" }],
+    limit,
+  });
   const payments = payRes.documents as any[];
 
   const paymentIds = payments.map((p) => String(p.$id));
   const customerIds = Array.from(
-    new Set(payments.map((p) => String(p.customerId)).filter(Boolean))
+    new Set(payments.map((p) => String(p.customerId)).filter(Boolean)),
   );
 
   // allocations totals (chunked)
   const allocatedByPaymentId = new Map<string, number>();
-  const chunkSize = 100;
 
-  for (let i = 0; i < paymentIds.length; i += chunkSize) {
-    const chunk = paymentIds.slice(i, i + chunkSize);
-    if (chunk.length === 0) continue;
+  const allocs = await listByFieldIn<any>(
+    COLLECTIONS.paymentAllocations,
+    "paymentId",
+    paymentIds,
+  );
 
-    const allocRes = await db.listDocuments(
-      BILLING.dbId,
-      BILLING.colAllocations,
-      [Query.equal("paymentId", chunk), Query.limit(5000)]
-    );
-
-    for (const a of allocRes.documents as any[]) {
-      const pid = String(a.paymentId);
-      const amt = Number(a.allocatedMvr ?? 0);
-      allocatedByPaymentId.set(pid, (allocatedByPaymentId.get(pid) ?? 0) + amt);
-    }
+  for (const a of allocs) {
+    const pid = String(a.paymentId);
+    const amt = Number(a.allocatedMvr ?? 0);
+    allocatedByPaymentId.set(pid, (allocatedByPaymentId.get(pid) ?? 0) + amt);
   }
 
   // customers snapshot (chunked)
   const customerById = new Map<string, any>();
-  for (let i = 0; i < customerIds.length; i += chunkSize) {
-    const chunk = customerIds.slice(i, i + chunkSize);
-    if (chunk.length === 0) continue;
-
-    const cRes = await customersDb.listDocuments(
-      CUSTOMERS.dbId,
-      CUSTOMERS.colWasteCustomers,
-      [Query.equal("$id", chunk), Query.limit(100)]
-    );
-
-    for (const c of cRes.documents as any[]) {
-      customerById.set(String(c.$id), c);
-    }
+  const customers = await fetchDocumentsByIds<any>(
+    COLLECTIONS.wasteCustomers,
+    customerIds,
+  );
+  for (const c of customers) {
+    customerById.set(String(c.$id), c);
   }
 
   // build rows
@@ -894,7 +842,7 @@ export async function listWastePayments(params?: {
       acc.unallocated += r.unallocatedMvr;
       return acc;
     },
-    { count: 0, amount: 0, allocated: 0, unallocated: 0 }
+    { count: 0, amount: 0, allocated: 0, unallocated: 0 },
   );
 
   return { rows, summary, month };
@@ -909,15 +857,12 @@ export async function addPenaltyToWasteInvoice(params: {
 }) {
   noStore();
 
-  const { db } = createBillingAdmin();
-
   const amount = Math.max(0, Math.round(Number(params.amountMvr ?? 0)));
   if (amount <= 0) throw new Error("Penalty amount must be greater than 0.");
 
-  const inv = (await db.getDocument(
-    BILLING.dbId,
-    BILLING.colInvoices,
-    params.invoiceId
+  const inv = (await getDocument(
+    COLLECTIONS.invoices,
+    params.invoiceId,
   )) as any;
 
   if (inv.serviceType !== "WASTE") throw new Error("Not a waste invoice.");
@@ -936,10 +881,10 @@ export async function addPenaltyToWasteInvoice(params: {
     balanceNow === 0
       ? "PAID"
       : paid > 0
-      ? "PARTIALLY_PAID"
-      : String(inv.status ?? "ISSUED");
+        ? "PARTIALLY_PAID"
+        : String(inv.status ?? "ISSUED");
 
-  await db.updateDocument(BILLING.dbId, BILLING.colInvoices, inv.$id, {
+  await updateDocument(COLLECTIONS.invoices, inv.$id, {
     penaltyMvr: penaltyNow,
     totalMvr: totalNow,
     balanceMvr: balanceNow,
@@ -967,15 +912,12 @@ export async function waiveWasteInvoice(params: {
 }) {
   noStore();
 
-  const { db } = createBillingAdmin();
-
   const reason = params.reason?.trim();
   if (!reason) throw new Error("Waive reason is required.");
 
-  const inv = (await db.getDocument(
-    BILLING.dbId,
-    BILLING.colInvoices,
-    params.invoiceId
+  const inv = (await getDocument(
+    COLLECTIONS.invoices,
+    params.invoiceId,
   )) as any;
 
   if (inv.serviceType !== "WASTE") throw new Error("Not a waste invoice.");
@@ -988,7 +930,7 @@ export async function waiveWasteInvoice(params: {
   if (String(inv.status) === "PAID" || balance <= 0)
     throw new Error("Nothing to waive on this invoice.");
 
-  await db.updateDocument(BILLING.dbId, BILLING.colInvoices, inv.$id, {
+  await updateDocument(COLLECTIONS.invoices, inv.$id, {
     status: "WAIVED",
     balanceMvr: 0,
     waivedReason: reason,
@@ -1012,15 +954,12 @@ export async function cancelWasteInvoice(params: {
 }) {
   noStore();
 
-  const { db } = createBillingAdmin();
-
   const reason = params.reason?.trim();
   if (!reason) throw new Error("Cancel reason is required.");
 
-  const inv = (await db.getDocument(
-    BILLING.dbId,
-    BILLING.colInvoices,
-    params.invoiceId
+  const inv = (await getDocument(
+    COLLECTIONS.invoices,
+    params.invoiceId,
   )) as any;
 
   if (inv.serviceType !== "WASTE") throw new Error("Not a waste invoice.");
@@ -1030,10 +969,10 @@ export async function cancelWasteInvoice(params: {
   const paid = Number(inv.paidMvr ?? 0);
   if (paid > 0)
     throw new Error(
-      "Cannot cancel an invoice that has payments. Use Waive or adjustments."
+      "Cannot cancel an invoice that has payments. Use Waive or adjustments.",
     );
 
-  await db.updateDocument(BILLING.dbId, BILLING.colInvoices, inv.$id, {
+  await updateDocument(COLLECTIONS.invoices, inv.$id, {
     status: "CANCELLED",
     balanceMvr: 0,
     cancelledReason: reason,
@@ -1075,23 +1014,18 @@ export async function applyWasteDefaultsForAllCustomers(params?: {
     | "YEARLY";
   const endMonth = String(params?.endMonth ?? "9999-12").trim() || "9999-12";
 
-  const { db } = createBillingAdmin();
-  const { db: customersDb } = createCustomersAdmin();
-
   // 1) load customers
-  const customersRes = await customersDb.listDocuments(
-    CUSTOMERS.dbId,
-    CUSTOMERS.colWasteCustomers,
-    [Query.limit(Math.min(5000, Math.max(1, Number(params?.limit ?? 5000))))]
-  );
+  const customersRes = await listDocuments(COLLECTIONS.wasteCustomers, {
+    limit: Math.min(5000, Math.max(1, Number(params?.limit ?? 5000))),
+  });
 
   const customers = customersRes.documents as any[];
 
   // 2) load existing active subs
-  const subsRes = await db.listDocuments(BILLING.dbId, BILLING.colWasteSubs, [
-    Query.equal("status", "ACTIVE"),
-    Query.limit(5000),
-  ]);
+  const subsRes = await listDocuments(COLLECTIONS.wasteSubscriptions, {
+    where: [["status", "==", "ACTIVE"]],
+    limit: 5000,
+  });
 
   const subByCustomerId = new Map<string, any>();
   for (const s of subsRes.documents as any[])
@@ -1117,7 +1051,7 @@ export async function applyWasteDefaultsForAllCustomers(params?: {
     }
 
     // create subscription
-    await db.createDocument(BILLING.dbId, BILLING.colWasteSubs, ID.unique(), {
+    await createDocument(COLLECTIONS.wasteSubscriptions, {
       customerId,
       feeMvr: fee,
       frequency,

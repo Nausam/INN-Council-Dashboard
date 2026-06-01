@@ -10,12 +10,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  fetchAllEmployees,
-  fetchMosqueAssistants,
-  fetchMosqueDailyAttendanceForMonth,
-  fetchPrayerTimesForMonth,
-} from "@/lib/appwrite/appwrite";
-import React, { useEffect, useMemo, useState } from "react";
+  useEmployeesQuery,
+  useMosqueAssistantsQuery,
+  useMosqueDailyAttendanceMonthQuery,
+  usePrayerTimesMonthQuery,
+} from "@/hooks/queries";
+import React, { useMemo, useState } from "react";
 
 /* ========================= Types ========================= */
 
@@ -29,7 +29,7 @@ type EmployeeRef =
 
 type AttRow = {
   $id: string;
-  date: string; // ISO date-time
+  date: string;
   employeeId: EmployeeRef;
   fathisSignInTime: string | null;
   mendhuruSignInTime: string | null;
@@ -44,7 +44,7 @@ type MosqueAssistant = {
 };
 
 type PrayerTimesDoc = {
-  date: string; // ISO date-time
+  date: string;
   fathisTime: string;
   mendhuruTime: string;
   asuruTime: string;
@@ -53,7 +53,7 @@ type PrayerTimesDoc = {
 };
 
 type PrayerTimesMap = Record<
-  string, // YYYY-MM-DD
+  string,
   {
     fathisTime: string;
     mendhuruTime: string;
@@ -63,7 +63,6 @@ type PrayerTimesMap = Record<
   }
 >;
 
-/* For normalizing many possible shapes coming from Appwrite */
 type RawRow = {
   $id?: unknown;
   id?: unknown;
@@ -76,7 +75,6 @@ type RawRow = {
 
 type WithDocuments = { documents: unknown[] };
 
-/* ========================= Type Guards ========================= */
 function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
@@ -88,10 +86,6 @@ function hasDocuments(v: unknown): v is WithDocuments {
     "documents" in v &&
     Array.isArray((v as { documents?: unknown[] }).documents)
   );
-}
-
-function isMosqueAssistant(v: unknown): v is MosqueAssistant {
-  return isObject(v) && typeof v.$id === "string" && typeof v.name === "string";
 }
 
 function isEmployeeRef(v: unknown): v is EmployeeRef {
@@ -108,7 +102,6 @@ function isNullableString(v: unknown): v is string | null {
   return typeof v === "string" || v === null;
 }
 
-/** Looser “attendance-like” check against unknown API rows */
 function isAttendanceLike(v: unknown): v is {
   $id: unknown;
   date: unknown;
@@ -144,8 +137,6 @@ function isPrayerTimesDoc(v: unknown): v is PrayerTimesDoc {
   );
 }
 
-/* ========================= Normalizers ========================= */
-
 function normalizeAssistantFromAny(row: unknown): MosqueAssistant | null {
   if (!isObject(row)) return null;
   const r = row as RawRow;
@@ -157,10 +148,9 @@ function normalizeAssistantFromAny(row: unknown): MosqueAssistant | null {
     typeof r.name === "string" && r.name.trim()
       ? r.name
       : typeof r.employeeName === "string" && r.employeeName.trim()
-      ? r.employeeName
-      : null;
+        ? r.employeeName
+        : null;
 
-  // Optional filters (if present, enforce them; if missing, accept)
   const section =
     typeof r.section === "string" ? r.section.trim().toLowerCase() : "";
   const desig =
@@ -172,7 +162,6 @@ function normalizeAssistantFromAny(row: unknown): MosqueAssistant | null {
   return id && name && okSection && okDesig ? { $id: id, name } : null;
 }
 
-/** Fallback: convert a generic employee row to assistant when it's Mosque + Imam/Council Assistant */
 function normalizeEmployeeToAssistant(row: unknown): MosqueAssistant | null {
   if (!isObject(row)) return null;
   const r = row as RawRow;
@@ -184,8 +173,8 @@ function normalizeEmployeeToAssistant(row: unknown): MosqueAssistant | null {
     typeof r.name === "string" && r.name.trim()
       ? r.name
       : typeof r.employeeName === "string" && r.employeeName.trim()
-      ? r.employeeName
-      : null;
+        ? r.employeeName
+        : null;
 
   const section =
     typeof r.section === "string" ? r.section.trim().toLowerCase() : "";
@@ -201,7 +190,60 @@ function normalizeEmployeeToAssistant(row: unknown): MosqueAssistant | null {
   return ok ? { $id: id, name } : null;
 }
 
-/* ========================= Helpers ========================= */
+function normalizeAttendanceRows(attRaw: unknown): AttRow[] {
+  if (!Array.isArray(attRaw)) return [];
+  return attRaw.reduce<AttRow[]>((acc, row) => {
+    if (!isAttendanceLike(row)) return acc;
+    if (!isEmployeeRef(row.employeeId)) return acc;
+
+    const f = row.fathisSignInTime;
+    const m1 = row.mendhuruSignInTime;
+    const a = row.asuruSignInTime;
+    const m2 = row.maqribSignInTime;
+    const i = row.ishaSignInTime;
+
+    if (
+      !isNullableString(f) ||
+      !isNullableString(m1) ||
+      !isNullableString(a) ||
+      !isNullableString(m2) ||
+      !isNullableString(i)
+    ) {
+      return acc;
+    }
+
+    acc.push({
+      $id: row.$id as string,
+      date: row.date as string,
+      employeeId: row.employeeId,
+      fathisSignInTime: f,
+      mendhuruSignInTime: m1,
+      asuruSignInTime: a,
+      maqribSignInTime: m2,
+      ishaSignInTime: i,
+    });
+    return acc;
+  }, []);
+}
+
+function buildPrayerTimesMap(ptRaw: unknown): PrayerTimesMap {
+  const ptDocs: PrayerTimesDoc[] = Array.isArray(ptRaw)
+    ? ptRaw.filter(isPrayerTimesDoc)
+    : [];
+
+  const ptMap: PrayerTimesMap = {};
+  ptDocs.forEach((doc) => {
+    const key = doc.date.slice(0, 10);
+    ptMap[key] = {
+      fathisTime: doc.fathisTime,
+      mendhuruTime: doc.mendhuruTime,
+      asuruTime: doc.asuruTime,
+      maqribTime: doc.maqribTime,
+      ishaTime: doc.ishaTime,
+    };
+  });
+  return ptMap;
+}
 
 function empName(emp: EmployeeRef, byId: Map<string, MosqueAssistant>): string {
   if (typeof emp === "string") {
@@ -212,10 +254,9 @@ function empName(emp: EmployeeRef, byId: Map<string, MosqueAssistant>): string {
 }
 
 function empDesignation(emp: EmployeeRef): string {
-  return typeof emp === "string" ? "" : emp.designation ?? "";
+  return typeof emp === "string" ? "" : (emp.designation ?? "");
 }
 
-/** signInTime (ISO) is late if strictly after expected "HH:MM" (as UTC). */
 function isLate(signInTime: string | null, expectedTime?: string) {
   if (!signInTime || !expectedTime) return false;
   const signInDate = new Date(signInTime);
@@ -234,142 +275,77 @@ function fmtTimeOrDash(iso: string | null): string {
   }).format(new Date(iso));
 }
 
-/* ========================= Component ========================= */
-
 const MosqueMonthlyReportsPage: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState<string>(
-    new Date().toISOString().slice(0, 7)
+    new Date().toISOString().slice(0, 7),
   );
   const [selectedEmployee, setSelectedEmployee] = useState<string>("");
-  const [employees, setEmployees] = useState<MosqueAssistant[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [attendanceData, setAttendanceData] = useState<AttRow[]>([]);
-  const [prayerTimes, setPrayerTimes] = useState<PrayerTimesMap>({});
+  const [reportMonth, setReportMonth] = useState<string>("");
+  const [reportEmployeeId, setReportEmployeeId] = useState<string>("");
+
+  const { data: assistantsRes } = useMosqueAssistantsQuery();
+  const { data: allEmployees = [] } = useEmployeesQuery();
+
+  const employees = useMemo(() => {
+    const res: unknown = assistantsRes;
+    let rows: unknown[] = [];
+    if (Array.isArray(res)) rows = res;
+    else if (hasDocuments(res)) rows = res.documents;
+
+    let list: MosqueAssistant[] = rows
+      .map(normalizeAssistantFromAny)
+      .filter((x): x is MosqueAssistant => x !== null);
+
+    if (list.length === 0) {
+      list = allEmployees
+        .map(normalizeEmployeeToAssistant)
+        .filter((x): x is MosqueAssistant => x !== null);
+    }
+
+    return list;
+  }, [assistantsRes, allEmployees]);
+
+  const {
+    data: attRaw,
+    isLoading: attLoading,
+    isFetching: attFetching,
+    refetch: refetchAttendance,
+  } = useMosqueDailyAttendanceMonthQuery(reportMonth, reportEmployeeId);
+
+  const { data: ptRaw } = usePrayerTimesMonthQuery(reportMonth);
+
+  const attendanceData = useMemo(
+    () => (reportMonth && reportEmployeeId ? normalizeAttendanceRows(attRaw) : []),
+    [attRaw, reportMonth, reportEmployeeId],
+  );
+
+  const prayerTimes = useMemo(
+    () => (reportMonth ? buildPrayerTimesMap(ptRaw) : {}),
+    [ptRaw, reportMonth],
+  );
 
   const employeesById = useMemo(
     () => new Map<string, MosqueAssistant>(employees.map((e) => [e.$id, e])),
-    [employees]
+    [employees],
   );
 
-  /* --------- Populate the dropdown ---------- */
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetchMosqueAssistants();
+  const loading =
+    Boolean(reportMonth && reportEmployeeId) &&
+    (attLoading || attFetching);
 
-        let rows: unknown[] = [];
-        if (Array.isArray(res)) rows = res;
-        else {
-          const maybe = res as unknown;
-          if (hasDocuments(maybe)) rows = maybe.documents;
-        }
-
-        let list: MosqueAssistant[] = rows
-          .map(normalizeAssistantFromAny)
-          .filter((x): x is MosqueAssistant => x !== null);
-
-        // Fallback if helper returns empty
-        if (list.length === 0) {
-          const all = await fetchAllEmployees();
-
-          // ✅ Narrow on a fresh variable so the guard sticks
-          let allRows: unknown[] = [];
-          if (Array.isArray(all)) {
-            allRows = all;
-          } else {
-            const maybeAll: unknown = all;
-            if (hasDocuments(maybeAll)) {
-              allRows = (maybeAll as WithDocuments).documents;
-            }
-          }
-
-          list = allRows
-            .map(normalizeEmployeeToAssistant)
-            .filter((x): x is MosqueAssistant => x !== null);
-        }
-
-        setEmployees(list);
-        // optionally preselect the first employee:
-        // if (!selectedEmployee && list[0]) setSelectedEmployee(list[0].$id);
-      } catch (err) {
-        console.error("Error fetching employees:", err);
-        setEmployees([]);
-      }
-    })();
-  }, []);
-
-  /* --------- Fetch attendance & prayer-times ---------- */
-  const fetchMonthlyReport = async (month: string) => {
+  const handleGenerateReport = () => {
     if (!selectedEmployee) return;
-    setLoading(true);
-    try {
-      const attRaw = await fetchMosqueDailyAttendanceForMonth(
-        month,
-        selectedEmployee
-      );
-
-      const att: AttRow[] = Array.isArray(attRaw)
-        ? attRaw.reduce<AttRow[]>((acc, row) => {
-            if (!isAttendanceLike(row)) return acc;
-            if (!isEmployeeRef(row.employeeId)) return acc;
-
-            const f = row.fathisSignInTime;
-            const m1 = row.mendhuruSignInTime;
-            const a = row.asuruSignInTime;
-            const m2 = row.maqribSignInTime;
-            const i = row.ishaSignInTime;
-
-            if (
-              !isNullableString(f) ||
-              !isNullableString(m1) ||
-              !isNullableString(a) ||
-              !isNullableString(m2) ||
-              !isNullableString(i)
-            ) {
-              return acc;
-            }
-
-            acc.push({
-              $id: row.$id,
-              date: row.date as string,
-              employeeId: row.employeeId,
-              fathisSignInTime: f,
-              mendhuruSignInTime: m1,
-              asuruSignInTime: a,
-              maqribSignInTime: m2,
-              ishaSignInTime: i,
-            });
-            return acc;
-          }, [])
-        : [];
-
-      setAttendanceData(att);
-
-      const ptRaw = await fetchPrayerTimesForMonth(month);
-      const ptDocs: PrayerTimesDoc[] = Array.isArray(ptRaw)
-        ? ptRaw.filter(isPrayerTimesDoc)
-        : [];
-
-      const ptMap: PrayerTimesMap = {};
-      ptDocs.forEach((doc) => {
-        const key = doc.date.slice(0, 10);
-        ptMap[key] = {
-          fathisTime: doc.fathisTime,
-          mendhuruTime: doc.mendhuruTime,
-          asuruTime: doc.asuruTime,
-          maqribTime: doc.maqribTime,
-          ishaTime: doc.ishaTime,
-        };
-      });
-      setPrayerTimes(ptMap);
-    } catch (err) {
-      console.error("Error fetching data:", err);
-    } finally {
-      setLoading(false);
+    if (
+      reportMonth === selectedMonth &&
+      reportEmployeeId === selectedEmployee
+    ) {
+      void refetchAttendance();
+    } else {
+      setReportMonth(selectedMonth);
+      setReportEmployeeId(selectedEmployee);
     }
   };
 
-  /* --------- CSV ---------- */
   const downloadCSV = () => {
     if (attendanceData.length === 0) return;
 
@@ -416,7 +392,6 @@ const MosqueMonthlyReportsPage: React.FC = () => {
       </h1>
 
       <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Month Selector */}
         <div>
           <label className="text-sm font-medium text-gray-600 mb-2">
             Select Month
@@ -429,7 +404,6 @@ const MosqueMonthlyReportsPage: React.FC = () => {
           />
         </div>
 
-        {/* Employee Filter */}
         <div>
           <label className="text-sm font-medium text-gray-600 mb-2">
             Select Employee
@@ -448,10 +422,9 @@ const MosqueMonthlyReportsPage: React.FC = () => {
           </select>
         </div>
 
-        {/* Buttons */}
         <div className="flex items-end gap-3">
           <button
-            onClick={() => fetchMonthlyReport(selectedMonth)}
+            onClick={handleGenerateReport}
             disabled={!selectedEmployee}
             className={`custom-button h-12 w-full lg:w-auto ${
               !selectedEmployee ? "bg-gray-300 cursor-not-allowed" : ""
@@ -504,10 +477,8 @@ const MosqueMonthlyReportsPage: React.FC = () => {
                     <TableCell>
                       {empName(rec.employeeId, employeesById)}
                     </TableCell>
-
                     <TableCell>{empDesignation(rec.employeeId)}</TableCell>
                     <TableCell>{date}</TableCell>
-
                     <TableCell
                       className={
                         times && isLate(rec.fathisSignInTime, times.fathisTime)
@@ -517,7 +488,6 @@ const MosqueMonthlyReportsPage: React.FC = () => {
                     >
                       {fmtTimeOrDash(rec.fathisSignInTime)}
                     </TableCell>
-
                     <TableCell
                       className={
                         times &&
@@ -528,7 +498,6 @@ const MosqueMonthlyReportsPage: React.FC = () => {
                     >
                       {fmtTimeOrDash(rec.mendhuruSignInTime)}
                     </TableCell>
-
                     <TableCell
                       className={
                         times && isLate(rec.asuruSignInTime, times.asuruTime)
@@ -538,7 +507,6 @@ const MosqueMonthlyReportsPage: React.FC = () => {
                     >
                       {fmtTimeOrDash(rec.asuruSignInTime)}
                     </TableCell>
-
                     <TableCell
                       className={
                         times && isLate(rec.maqribSignInTime, times.maqribTime)
@@ -548,7 +516,6 @@ const MosqueMonthlyReportsPage: React.FC = () => {
                     >
                       {fmtTimeOrDash(rec.maqribSignInTime)}
                     </TableCell>
-
                     <TableCell
                       className={
                         times && isLate(rec.ishaSignInTime, times.ishaTime)

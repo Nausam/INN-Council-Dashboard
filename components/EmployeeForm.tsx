@@ -1,25 +1,39 @@
 "use client";
 
+import {
+  CouncilCard,
+  CouncilDatePicker,
+  CouncilSelect,
+  type CouncilSelectOption,
+  PageHeader,
+  PageShell,
+} from "@/components/design-system";
+import { Button } from "@/components/ui/button";
+import { useQueryInvalidation } from "@/hooks/queries";
 import { toast } from "@/hooks/use-toast";
+import { typography } from "@/lib/design-tokens";
 import {
   createEmployeeRecord,
   updateEmployeeRecord,
-} from "@/lib/appwrite/appwrite";
+} from "@/lib/firebase/hr";
+import { cn } from "@/lib/utils";
 import { useParams, useRouter } from "next/navigation";
 import React, { useState } from "react";
 import {
-  User,
-  MapPin,
+  Award,
+  Baby,
   Briefcase,
   Building2,
   Calendar,
   CreditCard,
-  Heart,
-  Baby,
-  Users,
   DollarSign,
-  Award,
   FileText,
+  Heart,
+  MapPin,
+  User,
+  UserPlus,
+  Users,
+  type LucideIcon,
 } from "lucide-react";
 
 /* ---------------- Types ---------------- */
@@ -31,8 +45,6 @@ export type EmployeeFormData = {
   address: string;
   section: string;
   recordCardNumber: string;
-
-  // leave balances
   sickLeave: number;
   certificateSickLeave: number;
   annualLeave: number;
@@ -47,15 +59,37 @@ export type EmployeeFormData = {
 interface EmployeeFormProps {
   initialData?: Partial<EmployeeFormData>;
   onSubmit?: (formData: EmployeeFormData) => Promise<void>;
-  isLoading: boolean;
+  isLoading?: boolean;
 }
+
+const fieldClass =
+  "council-input h-11 pl-10 pr-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60";
+
+const DESIGNATION_OPTIONS: CouncilSelectOption[] = [
+  { value: "Council President", label: "Council President" },
+  { value: "Council Vice President", label: "Council Vice President" },
+  { value: "Council Member", label: "Council Member" },
+  { value: "Council Executive", label: "Council Executive" },
+  { value: "A. Council Executive", label: "A. Council Executive" },
+  { value: "Finance Officer", label: "Finance Officer" },
+  { value: "Council Officer", label: "Council Officer" },
+  { value: "A. Council Officer", label: "A. Council Officer" },
+  { value: "Council Assistant", label: "Council Assistant" },
+  { value: "Imam", label: "Imam" },
+];
+
+const SECTION_OPTIONS: CouncilSelectOption[] = [
+  { value: "Councillor", label: "Councillor" },
+  { value: "Admin", label: "Admin" },
+  { value: "Mosque", label: "Mosque" },
+  { value: "Waste Management", label: "Waste Management" },
+];
 
 /* ---------------- Component ---------------- */
 
 const EmployeeForm: React.FC<EmployeeFormProps> = ({
   initialData,
   onSubmit,
-  isLoading,
 }) => {
   const [formData, setFormData] = useState<EmployeeFormData>({
     name: initialData?.name ?? "",
@@ -82,6 +116,8 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     ? params.id[0]
     : (params.id as string | undefined);
   const router = useRouter();
+  const isEdit = Boolean(employeeId);
+  const { invalidateEmployees } = useQueryInvalidation();
 
   const numericFields: (keyof EmployeeFormData)[] = [
     "sickLeave",
@@ -96,7 +132,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
   ];
 
   const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => {
     const { name, value } = e.target;
     const key = name as keyof EmployeeFormData;
@@ -105,6 +141,17 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
       ...prev,
       [key]: numericFields.includes(key) ? parseInt(value, 10) || 0 : value,
     }));
+  };
+
+  const handleSelectChange = (
+    name: keyof EmployeeFormData,
+    value: string,
+  ) => {
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleDateChange = (name: keyof EmployeeFormData, value: string) => {
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const resetForm = () =>
@@ -131,19 +178,21 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     setLoading(true);
 
     try {
-      if (employeeId) {
+      if (onSubmit) {
+        await onSubmit(formData);
+      } else if (employeeId) {
         await updateEmployeeRecord(employeeId, formData);
+        await invalidateEmployees(employeeId);
         toast({
           title: "Success",
           description: `${formData.name} updated successfully`,
-          variant: "default",
         });
       } else {
-        await createEmployeeRecord(formData);
+        const created = await createEmployeeRecord(formData);
+        await invalidateEmployees(created.$id);
         toast({
           title: "Success",
           description: `${formData.name} added successfully`,
-          variant: "default",
         });
       }
 
@@ -152,9 +201,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     } catch {
       toast({
         title: "Error",
-        description: `Failed to ${employeeId ? "update" : "add"} employee ${
-          formData.name
-        }`,
+        description: `Failed to ${employeeId ? "update" : "add"} employee ${formData.name}`,
         variant: "destructive",
       });
     } finally {
@@ -163,40 +210,21 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50">
-      <div className="mx-auto max-w-5xl px-4 py-8 lg:px-8">
-        {/* Page Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 text-white shadow-lg">
-              <User className="h-7 w-7" />
-            </div>
-            <div>
-              <h1 className="text-4xl font-bold tracking-tight text-slate-900">
-                {employeeId ? "Edit Employee" : "Add New Employee"}
-              </h1>
-              <p className="mt-1 text-slate-600">
-                {employeeId
-                  ? "Update employee information and leave balances"
-                  : "Enter employee details to create a new record"}
-              </p>
-            </div>
-          </div>
-        </div>
+    <PageShell>
+      <div className="mx-auto max-w-5xl">
+        <PageHeader
+          icon={isEdit ? User : UserPlus}
+          title={isEdit ? "Edit Employee" : "Add New Employee"}
+          subtitle={
+            isEdit
+              ? "Update employee information and leave balances"
+              : "Enter employee details to create a new record"
+          }
+        />
 
-        <form onSubmit={handleSubmit} className="space-y-8">
-          {/* Personal Information Section */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="mb-6 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100">
-                <User className="h-5 w-5 text-indigo-600" />
-              </div>
-              <h2 className="text-xl font-bold text-slate-900">
-                Personal Information
-              </h2>
-            </div>
-
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <FormSection icon={User} title="Personal Information">
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
               <InputField
                 id="name"
                 label="Full Name"
@@ -214,59 +242,33 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                 required
               />
             </div>
-          </div>
+          </FormSection>
 
-          {/* Employment Details Section */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="mb-6 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100">
-                <Briefcase className="h-5 w-5 text-violet-600" />
-              </div>
-              <h2 className="text-xl font-bold text-slate-900">
-                Employment Details
-              </h2>
-            </div>
-
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <FormSection icon={Briefcase} title="Employment Details">
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
               <SelectField
                 id="designation"
                 label="Designation"
                 value={formData.designation}
-                onChange={handleInputChange}
-                icon={<Briefcase className="h-4 w-4" />}
+                onValueChange={(value) =>
+                  handleSelectChange("designation", value)
+                }
+                options={DESIGNATION_OPTIONS}
+                icon={Briefcase}
+                placeholder="Select designation"
                 required
-              >
-                <option value="">Select Designation</option>
-                <option value="Council President">Council President</option>
-                <option value="Council Vice President">
-                  Council Vice President
-                </option>
-                <option value="Council Member">Council Member</option>
-                <option value="Council Executive">Council Executive</option>
-                <option value="A. Council Executive">
-                  A. Council Executive
-                </option>
-                <option value="Finance Officer">Finance Officer</option>
-                <option value="Council Officer">Council Officer</option>
-                <option value="A. Council Officer">A. Council Officer</option>
-                <option value="Council Assistant">Council Assistant</option>
-                <option value="Imam">Imam</option>
-              </SelectField>
+              />
 
               <SelectField
                 id="section"
                 label="Section"
                 value={formData.section}
-                onChange={handleInputChange}
-                icon={<Building2 className="h-4 w-4" />}
+                onValueChange={(value) => handleSelectChange("section", value)}
+                options={SECTION_OPTIONS}
+                icon={Building2}
+                placeholder="Select section"
                 required
-              >
-                <option value="">Select Section</option>
-                <option value="Councillor">Councillor</option>
-                <option value="Admin">Admin</option>
-                <option value="Mosque">Mosque</option>
-                <option value="Waste Management">Waste Management</option>
-              </SelectField>
+              />
 
               <InputField
                 id="recordCardNumber"
@@ -277,41 +279,29 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                 required
               />
 
-              <InputField
+              <DateField
                 id="joinedDate"
                 label="Joined Date"
-                type="date"
                 value={formData.joinedDate}
-                onChange={handleInputChange}
-                icon={<Calendar className="h-4 w-4" />}
+                onChange={(value) => handleDateChange("joinedDate", value)}
+                icon={Calendar}
+                placeholder="Select joined date"
                 required
               />
             </div>
-          </div>
+          </FormSection>
 
-          {/* Leave Balances Section */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="mb-6 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100">
-                <Calendar className="h-5 w-5 text-emerald-600" />
-              </div>
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">
-                  Leave Balances
-                </h2>
-                <p className="text-sm text-slate-600">
-                  Configure available leave days for this employee
-                </p>
-              </div>
-            </div>
-
+          <FormSection
+            icon={Calendar}
+            title="Leave Balances"
+            description="Configure available leave days for this employee"
+          >
             <div className="space-y-6">
-              {/* Standard Leave Types */}
               <div>
-                <h3 className="mb-4 text-sm font-semibold text-slate-700">
+                <h3 className={cn(typography.caption, "mb-4 text-slate-700")}>
                   Standard Leave Types
                 </h3>
-                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
                   <NumberField
                     id="sickLeave"
                     label="Sick Leave"
@@ -336,12 +326,11 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                 </div>
               </div>
 
-              {/* Special Leave Types */}
               <div>
-                <h3 className="mb-4 text-sm font-semibold text-slate-700">
+                <h3 className={cn(typography.caption, "mb-4 text-slate-700")}>
                   Special Leave Types
                 </h3>
-                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
                   <NumberField
                     id="familyRelatedLeave"
                     label="Family Related Leave"
@@ -387,41 +376,97 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                 </div>
               </div>
             </div>
-          </div>
+          </FormSection>
 
-          {/* Submit Button */}
-          <div className="flex justify-end gap-4">
-            <button
+          <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
+            <Button
               type="button"
+              variant="council-outline"
+              className="h-11 rounded-xl px-6"
               onClick={() => router.push("/employees")}
-              className="rounded-xl border border-slate-200 bg-white px-6 py-3 font-semibold text-slate-700 shadow-sm transition-all hover:bg-slate-50 hover:shadow-md"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
-              className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
+              variant="council"
+              className="h-11 rounded-xl px-6"
               disabled={loading}
             >
               {loading ? (
                 <>
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  {employeeId ? "Updating..." : "Adding..."}
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  {isEdit ? "Updating..." : "Adding..."}
                 </>
+              ) : isEdit ? (
+                "Update Employee"
               ) : (
-                <>{employeeId ? "Update Employee" : "Add Employee"}</>
+                "Add Employee"
               )}
-            </button>
+            </Button>
           </div>
         </form>
       </div>
-    </div>
+    </PageShell>
   );
 };
 
 export default EmployeeForm;
 
 /* ---------------- Helper Components ---------------- */
+
+function FormSection({
+  icon: Icon,
+  title,
+  description,
+  children,
+}: {
+  icon: LucideIcon;
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <CouncilCard interactive="none" className="p-6">
+      <div className="mb-6 flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-600 ring-1 ring-teal-100">
+          <Icon className="h-5 w-5" strokeWidth={2.1} />
+        </div>
+        <div>
+          <h2 className="text-lg font-black tracking-tight text-slate-900">
+            {title}
+          </h2>
+          {description && (
+            <p className={cn(typography.body, "mt-1 text-sm font-medium")}>
+              {description}
+            </p>
+          )}
+        </div>
+      </div>
+      {children}
+    </CouncilCard>
+  );
+}
+
+function FieldLabel({
+  htmlFor,
+  label,
+  required,
+}: {
+  htmlFor: string;
+  label: string;
+  required?: boolean;
+}) {
+  return (
+    <label
+      className="mb-2 block text-sm font-semibold text-slate-700"
+      htmlFor={htmlFor}
+    >
+      {label}
+      {required && <span className="ml-1 text-rose-500">*</span>}
+    </label>
+  );
+}
 
 function InputField({
   id,
@@ -440,26 +485,22 @@ function InputField({
   icon: React.ReactNode;
   required?: boolean;
 }) {
+  const fieldId = id as string;
+
   return (
     <div>
-      <label
-        className="mb-2 block text-sm font-semibold text-slate-700"
-        htmlFor={id as string}
-      >
-        {label}
-        {required && <span className="ml-1 text-red-500">*</span>}
-      </label>
+      <FieldLabel htmlFor={fieldId} label={label} required={required} />
       <div className="relative">
         <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
           {icon}
         </div>
         <input
-          id={id as string}
-          name={id as string}
+          id={fieldId}
+          name={fieldId}
           type={type}
           value={value}
           onChange={onChange}
-          className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-slate-900 shadow-sm transition-all focus:border-indigo-300 focus:outline-none focus:ring-4 focus:ring-indigo-100"
+          className={fieldClass}
           required={required}
         />
       </div>
@@ -471,58 +512,71 @@ function SelectField({
   id,
   label,
   value,
-  onChange,
+  onValueChange,
+  options,
   icon,
+  placeholder,
   required = false,
-  children,
 }: {
   id: keyof EmployeeFormData;
   label: string;
   value: string;
-  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
-  icon: React.ReactNode;
+  onValueChange: (value: string) => void;
+  options: CouncilSelectOption[];
+  icon: LucideIcon;
+  placeholder?: string;
   required?: boolean;
-  children: React.ReactNode;
 }) {
+  const fieldId = id as string;
+
   return (
     <div>
-      <label
-        className="mb-2 block text-sm font-semibold text-slate-700"
-        htmlFor={id as string}
-      >
-        {label}
-        {required && <span className="ml-1 text-red-500">*</span>}
-      </label>
-      <div className="relative">
-        <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-          {icon}
-        </div>
-        <select
-          id={id as string}
-          name={id as string}
-          value={value}
-          onChange={onChange}
-          className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-10 pr-10 text-slate-900 shadow-sm transition-all focus:border-indigo-300 focus:outline-none focus:ring-4 focus:ring-indigo-100"
-          required={required}
-        >
-          {children}
-        </select>
-        <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
-          <svg
-            className="h-5 w-5 text-slate-400"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M19 9l-7 7-7-7"
-            />
-          </svg>
-        </div>
-      </div>
+      <FieldLabel htmlFor={fieldId} label={label} required={required} />
+      <CouncilSelect
+        id={fieldId}
+        name={fieldId}
+        value={value}
+        onValueChange={onValueChange}
+        options={options}
+        icon={icon}
+        placeholder={placeholder}
+        required={required}
+      />
+    </div>
+  );
+}
+
+function DateField({
+  id,
+  label,
+  value,
+  onChange,
+  icon,
+  placeholder,
+  required = false,
+}: {
+  id: keyof EmployeeFormData;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  icon: LucideIcon;
+  placeholder?: string;
+  required?: boolean;
+}) {
+  const fieldId = id as string;
+
+  return (
+    <div>
+      <FieldLabel htmlFor={fieldId} label={label} required={required} />
+      <CouncilDatePicker
+        id={fieldId}
+        name={fieldId}
+        value={value}
+        onChange={onChange}
+        icon={icon}
+        placeholder={placeholder}
+        required={required}
+      />
     </div>
   );
 }
@@ -540,26 +594,23 @@ function NumberField({
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   icon: React.ReactNode;
 }) {
+  const fieldId = id as string;
+
   return (
     <div>
-      <label
-        className="mb-2 block text-sm font-semibold text-slate-700"
-        htmlFor={id as string}
-      >
-        {label}
-      </label>
+      <FieldLabel htmlFor={fieldId} label={label} required />
       <div className="relative">
         <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
           {icon}
         </div>
         <input
-          id={id as string}
-          name={id as string}
+          id={fieldId}
+          name={fieldId}
           type="number"
           min={0}
           value={value}
           onChange={onChange}
-          className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-slate-900 shadow-sm transition-all focus:border-indigo-300 focus:outline-none focus:ring-4 focus:ring-indigo-100"
+          className={fieldClass}
           required
         />
       </div>
