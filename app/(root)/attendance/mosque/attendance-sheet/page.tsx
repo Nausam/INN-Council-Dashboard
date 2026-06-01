@@ -169,6 +169,14 @@ const th =
 const td =
   "border border-neutral-700/70 text-center align-middle whitespace-nowrap px-[2px] py-1";
 
+/** Odd days: Zahidh, even days: Shahidh (matches alternating rows in the sheet). */
+const SIG_SRC_ZAHIDH = "/assets/images/Zahidh-Sign.png";
+const SIG_SRC_SHAHIDH = "/assets/images/Shahidh-Sign.png";
+
+function signatureSrcForDay(day: number) {
+  return day % 2 === 1 ? SIG_SRC_ZAHIDH : SIG_SRC_SHAHIDH;
+}
+
 type RangeKey = "A" | "B" | "BOTH";
 
 /** Range A = 1..10, Range B = 11..end */
@@ -963,6 +971,7 @@ export default function Page() {
             <TableBody>
               {viewRows.map((r) => {
                 const t = timesByDay[r.day];
+                const signatureSrc = signatureSrcForDay(r.day);
 
                 const get = (k: GroupKey): HHMM =>
                   k === "fajr"
@@ -1008,8 +1017,14 @@ export default function Page() {
                           </TableCell>,
                           <TableCell
                             key={`${g.key}-sig-${r.day}`}
-                            className={`${td} text-[16px]`}
-                          />,
+                            className={`${td} p-0 align-middle`}
+                          >
+                            <img
+                              src={signatureSrc}
+                              alt=""
+                              className="mx-auto h-7 max-h-[28px] w-auto max-w-[36px] object-contain"
+                            />
+                          </TableCell>,
                         ];
                       }
 
@@ -1135,6 +1150,7 @@ export default function Page() {
             <TableBody>
               {printRows.map((r) => {
                 const t = timesByDay[r.day];
+                const signatureSrc = signatureSrcForDay(r.day);
 
                 const get = (k: GroupKey): HHMM =>
                   k === "fajr"
@@ -1176,8 +1192,14 @@ export default function Page() {
                           </TableCell>,
                           <TableCell
                             key={`${g.key}-sig-${r.day}`}
-                            className={`${td} text-[16px]`}
-                          />,
+                            className={`${td} p-0 align-middle`}
+                          >
+                            <img
+                              src={signatureSrc}
+                              alt=""
+                              className="mx-auto h-7 max-h-[28px] w-auto max-w-[36px] object-contain"
+                            />
+                          </TableCell>,
                         ];
                       }
 
