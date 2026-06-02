@@ -1,8 +1,8 @@
 import { parseCreditSchemesFromDoc } from "@/lib/employees/credit-schemes";
 import {
-  DV_ALLOWANCE_LINES,
-  DV_DEDUCTION_LINES,
-} from "@/lib/salary-slips/dhivehi-labels";
+  ALLOWANCE_SLIP_LINES,
+  DEDUCTION_SLIP_LINES,
+} from "@/lib/salary-slips/slip-labels";
 import { formatPeriodTitle } from "@/lib/salary-slips/format";
 import type { AttendanceDoc, EmployeeDoc } from "@/lib/firebase/types";
 
@@ -185,38 +185,20 @@ export function computeSalarySlip(
   );
   const zvAllowance = round2(zvAllowanceRate * summary.presentDays);
 
-  const deductions: SalarySlipLine[] = [
-    {
-      key: "lateMinutes",
-      labelEn: "Late Minutes Fine)",
-      labelDv: DV_DEDUCTION_LINES.lateMinutes,
-      amount: lateFine,
-    },
-    {
-      key: "absentHours",
-      labelEn: "Absent Hours Fine",
-      labelDv: DV_DEDUCTION_LINES.absentHours,
-      amount: absentHoursFine,
-    },
-    {
-      key: "creditScheme",
-      labelEn: "Credit Scheme",
-      labelDv: DV_DEDUCTION_LINES.creditScheme,
-      amount: creditSchemeDeduction,
-    },
-    {
-      key: "pension",
-      labelEn: "Pension",
-      labelDv: DV_DEDUCTION_LINES.pension,
-      amount: pension,
-    },
-    {
-      key: "absentDays",
-      labelEn: "Absent Days",
-      labelDv: DV_DEDUCTION_LINES.absentDays,
-      amount: absentDaysFine,
-    },
-  ];
+  const deductionAmounts = {
+    lateMinutes: lateFine,
+    absentHours: absentHoursFine,
+    creditScheme: creditSchemeDeduction,
+    pension,
+    absentDays: absentDaysFine,
+  };
+
+  const deductions: SalarySlipLine[] = DEDUCTION_SLIP_LINES.map((line) => ({
+    key: line.key,
+    labelEn: line.en,
+    labelDv: line.dv,
+    amount: round2(deductionAmounts[line.key]),
+  }));
 
   const totalDeductions = round2(
     deductions.reduce((sum, line) => sum + line.amount, 0),
@@ -227,56 +209,23 @@ export function computeSalarySlip(
 
   const overtime = 0;
 
-  const allowances: SalarySlipLine[] = [
-    {
-      key: "overtime",
-      labelEn: "Over time",
-      labelDv: DV_ALLOWANCE_LINES.overtime,
-      amount: overtime,
-    },
-    {
-      key: "holiday",
-      labelEn: "Holiday Allowance",
-      labelDv: DV_ALLOWANCE_LINES.holiday,
-      amount: 0,
-    },
-    {
-      key: "attendanceBenefit",
-      labelEn: "Attendance Benefit",
-      labelDv: DV_ALLOWANCE_LINES.attendanceBenefit,
-      amount: attendanceBenefit,
-    },
-    {
-      key: "ramazan",
-      labelEn: "Ramazan Allowance",
-      labelDv: DV_ALLOWANCE_LINES.ramazan,
-      amount: ramazanAllowance,
-    },
-    {
-      key: "zv",
-      labelEn: "Vaguthee Hingumuge Allowance",
-      labelDv: DV_ALLOWANCE_LINES.zv,
-      amount: zvAllowance,
-    },
-    {
-      key: "phone",
-      labelEn: "Phone allowance",
-      labelDv: DV_ALLOWANCE_LINES.phone,
-      amount: phoneAllowance,
-    },
-    {
-      key: "job",
-      labelEn: "Job Allowance",
-      labelDv: DV_ALLOWANCE_LINES.job,
-      amount: jobAllowance,
-    },
-    {
-      key: "living",
-      labelEn: "Living Allowances",
-      labelDv: DV_ALLOWANCE_LINES.living,
-      amount: livingAllowance,
-    },
-  ];
+  const allowanceAmounts = {
+    overtime,
+    living: livingAllowance,
+    holiday: 0,
+    ramazan: ramazanAllowance,
+    zv: zvAllowance,
+    phone: phoneAllowance,
+    job: jobAllowance,
+    attendanceBenefit,
+  };
+
+  const allowances: SalarySlipLine[] = ALLOWANCE_SLIP_LINES.map((line) => ({
+    key: line.key,
+    labelEn: line.en,
+    labelDv: line.dv,
+    amount: round2(allowanceAmounts[line.key]),
+  }));
 
   const totalAllowances = round2(
     allowances.reduce((sum, line) => sum + line.amount, 0),

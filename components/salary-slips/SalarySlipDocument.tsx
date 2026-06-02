@@ -1,16 +1,7 @@
 "use client";
 
 import type { SalarySlipComputed } from "@/lib/salary-slips/compute-slip";
-import {
-  DV_ALLOWANCES_HEAD,
-  DV_BASIC_AFTER_DEDUCTION,
-  DV_BASIC_SALARY,
-  DV_DEDUCTIONS_HEAD,
-  DV_NET_INCOME,
-  DV_SALARY_DETAILS,
-  DV_TOTAL_ALLOWANCES,
-  DV_TOTAL_DEDUCTIONS,
-} from "@/lib/salary-slips/dhivehi-labels";
+import { SLIP_LABELS } from "@/lib/salary-slips/slip-labels";
 import { formatSlipAmount, formatMvr } from "@/lib/salary-slips/format";
 import { salarySlipFontClassName } from "@/lib/salary-slips/slip-fonts";
 import { cn } from "@/lib/utils";
@@ -143,6 +134,8 @@ const STAFF_FIELDS: Array<{
 ];
 
 export function SalarySlipDocument({ slip, className }: SalarySlipDocumentProps) {
+  const L = SLIP_LABELS;
+
   return (
     <article
       className={cn("salary-slip-pdf", salarySlipFontClassName, className)}
@@ -167,26 +160,24 @@ export function SalarySlipDocument({ slip, className }: SalarySlipDocumentProps)
       <section className="salary-slip-pdf__body" aria-label="Salary details">
         <div className="salary-slip-pdf__triple-grid">
           <div className="salary-slip-pdf__triple-row salary-slip-pdf__tone-primary">
-            <span className="salary-slip-pdf__col-en">Salary Details</span>
+            <span className="salary-slip-pdf__col-en">{L.salaryDetails.en}</span>
             <span className="salary-slip-pdf__col-amt" aria-hidden />
             <span className="salary-slip-pdf__col-dv" lang="dv" dir="rtl">
-              {DV_SALARY_DETAILS}
+              {L.salaryDetails.dv}
             </span>
           </div>
 
           <TripleRow
-            labelEn="Basic Salary"
-            labelDv={DV_BASIC_SALARY}
+            labelEn={L.basicSalary.en}
+            labelDv={L.basicSalary.dv}
             amount={slip.basicSalary}
             tone="primary"
             alwaysShowAmount
           />
 
-          <div className="salary-slip-pdf__spacer" />
-
           <SectionHeadRow
-            labelEn="(-) Deductions"
-            labelDv={DV_DEDUCTIONS_HEAD}
+            labelEn={L.deductionsHead.en}
+            labelDv={L.deductionsHead.dv}
             variant="deduction"
           />
 
@@ -201,30 +192,26 @@ export function SalarySlipDocument({ slip, className }: SalarySlipDocumentProps)
           ))}
 
           <TripleRow
-            labelEn="Total Deductions"
-            labelDv={DV_TOTAL_DEDUCTIONS}
+            labelEn={L.totalDeductions.en}
+            labelDv={L.totalDeductions.dv}
             amount={slip.totalDeductions}
             tone="deduction-bold"
             alwaysShowAmount
             ruleAbove
           />
 
-          <div className="salary-slip-pdf__spacer" />
-
           <TripleRow
-            labelEn="Basic Salary (after deduction)"
-            labelDv={DV_BASIC_AFTER_DEDUCTION}
+            labelEn={L.basicAfterDeduction.en}
+            labelDv={L.basicAfterDeduction.dv}
             amount={slip.basicAfterDeduction}
             tone="primary"
             alwaysShowAmount
             ruleAbove
           />
 
-          <div className="salary-slip-pdf__spacer" />
-
           <SectionHeadRow
-            labelEn="(+) Allowances"
-            labelDv={DV_ALLOWANCES_HEAD}
+            labelEn={L.allowancesHead.en}
+            labelDv={L.allowancesHead.dv}
             variant="allowance"
           />
 
@@ -239,19 +226,17 @@ export function SalarySlipDocument({ slip, className }: SalarySlipDocumentProps)
           ))}
 
           <TripleRow
-            labelEn="Total Allowances"
-            labelDv={DV_TOTAL_ALLOWANCES}
+            labelEn={L.totalAllowances.en}
+            labelDv={L.totalAllowances.dv}
             amount={slip.totalAllowances}
             tone="allowance-bold"
             alwaysShowAmount
             ruleAbove
           />
 
-          <div className="salary-slip-pdf__spacer" />
-
           <TripleRow
-            labelEn="Total Take Home (Net Income)"
-            labelDv={DV_NET_INCOME}
+            labelEn={L.netIncome.en}
+            labelDv={L.netIncome.dv}
             amount={slip.netIncome}
             tone="net"
             alwaysShowAmount
