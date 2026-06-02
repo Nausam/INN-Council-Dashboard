@@ -60,6 +60,10 @@ interface EmployeeFormProps {
   initialData?: Partial<EmployeeFormData>;
   onSubmit?: (formData: EmployeeFormData) => Promise<void>;
   isLoading?: boolean;
+  variant?: "page" | "modal";
+  employeeId?: string;
+  onCancel?: () => void;
+  onSuccess?: () => void;
 }
 
 const fieldClass =
@@ -90,7 +94,13 @@ const SECTION_OPTIONS: CouncilSelectOption[] = [
 const EmployeeForm: React.FC<EmployeeFormProps> = ({
   initialData,
   onSubmit,
+  isLoading: isLoadingProp,
+  variant = "page",
+  employeeId: employeeIdProp,
+  onCancel,
+  onSuccess,
 }) => {
+  const isModal = variant === "modal";
   const [formData, setFormData] = useState<EmployeeFormData>({
     name: initialData?.name ?? "",
     designation: initialData?.designation ?? "",
@@ -112,11 +122,13 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
   const [loading, setLoading] = useState(false);
 
   const params = useParams();
-  const employeeId = Array.isArray(params.id)
+  const routeEmployeeId = Array.isArray(params.id)
     ? params.id[0]
     : (params.id as string | undefined);
+  const employeeId = employeeIdProp ?? routeEmployeeId;
   const router = useRouter();
   const isEdit = Boolean(employeeId);
+  const isSubmitting = isLoadingProp ?? loading;
   const { invalidateEmployees } = useQueryInvalidation();
 
   const numericFields: (keyof EmployeeFormData)[] = [
@@ -196,8 +208,12 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
         });
       }
 
-      router.push("/employees");
-      resetForm();
+      if (onSuccess) {
+        onSuccess();
+      } else if (!isModal) {
+        router.push("/employees");
+      }
+      if (!isEdit) resetForm();
     } catch {
       toast({
         title: "Error",
@@ -209,19 +225,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     }
   };
 
-  return (
-    <PageShell>
-      <div className="mx-auto max-w-5xl">
-        <PageHeader
-          icon={isEdit ? User : UserPlus}
-          title={isEdit ? "Edit Employee" : "Add New Employee"}
-          subtitle={
-            isEdit
-              ? "Update employee information and leave balances"
-              : "Enter employee details to create a new record"
-          }
-        />
-
+  const formBody = (
         <form onSubmit={handleSubmit} className="space-y-6">
           <FormSection icon={User} title="Personal Information">
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
@@ -383,7 +387,10 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
               type="button"
               variant="council-outline"
               className="h-11 rounded-xl px-6"
-              onClick={() => router.push("/employees")}
+              onClick={() => {
+                if (onCancel) onCancel();
+                else router.push("/employees");
+              }}
             >
               Cancel
             </Button>
@@ -391,9 +398,9 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
               type="submit"
               variant="council"
               className="h-11 rounded-xl px-6"
-              disabled={loading}
+              disabled={isSubmitting}
             >
-              {loading ? (
+              {isSubmitting ? (
                 <>
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                   {isEdit ? "Updating..." : "Adding..."}
@@ -406,6 +413,25 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
             </Button>
           </div>
         </form>
+  );
+
+  if (isModal) {
+    return formBody;
+  }
+
+  return (
+    <PageShell>
+      <div className="mx-auto max-w-5xl">
+        <PageHeader
+          icon={isEdit ? User : UserPlus}
+          title={isEdit ? "Edit Employee" : "Add New Employee"}
+          subtitle={
+            isEdit
+              ? "Update employee information and leave balances"
+              : "Enter employee details to create a new record"
+          }
+        />
+        {formBody}
       </div>
     </PageShell>
   );

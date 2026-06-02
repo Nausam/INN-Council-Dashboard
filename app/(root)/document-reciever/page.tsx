@@ -205,18 +205,14 @@ export default function DocumentRecieverListPage() {
     [page, status, receivedFrom, receivedTo, search],
   );
 
-  const {
-    data: listData,
-    isLoading,
-    isError,
-    error,
-  } = useCorrespondenceListQuery(listParams);
+  const { data: listData, isPending, isError, error } =
+    useCorrespondenceListQuery(listParams);
 
   const { data: stats } = useCorrespondenceStatsQuery();
 
   const documents = (listData?.documents ?? []) as CorrespondenceDoc[];
   const total = listData?.total ?? 0;
-  const loading = isLoading;
+  const loading = isPending;
 
   useEffect(() => {
     if (!isError) return;

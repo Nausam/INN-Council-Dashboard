@@ -133,29 +133,3 @@ export interface ApiResponse<T> {
   data?: T;
   error?: string;
 }
-
-// COUNCILGE NINMUN
-export type Ninmun = {
-  $id: string;
-  publicationNumber: string;
-  title: string;
-  subtitle: string;
-  issue: string;
-  issuetakenby: string;
-  issuepresentedby: string;
-  finalnote: string;
-  $createdAt: string;
-  $updatedAt: string;
-};
-
-export type NinmunVoteValue = "FOR" | "AGAINST" | "ABSTAIN" | "ABSENT";
-
-export type NinmunVote = {
-  $id: string;
-  ninmunId: string;
-  councillorId: string;
-  vote: NinmunVoteValue;
-  note?: string | null;
-  $createdAt: string;
-  $updatedAt: string;
-};

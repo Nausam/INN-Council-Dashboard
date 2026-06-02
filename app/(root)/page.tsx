@@ -4,7 +4,6 @@ import ProgressSection from "@/components/Dashboard/Progressbar";
 import DashboardHeader from "@/components/Dashboard/DashboardHeader.tsx";
 import EmployeeListCard from "@/components/Dashboard/EmployeeListCard";
 import StatCard from "@/components/Dashboard/StatCard";
-import { CorrespondenceDashboardStrip } from "@/components/correspondence/CorrespondenceDashboardStrip";
 import { PageShell } from "@/components/design-system";
 import SkeletonDashboardCard from "@/components/skeletons/SkeletonDashboardCard";
 import SkeletonListCard from "@/components/skeletons/SkeletonListCard";
@@ -105,7 +104,7 @@ const Dashboard: React.FC = () => {
         .split("T")[0]
     : "";
 
-  const { data, isLoading } = useDashboardQuery(formattedSelectedDate);
+  const { data, isPending } = useDashboardQuery(formattedSelectedDate);
 
   const { dashboardData, absentEmployees, lateEmployees, hasAttendance } =
     useMemo(() => {
@@ -289,9 +288,7 @@ const Dashboard: React.FC = () => {
 
       <DashboardHeader dateLabel={dateLabel} />
 
-      <CorrespondenceDashboardStrip />
-
-      {!isLoading && !hasAttendance ? (
+      {!isPending && !hasAttendance ? (
         <div className="mb-8 flex items-start gap-4 rounded-3xl border border-amber-200/80 bg-amber-50/80 p-5 ring-1 ring-amber-100">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
             <AlertCircle className="h-5 w-5" />
@@ -306,7 +303,7 @@ const Dashboard: React.FC = () => {
       ) : null}
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        {isLoading ? (
+        {isPending ? (
           <>
             <SkeletonDashboardCard />
             <SkeletonDashboardCard />
@@ -347,7 +344,7 @@ const Dashboard: React.FC = () => {
       </div>
 
       <div className="mt-10 w-full">
-        {isLoading ? (
+        {isPending ? (
           <SkeletonProgressSection />
         ) : (
           <ProgressSection
@@ -358,7 +355,7 @@ const Dashboard: React.FC = () => {
         )}
 
         <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
-          {isLoading ? (
+          {isPending ? (
             <>
               <SkeletonListCard />
               <SkeletonListCard />

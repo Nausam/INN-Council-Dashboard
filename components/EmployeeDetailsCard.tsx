@@ -3,18 +3,18 @@
 import { AvatarGlow, CouncilCard } from "@/components/design-system";
 import { statTones, typography, type StatTone } from "@/lib/design-tokens";
 import { cn } from "@/lib/utils";
-import {
-  Award,
-  Baby,
-  Briefcase,
-  Calendar,
-  DollarSign,
-  FileText,
-  Heart,
-  TrendingUp,
-  Users,
-} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import {
+    Award,
+    Baby,
+    Briefcase,
+    Calendar,
+    DollarSign,
+    FileText,
+    Heart,
+    TrendingUp,
+    Users,
+} from "lucide-react";
 import React from "react";
 
 type EmployeeForCard = {

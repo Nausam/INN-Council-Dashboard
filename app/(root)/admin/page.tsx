@@ -33,7 +33,7 @@ const AdminLeaveApprovalPage: React.FC = () => {
   const [itemsPerPage, setItemsPerPage] = useState<number>(4);
 
   const offset = (currentPage - 1) * itemsPerPage;
-  const { data, isLoading } = useAdminLeaveRequestsQuery(itemsPerPage, offset);
+  const { data, isPending } = useAdminLeaveRequestsQuery(itemsPerPage, offset);
   const { invalidateLeaveRequests } = useQueryInvalidation();
   const { currentUser } = useCurrentUser();
 
@@ -77,7 +77,7 @@ const AdminLeaveApprovalPage: React.FC = () => {
         />
       </div>
 
-      {isLoading ? (
+      {isPending ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 mt-10">
           {Array.from({ length: 4 }).map((_, idx) => (
             <SkeletonAdminLeaveRequestCard key={idx} />

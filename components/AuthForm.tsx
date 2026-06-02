@@ -1,6 +1,6 @@
 "use client";
 
-import { SignIn, SignUp } from "@clerk/nextjs";
+import { SignIn } from "@clerk/nextjs";
 import {
   BarChart3,
   Clock3,
@@ -9,28 +9,8 @@ import {
   Users,
 } from "lucide-react";
 import Image from "next/image";
-import Link from "next/link";
 
 import { councilClerkAppearance } from "@/lib/clerk-appearance";
-
-type FormType = "sign-in" | "sign-up";
-
-const copy = {
-  "sign-in": {
-    heading: "Sign in",
-    subheading: "Use your council email to access the dashboard.",
-    switchLabel: "Don't have an account?",
-    switchHref: "/sign-up",
-    switchAction: "Sign up",
-  },
-  "sign-up": {
-    heading: "Sign up",
-    subheading: "Register with your official council email address.",
-    switchLabel: "Already have an account?",
-    switchHref: "/sign-in",
-    switchAction: "Sign in",
-  },
-} as const;
 
 const modules = [
   { icon: Clock3, label: "Attendance" },
@@ -54,9 +34,7 @@ function AuthWave() {
   );
 }
 
-const AuthForm = ({ type }: { type: FormType }) => {
-  const content = copy[type];
-
+const AuthForm = ({ unauthorized = false }: { unauthorized?: boolean }) => {
   return (
     <div className="w-full">
       <div className="rounded-[1.75rem] bg-white shadow-[0_24px_60px_-12px_rgba(13,148,136,0.18)] ring-1 ring-teal-900/5">
@@ -102,39 +80,27 @@ const AuthForm = ({ type }: { type: FormType }) => {
 
         <div className="relative -mt-1 overflow-visible rounded-b-[1.75rem] px-8 pb-8 pt-2">
           <div className="mb-7 text-center">
-            <h2 className="text-xl font-semibold text-slate-900">
-              {content.heading}
-            </h2>
-            <p className="mt-1.5 text-sm text-slate-500">{content.subheading}</p>
+            <h2 className="text-xl font-semibold text-slate-900">Sign in</h2>
+            <p className="mt-1.5 text-sm text-slate-500">
+              Use your council email to access the dashboard.
+            </p>
           </div>
+
+          {unauthorized ? (
+            <div
+              role="alert"
+              className="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800"
+            >
+              This email is not authorized to access the dashboard. Contact the
+              council administrator if you need access.
+            </div>
+          ) : null}
 
           <div className="clerk-auth-root">
-            {type === "sign-in" ? (
-              <SignIn
-                routing="hash"
-                signUpUrl="/sign-up"
-                appearance={councilClerkAppearance}
-              />
-            ) : (
-              <SignUp
-                routing="hash"
-                signInUrl="/sign-in"
-                appearance={councilClerkAppearance}
-              />
-            )}
+            <SignIn routing="hash" appearance={councilClerkAppearance} />
           </div>
 
-          <div className="mt-8 space-y-4 border-t border-slate-100 pt-6">
-            <p className="text-center text-sm text-slate-500">
-              {content.switchLabel}{" "}
-              <Link
-                href={content.switchHref}
-                className="font-semibold text-teal-700 hover:text-teal-800"
-              >
-                {content.switchAction}
-              </Link>
-            </p>
-
+          <div className="mt-8 border-t border-slate-100 pt-6">
             <div className="flex items-center justify-center gap-4 text-[11px] text-slate-400">
               <span className="inline-flex items-center gap-1.5">
                 <ShieldCheck className="h-3.5 w-3.5 text-teal-600" />

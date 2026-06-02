@@ -16,6 +16,7 @@ export function useEmployeesQuery() {
   return useQuery({
     queryKey: queryKeys.employees.all,
     queryFn: () => fetchAllEmployees(),
+    staleTime: QUERY_STALE_TIME,
   });
 }
 

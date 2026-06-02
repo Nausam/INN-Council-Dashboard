@@ -77,7 +77,7 @@ export default function DocumentRecieverDetailPage() {
 
   const {
     data: doc,
-    isLoading,
+    isPending,
     isError,
     error,
   } = useCorrespondenceDetailQuery(id);
@@ -186,7 +186,7 @@ export default function DocumentRecieverDetailPage() {
     }
   }
 
-  if (isLoading) {
+  if (isPending && !doc) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50">
         <div className="pointer-events-none fixed inset-0 overflow-hidden">

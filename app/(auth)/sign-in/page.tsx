@@ -6,6 +6,12 @@ export const metadata: Metadata = {
   description: "Sign in to the Council HR Dashboard",
 };
 
-const SignIn = () => <AuthForm type="sign-in" />;
+type SignInPageProps = {
+  searchParams: { error?: string };
+};
 
-export default SignIn;
+const SignInPage = ({ searchParams }: SignInPageProps) => (
+  <AuthForm unauthorized={searchParams.error === "unauthorized"} />
+);
+
+export default SignInPage;

@@ -54,7 +54,7 @@ const EmployeeDetails: React.FC = () => {
   const router = useRouter();
   const id = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
-  const { data, isLoading, isError } = useEmployeeQuery(id);
+  const { data, isPending, isError } = useEmployeeQuery(id);
   const employee = useMemo(
     () => (data ? toEmployeeForCard(data) : null),
     [data],
@@ -72,7 +72,7 @@ const EmployeeDetails: React.FC = () => {
     </Button>
   );
 
-  if (isLoading) {
+  if (isPending && !employee) {
     return (
       <PageShell>
         <div className="mx-auto max-w-5xl">

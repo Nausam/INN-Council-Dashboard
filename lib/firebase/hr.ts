@@ -555,6 +555,45 @@ export async function createSalarySlipRecord(data: {
   )!;
 }
 
+export async function upsertSalarySlipRecord(data: {
+  recordCardNumber: string;
+  employeeId?: string;
+  periodLabel: string;
+  objectKey: string;
+  fileName?: string;
+}): Promise<{ doc: SalarySlipDoc; replacedExisting: boolean }> {
+  const trimmedRecord = data.recordCardNumber.trim();
+  const trimmedPeriod = data.periodLabel.trim();
+  const existing = (await listSalarySlipsByRecordCard(trimmedRecord)).find(
+    (slip) => slip.periodLabel === trimmedPeriod,
+  );
+
+  if (existing) {
+    const db = getFirestoreDb();
+    const payload = withTimestamps(
+      {
+        recordCardNumber: trimmedRecord,
+        employeeId: data.employeeId ?? existing.employeeId ?? null,
+        periodLabel: trimmedPeriod,
+        objectKey: data.objectKey,
+        fileName: data.fileName ?? existing.fileName ?? null,
+      },
+      false,
+    );
+    await db.collection(COLLECTIONS.salarySlips).doc(existing.$id).update(payload);
+    return {
+      doc:
+        fromFirestoreDoc<SalarySlipDoc>(
+          await db.collection(COLLECTIONS.salarySlips).doc(existing.$id).get(),
+        ) ?? existing,
+      replacedExisting: true,
+    };
+  }
+
+  const doc = await createSalarySlipRecord(data);
+  return { doc, replacedExisting: false };
+}
+
 export type {
   AttendanceDoc,
   EmployeeDoc,

@@ -1,10 +1,11 @@
 "use client";
 
 import EmployeeCard from "@/components/EmployeeCard";
+import { EmployeeDetailsModal } from "@/components/Modals/EmployeeDetailsModal";
+import { EmployeeEditModal } from "@/components/Modals/EmployeeEditModal";
 import SkeletonEmployeesPage from "@/components/skeletons/SkeletonEmployeesPage";
 import { useEmployeesQuery } from "@/hooks/queries";
-import { useRouter } from "next/navigation";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Search, Users, Filter } from "lucide-react";
 
 /* ===== Types & helpers ===== */
@@ -89,9 +90,17 @@ const EmployeesPage: React.FC = () => {
   const [selectedDesignation, setSelectedDesignation] = useState<string>("All");
   const [selectedSection, setSelectedSection] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [detailsEmployee, setDetailsEmployee] = useState<Employee | null>(
+    null,
+  );
+  const [editEmployee, setEditEmployee] = useState<Employee | null>(null);
+  const [hasMounted, setHasMounted] = useState(false);
 
-  const { data: rawEmployees, isLoading } = useEmployeesQuery();
-  const router = useRouter();
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
+
+  const { data: rawEmployees, isPending } = useEmployeesQuery();
 
   const employees = useMemo(() => {
     const normalized: Employee[] = (Array.isArray(rawEmployees) ? rawEmployees : [])
@@ -123,8 +132,12 @@ const EmployeesPage: React.FC = () => {
     return sortEmployeesByOrder(filtered);
   }, [employees, selectedDesignation, selectedSection, searchQuery]);
 
-  const handleCardClick = (employeeId: string) => {
-    router.push(`/employees/${employeeId}`);
+  const handleCardClick = (employee: Employee) => {
+    setDetailsEmployee(employee);
+  };
+
+  const handleEditClick = (employee: Employee) => {
+    setEditEmployee(employee);
   };
 
   const handleDesignationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -145,15 +158,10 @@ const EmployeesPage: React.FC = () => {
     setSearchQuery("");
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50">
-        <div className="mx-auto max-w-7xl px-4 py-8 lg:px-8">
-          <SkeletonEmployeesPage />
-        </div>
-      </div>
-    );
-  }
+  // Defer query-driven UI until after mount so SSR matches the first client render
+  // (React Query may already have cached employees on the client).
+  const showInitialLoad =
+    !hasMounted || (isPending && rawEmployees === undefined);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50">
@@ -169,14 +177,20 @@ const EmployeesPage: React.FC = () => {
                 Employees
               </h1>
               <p className="mt-1 text-slate-600">
-                {`${filteredEmployees.length} ${
-                  filteredEmployees.length === 1 ? "employee" : "employees"
-                }`}
+                {showInitialLoad
+                  ? "Loading employees…"
+                  : `${filteredEmployees.length} ${
+                      filteredEmployees.length === 1 ? "employee" : "employees"
+                    }`}
               </p>
             </div>
           </div>
         </div>
 
+        {showInitialLoad ? (
+          <SkeletonEmployeesPage />
+        ) : (
+          <>
         {/* Search and Filters */}
         <div className="mb-8 space-y-4">
           {/* Search Bar */}
@@ -290,7 +304,8 @@ const EmployeesPage: React.FC = () => {
                 designation={e.designation}
                 section={e.section}
                 employeeId={e.$id}
-                onClick={() => handleCardClick(e.$id)}
+                onClick={() => handleCardClick(e)}
+                onEditClick={() => handleEditClick(e)}
               />
             ))}
           </div>
@@ -313,7 +328,35 @@ const EmployeesPage: React.FC = () => {
             </button>
           </div>
         )}
+          </>
+        )}
       </div>
+
+      <EmployeeDetailsModal
+        employeeId={detailsEmployee?.$id ?? null}
+        open={detailsEmployee !== null}
+        onOpenChange={(open) => {
+          if (!open) setDetailsEmployee(null);
+        }}
+        preview={
+          detailsEmployee
+            ? {
+                name: detailsEmployee.name,
+                designation: detailsEmployee.designation,
+                section: detailsEmployee.section,
+              }
+            : undefined
+        }
+      />
+
+      <EmployeeEditModal
+        employeeId={editEmployee?.$id ?? null}
+        open={editEmployee !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditEmployee(null);
+        }}
+        previewName={editEmployee?.name}
+      />
     </div>
   );
 };

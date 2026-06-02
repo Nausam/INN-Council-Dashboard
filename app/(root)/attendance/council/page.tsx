@@ -67,21 +67,21 @@ const AdminAttendancePage = () => {
   );
 
   const {
-    data: rawAttendance = [],
-    isLoading,
+    data: rawAttendance,
+    isPending,
     isFetching,
     error,
     refetch,
   } = useCouncilAttendanceQuery(formattedSelectedDate);
 
-  const { data: employees = [] } = useAllEmployeesActionQuery();
+  const { data: employees } = useAllEmployeesActionQuery();
 
   const attendanceData = useMemo(
-    () => normalize(rawAttendance),
+    () => normalize(rawAttendance ?? []),
     [rawAttendance],
   );
 
-  const showGenerateButton = !isLoading && attendanceData.length === 0;
+  const showGenerateButton = !isPending && attendanceData.length === 0;
   const isAttendanceGenerated = attendanceData.length > 0;
 
   const handleDateChange = (iso: string) => {
@@ -163,13 +163,13 @@ const AdminAttendancePage = () => {
         return;
       }
 
-      if (employees.length === 0) {
+      if ((employees ?? []).length === 0) {
         throw new Error("Failed to fetch employees");
       }
 
       const createResult = await createAttendanceForEmployeesAction(
         formattedSelectedDate,
-        employees as EmployeeDoc[],
+        (employees ?? []) as EmployeeDoc[],
       );
 
       if (!createResult.success) {
@@ -195,7 +195,7 @@ const AdminAttendancePage = () => {
     }
   };
 
-  const pageLoading = isLoading;
+  const pageLoading = isPending;
   const actionLoading = isFetching || syncing || generating;
 
   return (

@@ -2,6 +2,7 @@
 
 import { auth, clerkClient, currentUser } from "@clerk/nextjs/server";
 
+import { isEmailAllowed } from "@/lib/auth/allowed-emails";
 import { parseStringify } from "@/lib/utils";
 
 export type AuthProfile = {
@@ -31,6 +32,8 @@ export async function getAuthProfile(): Promise<AuthProfile | null> {
 
     const isAdmin = user.privateMetadata?.role === "admin";
 
+    if (!isEmailAllowed(email)) return null;
+
     return parseStringify({ id: userId, fullName, email, isAdmin });
   } catch {
     return null;
@@ -58,7 +61,7 @@ export async function signOutUser() {
 
 export async function createAccount() {
   return parseStringify({
-    error: "Sign up is handled by Clerk at /sign-up",
+    error: "Sign up is disabled. Contact the council administrator for access.",
   });
 }
 

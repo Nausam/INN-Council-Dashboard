@@ -161,31 +161,6 @@ function buildTargets(): MigrationTarget[] {
   pushEnv("land_payments", "land_payments", "NEXT_PUBLIC_APPWRITE_LAND_PAYMENTS_COLLECTION");
   pushEnv("land_statements", "land_statements", "NEXT_PUBLIC_APPWRITE_LAND_STATEMENTS_COLLECTION");
 
-  const councilEndpoint = process.env.NEXT_PUBLIC_APP_APPWRITE_ENDPOINT;
-  const councilProject = process.env.NEXT_PUBLIC_APP_APPWRITE_PROJECT_ID;
-  const councilDb = process.env.NEXT_PUBLIC_APP_APPWRITE_DATABASE_ID;
-  if (councilEndpoint && councilProject && councilDb && hrKey) {
-    const council = (name: string, firestoreCollection: string, envName: string) => {
-      const collectionId = process.env[envName];
-      if (!collectionId) return;
-      targets.push({
-        name,
-        firestoreCollection,
-        appwrite: {
-          endpoint: councilEndpoint,
-          projectId: councilProject,
-          apiKey: hrKey,
-          databaseId: councilDb,
-          collectionId,
-        },
-      });
-    };
-    council("council_ninmun", "council_ninmun", "NEXT_PUBLIC_APP_APPWRITE_COUNCIL_NINMUN_COLLECTION");
-    council("ninmun_votes", "ninmun_votes", "NEXT_PUBLIC_APP_APPWRITE_NINMUN_VOTES_COLLECTION");
-    council("iulaan", "iulaan", "NEXT_PUBLIC_APP_APPWRITE_COUNCIL_IULAAN_COLLECTION");
-    council("services_competitions", "services_competitions", "NEXT_PUBLIC_APPWRITE_SERVICES_COMPETITIONS_COLLECTION");
-  }
-
   const billingEndpoint = process.env.APPWRITE_BILLING_ENDPOINT;
   const billingProject = process.env.APPWRITE_BILLING_PROJECT_ID;
   const billingDb = process.env.APPWRITE_BILLING_DB_ID;

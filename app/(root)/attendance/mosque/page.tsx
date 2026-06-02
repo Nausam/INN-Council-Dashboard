@@ -69,19 +69,19 @@ const MosqueAttendancePage = () => {
   );
 
   const {
-    data: rawAttendance = [],
-    isLoading,
+    data: rawAttendance,
+    isPending,
     isFetching,
     error,
     refetch,
   } = useMosqueAttendanceQuery(formattedSelectedDate);
 
   const attendanceData = useMemo(
-    () => sortAttendanceByEmployeeOrder(rawAttendance as AttendanceDoc[]),
+    () => sortAttendanceByEmployeeOrder((rawAttendance ?? []) as AttendanceDoc[]),
     [rawAttendance],
   );
 
-  const showGenerateButton = !isLoading && attendanceData.length === 0;
+  const showGenerateButton = !isPending && attendanceData.length === 0;
   const isAttendanceGenerated = attendanceData.length > 0;
 
   const handleDateChange = (iso: string) => {
@@ -149,7 +149,7 @@ const MosqueAttendancePage = () => {
     }
   };
 
-  const pageLoading = isLoading;
+  const pageLoading = isPending;
   const actionLoading = isFetching || generating;
 
   return (

@@ -11,7 +11,6 @@ import { useUser } from "@/Providers/UserProvider";
 import { typography } from "@/lib/design-tokens";
 import { cn } from "@/lib/utils";
 import { Edit3 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import React from "react";
 
 interface EmployeeCardProps {
@@ -20,6 +19,7 @@ interface EmployeeCardProps {
   section?: string;
   employeeId: string;
   onClick: () => void;
+  onEditClick?: () => void;
 }
 
 const EmployeeCard: React.FC<EmployeeCardProps> = ({
@@ -28,13 +28,13 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   section,
   employeeId,
   onClick,
+  onEditClick,
 }) => {
-  const router = useRouter();
   const { isAdmin } = useUser();
 
   const handleEditClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
-    router.push(`/employees/${employeeId}/edit`);
+    onEditClick?.();
   };
 
   return (

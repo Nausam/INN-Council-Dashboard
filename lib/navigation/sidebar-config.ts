@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  Banknote,
   Calendar,
   FileText,
   Files,
@@ -31,12 +32,6 @@ export const councilSidebarNav: SidebarNavItem[] = [
     items: [
       { title: "Home", url: "/" },
       { title: "Admin", url: "/admin" },
-      {
-        title: "Services & Competitions",
-        url: "/admin/app/services&competitions",
-      },
-      { title: "Council Ninmun", url: "/admin/app/council-ninmun" },
-      { title: "Council Iulaan", url: "/admin/app/iulaan" },
     ],
   },
   {
@@ -52,6 +47,13 @@ export const councilSidebarNav: SidebarNavItem[] = [
     items: [
       { title: "All Employees", url: "/employees" },
       { title: "Add Employee", url: "/employees/add" },
+    ],
+  },
+  {
+    title: "Salary",
+    url: "#",
+    icon: Banknote,
+    items: [
       { title: "Salary Slips", url: "/salary-slips" },
       { title: "Upload Slips", url: "/salary-slips/upload" },
     ],
@@ -63,8 +65,8 @@ export const councilSidebarNav: SidebarNavItem[] = [
     items: [
       { title: "Council", url: "/attendance/council" },
       { title: "Mosque", url: "/attendance/mosque" },
-      { title: "Attendance Sheet", url: "/attendance/mosque/attendance-sheet" },
-      { title: "OT Sheet", url: "/attendance/mosque/ot-sheet" },
+      { title: "Mosque Sign Sheet", url: "/attendance/mosque/attendance-sheet" },
+      { title: "Mosque OT Sheet", url: "/attendance/mosque/ot-sheet" },
     ],
   },
   {

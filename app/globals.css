@@ -822,6 +822,62 @@ html.pdf-export .avoid-break {
   }
 }
 
+@keyframes council-modal-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes council-modal-overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes council-modal-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 16px)) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes council-modal-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 10px)) scale(0.98);
+  }
+}
+
+.employee-modal-overlay[data-state="open"] {
+  animation: council-modal-overlay-in 0.28s ease-out both;
+}
+
+.employee-modal-overlay[data-state="closed"] {
+  animation: council-modal-overlay-out 0.2s ease-in both;
+}
+
+.employee-modal-content[data-state="open"] {
+  animation: council-modal-in 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.employee-modal-content[data-state="closed"] {
+  animation: council-modal-out 0.24s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .council-sidebar-panel *,
   .council-sidebar-panel,
@@ -840,7 +896,9 @@ html.pdf-export .avoid-break {
 
   .council-popover-surface,
   .council-popover-fast,
-  .council-date-popover .council-calendar {
+  .council-date-popover .council-calendar,
+  .employee-modal-overlay,
+  .employee-modal-content {
     animation: none !important;
   }
 }
