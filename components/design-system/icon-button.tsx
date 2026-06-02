@@ -11,6 +11,8 @@ const iconButtonVariants = cva(
           "border-slate-200 bg-white/80 text-slate-600 hover:scale-105 hover:border-teal-300 hover:bg-teal-50 hover:text-teal-600 hover:shadow-md",
         ghost:
           "border-transparent bg-transparent text-slate-500 shadow-none hover:bg-slate-100 hover:text-slate-800",
+        danger:
+          "border-rose-200/90 bg-white/80 text-rose-600 hover:scale-105 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 hover:shadow-md",
       },
       size: {
         default: "h-10 w-10",

@@ -55,6 +55,7 @@ export const councilSidebarNav: SidebarNavItem[] = [
     icon: Banknote,
     items: [
       { title: "Salary Slips", url: "/salary-slips" },
+      { title: "View Salary Slip", url: "/salary-slips/view" },
       { title: "Upload Slips", url: "/salary-slips/upload" },
     ],
   },

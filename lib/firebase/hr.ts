@@ -6,6 +6,7 @@ import {
   stripLegacyFields,
   withTimestamps,
 } from "@/lib/firebase/adapters";
+import { FieldValue } from "firebase-admin/firestore";
 import { COLLECTIONS, getFirestoreDb } from "@/lib/firebase/admin";
 import { listAllDocs, newDocId } from "@/lib/firebase/query";
 import type {
@@ -46,7 +47,13 @@ export async function createEmployeeRecord(
 ): Promise<EmployeeDoc> {
   const db = getFirestoreDb();
   const id = newDocId();
-  const payload = withTimestamps(stripLegacyFields(employeeData as Record<string, unknown>), true);
+  const payload = withTimestamps(
+    stripLegacyFields(employeeData as Record<string, unknown>),
+    true,
+  );
+  if (Object.prototype.hasOwnProperty.call(employeeData, "creditSchemes")) {
+    payload.creditScheme = FieldValue.delete();
+  }
   await db.collection(COLLECTIONS.employees).doc(id).set(payload);
   const snap = await db.collection(COLLECTIONS.employees).doc(id).get();
   return fromFirestoreDoc<EmployeeDoc>(snap)!;
@@ -115,11 +122,26 @@ export async function updateEmployeeRecord(
   formData: Partial<Omit<EmployeeDoc, "$id" | "$createdAt" | "$updatedAt">>,
 ): Promise<EmployeeDoc> {
   const db = getFirestoreDb();
-  await db
-    .collection(COLLECTIONS.employees)
-    .doc(employeeId)
-    .update(withTimestamps(stripLegacyFields(formData as Record<string, unknown>)));
+  const payload = withTimestamps(
+    stripLegacyFields(formData as Record<string, unknown>),
+  );
+
+  if (Object.prototype.hasOwnProperty.call(formData, "creditSchemes")) {
+    payload.creditScheme = FieldValue.delete();
+  }
+
+  await db.collection(COLLECTIONS.employees).doc(employeeId).update(payload);
   return fetchEmployeeById(employeeId);
+}
+
+export async function deleteEmployeeRecord(employeeId: string): Promise<void> {
+  const db = getFirestoreDb();
+  const ref = db.collection(COLLECTIONS.employees).doc(employeeId);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    throw new Error("Employee not found");
+  }
+  await ref.delete();
 }
 
 export async function fetchMosqueAssistants(): Promise<EmployeeDoc[]> {

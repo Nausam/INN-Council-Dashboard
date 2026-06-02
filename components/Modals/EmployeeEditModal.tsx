@@ -6,6 +6,7 @@ import { AvatarGlow } from "@/components/design-system";
 import { useEmployeeQuery, useQueryInvalidation } from "@/hooks/queries";
 import { toast } from "@/hooks/use-toast";
 import { updateEmployeeRecord } from "@/lib/firebase/hr";
+import { employeeFormDataForFirestore } from "@/lib/employees/form-payload";
 import { toEmployeeFormValues } from "@/lib/employees/transforms";
 import { Edit3, Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -41,7 +42,7 @@ export function EmployeeEditModal({
     if (!employeeId) return;
     setSubmitting(true);
     try {
-      await updateEmployeeRecord(employeeId, formData);
+      await updateEmployeeRecord(employeeId, employeeFormDataForFirestore(formData));
       await invalidateEmployees(employeeId);
       toast({
         title: "Success",
@@ -96,6 +97,7 @@ export function EmployeeEditModal({
         ) : formValues ? (
           <div className="animate-in fade-in duration-300 fill-mode-both">
             <EmployeeForm
+              key={`${employeeId}-${data?.$updatedAt ?? "loaded"}`}
               variant="modal"
               employeeId={employeeId ?? undefined}
               initialData={formValues}

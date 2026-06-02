@@ -878,6 +878,56 @@ html.pdf-export .avoid-break {
   animation: council-modal-out 0.24s cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 
+@media print {
+  body:has(.salary-slip-print-mode-single),
+  body:has(.salary-slip-print-mode-all) {
+    background: #fff !important;
+  }
+
+  body:has(.salary-slip-print-mode-single) .council-sidebar-shell,
+  body:has(.salary-slip-print-mode-single) .council-mobile-header,
+  body:has(.salary-slip-print-mode-all) .council-sidebar-shell,
+  body:has(.salary-slip-print-mode-all) .council-mobile-header {
+    display: none !important;
+  }
+
+  body:has(.salary-slip-print-mode-single) .view-salary-slips-page aside,
+  body:has(.salary-slip-print-mode-all) .view-salary-slips-page aside,
+  body:has(.salary-slip-print-mode-single) .view-salary-slips-page .print\\:hidden,
+  body:has(.salary-slip-print-mode-all) .view-salary-slips-page .print\\:hidden {
+    display: none !important;
+  }
+
+  body:has(.salary-slip-print-mode-single) .salary-slip-print-all {
+    display: none !important;
+  }
+
+  body:has(.salary-slip-print-mode-all) .salary-slip-print-single {
+    display: none !important;
+  }
+
+  body:has(.salary-slip-print-mode-all) .salary-slip-print-all {
+    display: block !important;
+  }
+
+  body:has(.salary-slip-print-mode-single) .council-main-frame,
+  body:has(.salary-slip-print-mode-all) .council-main-frame {
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: none !important;
+  }
+
+  .salary-slip-print-page {
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .salary-slip-print-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .council-sidebar-panel *,
   .council-sidebar-panel,

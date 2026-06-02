@@ -1,6 +1,7 @@
 "use client";
 
 import EmployeeCard from "@/components/EmployeeCard";
+import { EmployeeDeleteConfirmModal } from "@/components/Modals/EmployeeDeleteConfirmModal";
 import { EmployeeDetailsModal } from "@/components/Modals/EmployeeDetailsModal";
 import { EmployeeEditModal } from "@/components/Modals/EmployeeEditModal";
 import SkeletonEmployeesPage from "@/components/skeletons/SkeletonEmployeesPage";
@@ -94,6 +95,7 @@ const EmployeesPage: React.FC = () => {
     null,
   );
   const [editEmployee, setEditEmployee] = useState<Employee | null>(null);
+  const [deleteEmployee, setDeleteEmployee] = useState<Employee | null>(null);
   const [hasMounted, setHasMounted] = useState(false);
 
   useEffect(() => {
@@ -138,6 +140,16 @@ const EmployeesPage: React.FC = () => {
 
   const handleEditClick = (employee: Employee) => {
     setEditEmployee(employee);
+  };
+
+  const handleDeleteClick = (employee: Employee) => {
+    setDeleteEmployee(employee);
+  };
+
+  const handleEmployeeDeleted = (employeeId: string) => {
+    if (detailsEmployee?.$id === employeeId) setDetailsEmployee(null);
+    if (editEmployee?.$id === employeeId) setEditEmployee(null);
+    setDeleteEmployee(null);
   };
 
   const handleDesignationChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -306,6 +318,7 @@ const EmployeesPage: React.FC = () => {
                 employeeId={e.$id}
                 onClick={() => handleCardClick(e)}
                 onEditClick={() => handleEditClick(e)}
+                onDeleteClick={() => handleDeleteClick(e)}
               />
             ))}
           </div>
@@ -356,6 +369,15 @@ const EmployeesPage: React.FC = () => {
           if (!open) setEditEmployee(null);
         }}
         previewName={editEmployee?.name}
+      />
+
+      <EmployeeDeleteConfirmModal
+        employee={deleteEmployee}
+        open={deleteEmployee !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteEmployee(null);
+        }}
+        onDeleted={handleEmployeeDeleted}
       />
     </div>
   );

@@ -10,7 +10,7 @@ import {
 import { useUser } from "@/Providers/UserProvider";
 import { typography } from "@/lib/design-tokens";
 import { cn } from "@/lib/utils";
-import { Edit3 } from "lucide-react";
+import { Edit3, Trash2 } from "lucide-react";
 import React from "react";
 
 interface EmployeeCardProps {
@@ -20,6 +20,7 @@ interface EmployeeCardProps {
   employeeId: string;
   onClick: () => void;
   onEditClick?: () => void;
+  onDeleteClick?: () => void;
 }
 
 const EmployeeCard: React.FC<EmployeeCardProps> = ({
@@ -29,12 +30,18 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   employeeId,
   onClick,
   onEditClick,
+  onDeleteClick,
 }) => {
   const { isAdmin } = useUser();
 
   const handleEditClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     onEditClick?.();
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    onDeleteClick?.();
   };
 
   return (
@@ -56,11 +63,19 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
         </div>
 
         {isAdmin && (
-          <IconButton
-            icon={Edit3}
-            label="Edit employee"
-            onClick={handleEditClick}
-          />
+          <div className="flex shrink-0 items-center gap-1.5">
+            <IconButton
+              icon={Edit3}
+              label="Edit employee"
+              onClick={handleEditClick}
+            />
+            <IconButton
+              icon={Trash2}
+              label="Delete employee"
+              variant="danger"
+              onClick={handleDeleteClick}
+            />
+          </div>
         )}
       </div>
 

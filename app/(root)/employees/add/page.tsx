@@ -2,6 +2,7 @@
 
 import EmployeeForm, { EmployeeFormData } from "@/components/EmployeeForm";
 import { EmptyState, PageShell } from "@/components/design-system";
+import { employeeFormDataForFirestore } from "@/lib/employees/form-payload";
 import { createEmployeeRecord } from "@/lib/firebase/hr";
 import { useUser } from "@/Providers/UserProvider";
 import { ShieldAlert } from "lucide-react";
@@ -14,7 +15,7 @@ const AddEmployeePage: React.FC = () => {
   const handleCreateEmployee = async (formData: EmployeeFormData) => {
     setLoading(true);
     try {
-      await createEmployeeRecord(formData);
+      await createEmployeeRecord(employeeFormDataForFirestore(formData));
     } catch (error) {
       console.error("Error adding employee:", error);
       throw error;

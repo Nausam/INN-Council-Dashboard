@@ -1,0 +1,259 @@
+/* Council salary slip — staff header + 3-column salary details */
+
+.salary-slip-pdf {
+  --slip-primary: #1e3a5f;
+  --slip-ink: #1a1a1a;
+  --slip-muted: #6b7280;
+  --slip-line: #d1d5db;
+  --slip-line-strong: #1a1a1a;
+  --slip-period: #0d6e6e;
+  --slip-deduction: #dc2626;
+  --slip-allowance: #0f766e;
+  --slip-max-width: 794px;
+  --slip-font-latin: var(--font-slip-latin), Calibri, "Segoe UI", Arial, sans-serif;
+  --slip-font-dhivehi: var(--font-slip-dhivehi), "Faruma", sans-serif;
+
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--slip-max-width);
+  margin-left: auto;
+  margin-right: auto;
+  background: #fff;
+  color: var(--slip-ink);
+  font-family: var(--slip-font-latin);
+  font-size: 13px;
+  line-height: 1.4;
+  border: 1px solid var(--slip-line);
+}
+
+.salary-slip-pdf *,
+.salary-slip-pdf *::before,
+.salary-slip-pdf *::after {
+  box-sizing: border-box;
+}
+
+/* ----- Header ----- */
+.salary-slip-pdf__header {
+  padding: 28px 40px 20px;
+  text-align: center;
+  border-bottom: 2px solid var(--slip-line-strong);
+}
+
+.salary-slip-pdf__eyebrow {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--slip-muted);
+}
+
+.salary-slip-pdf__title {
+  margin: 14px 0 0;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.15;
+  text-transform: uppercase;
+  color: var(--slip-ink);
+}
+
+.salary-slip-pdf__period {
+  margin: 6px 0 0;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--slip-period);
+}
+
+/* ----- Staff details ----- */
+.salary-slip-pdf__staff {
+  padding: 22px 40px 20px;
+  border-bottom: 1px solid var(--slip-line);
+}
+
+.salary-slip-pdf__staff-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 3px 0;
+}
+
+.salary-slip-pdf__staff-label {
+  flex-shrink: 0;
+  font-family: var(--slip-font-latin);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--slip-ink);
+}
+
+.salary-slip-pdf__staff-value {
+  min-width: 0;
+  text-align: right;
+  font-family: var(--slip-font-latin);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--slip-ink);
+}
+
+/* ----- Salary details: 3 columns (EN | amount | DV) ----- */
+.salary-slip-pdf__body {
+  padding: 24px 32px 36px;
+}
+
+.salary-slip-pdf__triple-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(6.5rem, 8.5rem) minmax(0, 1fr);
+  column-gap: 20px;
+  row-gap: 6px;
+  align-items: center;
+}
+
+.salary-slip-pdf__col-en {
+  text-align: left;
+  font-family: var(--slip-font-latin);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.salary-slip-pdf__col-amt {
+  text-align: right;
+  font-family: var(--slip-font-latin);
+  font-size: 13px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--slip-ink);
+  white-space: nowrap;
+}
+
+.salary-slip-pdf__col-dv {
+  text-align: right;
+  font-family: var(--slip-font-dhivehi);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.55;
+  direction: rtl;
+  unicode-bidi: plaintext;
+}
+
+.salary-slip-pdf__col-amt--rule {
+  border-top: 1px solid currentColor;
+  padding-top: 5px;
+  margin-top: 2px;
+}
+
+.salary-slip-pdf__col-amt--net {
+  font-weight: 700;
+  border-bottom: 3px double currentColor;
+  padding-bottom: 2px;
+}
+
+/* Tone variants */
+.salary-slip-pdf__tone-primary .salary-slip-pdf__col-en,
+.salary-slip-pdf__tone-primary .salary-slip-pdf__col-dv {
+  color: var(--slip-primary);
+  font-weight: 700;
+}
+
+.salary-slip-pdf__tone-primary .salary-slip-pdf__col-amt {
+  font-weight: 700;
+  color: var(--slip-primary);
+}
+
+.salary-slip-pdf__tone-deduction .salary-slip-pdf__col-en,
+.salary-slip-pdf__tone-deduction .salary-slip-pdf__col-dv {
+  color: var(--slip-deduction);
+}
+
+.salary-slip-pdf__tone-deduction .salary-slip-pdf__col-amt--rule {
+  border-top-color: var(--slip-deduction);
+}
+
+.salary-slip-pdf__tone-deduction-bold .salary-slip-pdf__col-en,
+.salary-slip-pdf__tone-deduction-bold .salary-slip-pdf__col-dv,
+.salary-slip-pdf__tone-deduction-bold .salary-slip-pdf__col-amt {
+  color: var(--slip-deduction);
+  font-weight: 700;
+}
+
+.salary-slip-pdf__tone-deduction-bold .salary-slip-pdf__col-amt--rule {
+  border-top-color: var(--slip-deduction);
+}
+
+.salary-slip-pdf__tone-allowance .salary-slip-pdf__col-en,
+.salary-slip-pdf__tone-allowance .salary-slip-pdf__col-dv {
+  color: var(--slip-allowance);
+}
+
+.salary-slip-pdf__tone-allowance .salary-slip-pdf__col-amt--rule {
+  border-top-color: var(--slip-allowance);
+}
+
+.salary-slip-pdf__tone-allowance-bold .salary-slip-pdf__col-en,
+.salary-slip-pdf__tone-allowance-bold .salary-slip-pdf__col-dv,
+.salary-slip-pdf__tone-allowance-bold .salary-slip-pdf__col-amt {
+  color: var(--slip-allowance);
+  font-weight: 700;
+}
+
+.salary-slip-pdf__tone-allowance-bold .salary-slip-pdf__col-amt--rule {
+  border-top-color: var(--slip-allowance);
+}
+
+.salary-slip-pdf__tone-net .salary-slip-pdf__col-en,
+.salary-slip-pdf__tone-net .salary-slip-pdf__col-dv {
+  color: var(--slip-allowance);
+  font-weight: 700;
+}
+
+.salary-slip-pdf__tone-net .salary-slip-pdf__col-amt {
+  color: var(--slip-allowance);
+  font-weight: 700;
+}
+
+.salary-slip-pdf__tone-net .salary-slip-pdf__col-amt--net {
+  border-bottom-color: var(--slip-allowance);
+}
+
+.salary-slip-pdf__section-head .salary-slip-pdf__col-en,
+.salary-slip-pdf__section-head .salary-slip-pdf__col-dv {
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.salary-slip-pdf__section-head--deduction .salary-slip-pdf__col-en,
+.salary-slip-pdf__section-head--deduction .salary-slip-pdf__col-dv {
+  color: var(--slip-deduction);
+}
+
+.salary-slip-pdf__section-head--allowance .salary-slip-pdf__col-en,
+.salary-slip-pdf__section-head--allowance .salary-slip-pdf__col-dv {
+  color: var(--slip-allowance);
+}
+
+.salary-slip-pdf__spacer {
+  height: 10px;
+  grid-column: 1 / -1;
+}
+
+.salary-slip-pdf__triple-row {
+  display: contents;
+}
+
+@media print {
+  .salary-slip-pdf {
+    border: none;
+  }
+
+  .salary-slip-pdf__header,
+  .salary-slip-pdf__staff,
+  .salary-slip-pdf__body {
+    padding-left: 28px;
+    padding-right: 28px;
+  }
+}

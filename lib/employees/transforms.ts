@@ -1,4 +1,5 @@
 import type { EmployeeFormData } from "@/components/EmployeeForm";
+import { parseCreditSchemesFromDoc } from "@/lib/employees/credit-schemes";
 
 export type EmployeeForDetails = {
   name: string;
@@ -32,7 +33,30 @@ type EmployeeDoc = {
   officialLeave?: number;
   noPayLeave?: number;
   preMaternityLeave?: number;
+  basicSalary?: number;
+  creditScheme?: number;
+  creditSchemes?: unknown;
+  retirementPension?: number;
+  jobAllowance?: number;
+  attendanceBenefit?: number;
+  temporaryZvAllowance?: number;
+  ramazanAllowance?: number;
+  livingAllowance?: number;
+  phoneAllowance?: number;
 };
+
+function salaryFieldsFromDoc(r: EmployeeDoc) {
+  return {
+    basicSalary: num(r.basicSalary),
+    retirementPension: num(r.retirementPension),
+    jobAllowance: num(r.jobAllowance),
+    attendanceBenefit: num(r.attendanceBenefit),
+    temporaryZvAllowance: num(r.temporaryZvAllowance),
+    ramazanAllowance: num(r.ramazanAllowance),
+    livingAllowance: num(r.livingAllowance),
+    phoneAllowance: num(r.phoneAllowance),
+  };
+}
 
 function str(v: unknown, fallback = ""): string {
   return typeof v === "string" ? v : fallback;
@@ -81,5 +105,7 @@ export function toEmployeeFormValues(raw: unknown): EmployeeFormData {
     officialLeave: num(r.officialLeave),
     noPayLeave: num(r.noPayLeave),
     preMaternityLeave: num(r.preMaternityLeave),
+    ...salaryFieldsFromDoc(r),
+    creditSchemes: parseCreditSchemesFromDoc(r.creditSchemes),
   };
 }

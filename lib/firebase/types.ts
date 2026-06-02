@@ -35,6 +35,25 @@ export type EmployeeDoc = LegacyDocument & {
   paternityLeave?: number;
   noPayLeave?: number;
   officialLeave?: number;
+  basicSalary?: number;
+  /** @deprecated Use creditSchemes */
+  creditScheme?: number;
+  creditSchemes?: Array<{
+    name: string;
+    startDate: string;
+    endDate: string;
+    startMonthAmount: number;
+    endMonthAmount: number;
+  }>;
+  retirementPension?: number;
+  jobAllowance?: number;
+  /** MVR per working day */
+  attendanceBenefit?: number;
+  /** MVR per working day */
+  temporaryZvAllowance?: number;
+  ramazanAllowance?: number;
+  livingAllowance?: number;
+  phoneAllowance?: number;
   [key: string]: unknown;
 };
 

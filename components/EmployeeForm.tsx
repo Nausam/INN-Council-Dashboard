@@ -16,6 +16,11 @@ import {
   createEmployeeRecord,
   updateEmployeeRecord,
 } from "@/lib/firebase/hr";
+import { CreditSchemesFormSection } from "@/components/employees/CreditSchemesFormSection";
+import {
+  creditSchemesForFirestore,
+  type CreditSchemeEntry,
+} from "@/lib/employees/credit-schemes";
 import { cn } from "@/lib/utils";
 import { useParams, useRouter } from "next/navigation";
 import React, { useState } from "react";
@@ -29,14 +34,21 @@ import {
   DollarSign,
   FileText,
   Heart,
+  Clock,
+  Home,
+  Landmark,
   MapPin,
+  Phone,
   User,
   UserPlus,
   Users,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
 /* ---------------- Types ---------------- */
+
+export type { CreditSchemeEntry };
 
 export type EmployeeFormData = {
   name: string;
@@ -54,7 +66,110 @@ export type EmployeeFormData = {
   officialLeave: number;
   noPayLeave: number;
   preMaternityLeave: number;
+  basicSalary: number;
+  creditSchemes: CreditSchemeEntry[];
+  retirementPension: number;
+  jobAllowance: number;
+  attendanceBenefit: number;
+  temporaryZvAllowance: number;
+  ramazanAllowance: number;
+  livingAllowance: number;
+  phoneAllowance: number;
 };
+
+const LEAVE_NUMERIC_FIELDS: (keyof EmployeeFormData)[] = [
+  "sickLeave",
+  "certificateSickLeave",
+  "annualLeave",
+  "familyRelatedLeave",
+  "maternityLeave",
+  "paternityLeave",
+  "officialLeave",
+  "noPayLeave",
+  "preMaternityLeave",
+];
+
+type SalaryFieldKey =
+  | "basicSalary"
+  | "retirementPension"
+  | "jobAllowance"
+  | "attendanceBenefit"
+  | "temporaryZvAllowance"
+  | "ramazanAllowance"
+  | "livingAllowance"
+  | "phoneAllowance";
+
+const SALARY_NUMERIC_FIELDS: SalaryFieldKey[] = [
+  "basicSalary",
+  "retirementPension",
+  "jobAllowance",
+  "attendanceBenefit",
+  "temporaryZvAllowance",
+  "ramazanAllowance",
+  "livingAllowance",
+  "phoneAllowance",
+];
+
+const defaultSalaryFields: Record<SalaryFieldKey, number> = {
+  basicSalary: 0,
+  retirementPension: 0,
+  jobAllowance: 0,
+  attendanceBenefit: 0,
+  temporaryZvAllowance: 0,
+  ramazanAllowance: 0,
+  livingAllowance: 0,
+  phoneAllowance: 0,
+};
+
+function buildInitialFormData(
+  initialData?: Partial<EmployeeFormData>,
+): EmployeeFormData {
+  return {
+    name: initialData?.name ?? "",
+    designation: initialData?.designation ?? "",
+    joinedDate: initialData?.joinedDate ?? "",
+    address: initialData?.address ?? "",
+    section: initialData?.section ?? "",
+    recordCardNumber: initialData?.recordCardNumber ?? "",
+    sickLeave: initialData?.sickLeave ?? 0,
+    certificateSickLeave: initialData?.certificateSickLeave ?? 0,
+    annualLeave: initialData?.annualLeave ?? 0,
+    familyRelatedLeave: initialData?.familyRelatedLeave ?? 0,
+    maternityLeave: initialData?.maternityLeave ?? 0,
+    paternityLeave: initialData?.paternityLeave ?? 0,
+    officialLeave: initialData?.officialLeave ?? 0,
+    noPayLeave: initialData?.noPayLeave ?? 0,
+    preMaternityLeave: initialData?.preMaternityLeave ?? 0,
+    basicSalary: initialData?.basicSalary ?? 0,
+    creditSchemes: initialData?.creditSchemes ?? [],
+    retirementPension: initialData?.retirementPension ?? 0,
+    jobAllowance: initialData?.jobAllowance ?? 0,
+    attendanceBenefit: initialData?.attendanceBenefit ?? 0,
+    temporaryZvAllowance: initialData?.temporaryZvAllowance ?? 0,
+    ramazanAllowance: initialData?.ramazanAllowance ?? 0,
+    livingAllowance: initialData?.livingAllowance ?? 0,
+    phoneAllowance: initialData?.phoneAllowance ?? 0,
+  };
+}
+
+const SALARY_FIELD_CONFIG: {
+  id: SalaryFieldKey;
+  label: string;
+  icon: LucideIcon;
+}[] = [
+  { id: "basicSalary", label: "Basic Salary", icon: DollarSign },
+  { id: "retirementPension", label: "Retirement Pension", icon: Landmark },
+  { id: "jobAllowance", label: "Job Allowance", icon: Briefcase },
+  { id: "attendanceBenefit", label: "Attendance Benefit (per day)", icon: Clock },
+  {
+    id: "temporaryZvAllowance",
+    label: "Temporary ZV Allowance (per day)",
+    icon: Calendar,
+  },
+  { id: "ramazanAllowance", label: "Ramazan Allowance", icon: Award },
+  { id: "livingAllowance", label: "Living Allowance", icon: Home },
+  { id: "phoneAllowance", label: "Phone Allowance", icon: Phone },
+];
 
 interface EmployeeFormProps {
   initialData?: Partial<EmployeeFormData>;
@@ -101,23 +216,9 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
   onSuccess,
 }) => {
   const isModal = variant === "modal";
-  const [formData, setFormData] = useState<EmployeeFormData>({
-    name: initialData?.name ?? "",
-    designation: initialData?.designation ?? "",
-    joinedDate: initialData?.joinedDate ?? "",
-    address: initialData?.address ?? "",
-    section: initialData?.section ?? "",
-    recordCardNumber: initialData?.recordCardNumber ?? "",
-    sickLeave: initialData?.sickLeave ?? 0,
-    certificateSickLeave: initialData?.certificateSickLeave ?? 0,
-    annualLeave: initialData?.annualLeave ?? 0,
-    familyRelatedLeave: initialData?.familyRelatedLeave ?? 0,
-    maternityLeave: initialData?.maternityLeave ?? 0,
-    paternityLeave: initialData?.paternityLeave ?? 0,
-    officialLeave: initialData?.officialLeave ?? 0,
-    noPayLeave: initialData?.noPayLeave ?? 0,
-    preMaternityLeave: initialData?.preMaternityLeave ?? 0,
-  });
+  const [formData, setFormData] = useState<EmployeeFormData>(() =>
+    buildInitialFormData(initialData),
+  );
 
   const [loading, setLoading] = useState(false);
 
@@ -131,18 +232,6 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
   const isSubmitting = isLoadingProp ?? loading;
   const { invalidateEmployees } = useQueryInvalidation();
 
-  const numericFields: (keyof EmployeeFormData)[] = [
-    "sickLeave",
-    "certificateSickLeave",
-    "annualLeave",
-    "familyRelatedLeave",
-    "maternityLeave",
-    "paternityLeave",
-    "officialLeave",
-    "noPayLeave",
-    "preMaternityLeave",
-  ];
-
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => {
@@ -151,7 +240,11 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
     setFormData((prev) => ({
       ...prev,
-      [key]: numericFields.includes(key) ? parseInt(value, 10) || 0 : value,
+      [key]: LEAVE_NUMERIC_FIELDS.includes(key)
+        ? parseInt(value, 10) || 0
+        : SALARY_NUMERIC_FIELDS.includes(key as SalaryFieldKey)
+          ? parseFloat(value) || 0
+          : value,
     }));
   };
 
@@ -166,41 +259,33 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const resetForm = () =>
-    setFormData({
-      name: "",
-      designation: "",
-      joinedDate: "",
-      address: "",
-      section: "",
-      recordCardNumber: "",
-      sickLeave: 0,
-      certificateSickLeave: 0,
-      annualLeave: 0,
-      familyRelatedLeave: 0,
-      maternityLeave: 0,
-      paternityLeave: 0,
-      officialLeave: 0,
-      noPayLeave: 0,
-      preMaternityLeave: 0,
-    });
+  const resetForm = () => setFormData(buildInitialFormData());
+
+  const toFirestorePayload = (data: EmployeeFormData) => {
+    const { creditSchemes, ...rest } = data;
+    return {
+      ...rest,
+      creditSchemes: creditSchemesForFirestore(creditSchemes),
+    };
+  };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
+    const payload = toFirestorePayload(formData);
 
     try {
       if (onSubmit) {
         await onSubmit(formData);
       } else if (employeeId) {
-        await updateEmployeeRecord(employeeId, formData);
+        await updateEmployeeRecord(employeeId, payload);
         await invalidateEmployees(employeeId);
         toast({
           title: "Success",
           description: `${formData.name} updated successfully`,
         });
       } else {
-        const created = await createEmployeeRecord(formData);
+        const created = await createEmployeeRecord(payload);
         await invalidateEmployees(created.$id);
         toast({
           title: "Success",
@@ -292,6 +377,40 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                 placeholder="Select joined date"
                 required
               />
+            </div>
+          </FormSection>
+
+          <FormSection
+            icon={CreditCard}
+            title="Credit Scheme"
+            description="Add schemes with a date range and start/end monthly amounts (MVR)"
+          >
+            <CreditSchemesFormSection
+              schemes={formData.creditSchemes}
+              onChange={(creditSchemes) =>
+                setFormData((prev) => ({ ...prev, creditSchemes }))
+              }
+            />
+          </FormSection>
+
+          <FormSection
+            icon={Wallet}
+            title="Salary & Allowances"
+            description="Salary components in MVR; attendance and ZV allowances are per day"
+          >
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {SALARY_FIELD_CONFIG.map(({ id, label, icon: Icon }) => (
+                <NumberField
+                  key={id}
+                  id={id}
+                  label={label}
+                  value={formData[id]}
+                  onChange={handleInputChange}
+                  icon={<Icon className="h-4 w-4" />}
+                  required={false}
+                  step="0.01"
+                />
+              ))}
             </div>
           </FormSection>
 
@@ -607,24 +726,32 @@ function DateField({
   );
 }
 
+type NumberFormFieldKey =
+  | SalaryFieldKey
+  | (typeof LEAVE_NUMERIC_FIELDS)[number];
+
 function NumberField({
   id,
   label,
   value,
   onChange,
   icon,
+  required = true,
+  step = "1",
 }: {
-  id: keyof EmployeeFormData;
+  id: NumberFormFieldKey;
   label: string;
   value: number;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   icon: React.ReactNode;
+  required?: boolean;
+  step?: string;
 }) {
   const fieldId = id as string;
 
   return (
     <div>
-      <FieldLabel htmlFor={fieldId} label={label} required />
+      <FieldLabel htmlFor={fieldId} label={label} required={required} />
       <div className="relative">
         <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
           {icon}
@@ -634,10 +761,11 @@ function NumberField({
           name={fieldId}
           type="number"
           min={0}
+          step={step}
           value={value}
           onChange={onChange}
           className={fieldClass}
-          required
+          required={required}
         />
       </div>
     </div>
