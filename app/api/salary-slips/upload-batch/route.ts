@@ -12,7 +12,8 @@ import {
 import { isR2Configured, uploadToR2 } from "@/lib/r2";
 import { NextRequest, NextResponse } from "next/server";
 
-export const maxDuration = 300;
+/** Vercel Hobby caps serverless functions at 60s; Pro allows up to 300s. */
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
