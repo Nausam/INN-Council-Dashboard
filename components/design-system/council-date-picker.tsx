@@ -7,9 +7,12 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, startOfMonth } from "date-fns";
 import { CalendarDays, ChevronDown, type LucideIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+const DEFAULT_YEAR_SPAN_PAST = 50;
+const DEFAULT_YEAR_SPAN_FUTURE = 10;
 
 type CouncilDatePickerProps = {
   id?: string;
@@ -21,6 +24,10 @@ type CouncilDatePickerProps = {
   required?: boolean;
   disabled?: boolean;
   className?: string;
+  /** First year in the year dropdown (default: 50 years ago). */
+  fromYear?: number;
+  /** Last year in the year dropdown (default: 10 years ahead). */
+  toYear?: number;
 };
 
 function parseDateValue(value: string): Date | undefined {
@@ -33,6 +40,48 @@ function parseDateValue(value: string): Date | undefined {
   }
 }
 
+const dropdownLabelClass = cn(
+  "inline-flex min-h-9 min-w-[6.25rem] items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-800 shadow-sm",
+  "transition-[border-color,background-color] duration-150 hover:border-teal-200 hover:bg-teal-50/60",
+);
+
+const calendarClassNames = {
+  months: "flex flex-col space-y-4",
+  month: "space-y-3",
+  caption: "relative mb-1 flex items-center justify-between gap-2 px-0.5",
+  caption_label: dropdownLabelClass,
+  caption_dropdowns: "flex flex-1 items-center justify-center gap-2",
+  dropdown_month: "relative",
+  dropdown_year: "relative",
+  dropdown: "absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0",
+  dropdown_icon: "h-3.5 w-3.5 shrink-0 text-slate-400",
+  vhidden: "sr-only",
+  nav: "flex shrink-0 items-center gap-0.5",
+  nav_button: cn(
+    "inline-flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm",
+    "transition-[background-color,border-color,color,transform] duration-200 hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700 active:scale-95",
+  ),
+  nav_button_previous: "",
+  nav_button_next: "",
+  table: "w-full border-collapse space-y-1",
+  head_row: "flex",
+  head_cell:
+    "w-9 rounded-md text-[0.72rem] font-semibold uppercase tracking-wide text-slate-400",
+  row: "mt-2 flex w-full",
+  cell: "relative p-0 text-center text-sm focus-within:relative focus-within:z-20 [&:has([aria-selected])]:rounded-xl",
+  day: cn(
+    "inline-flex h-9 w-9 items-center justify-center rounded-xl p-0 text-sm font-medium text-slate-700",
+    "transition-[background-color,color,transform] duration-150 hover:bg-teal-50 hover:text-teal-800",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-200",
+  ),
+  day_selected:
+    "bg-teal-600 text-white shadow-sm shadow-teal-600/25 hover:bg-teal-600 hover:text-white focus:bg-teal-600 focus:text-white",
+  day_today: "bg-teal-50 font-bold text-teal-700 ring-1 ring-teal-200/80",
+  day_outside:
+    "text-slate-300 opacity-70 aria-selected:bg-teal-50/50 aria-selected:text-teal-700/70",
+  day_disabled: "text-slate-300 opacity-40",
+};
+
 export function CouncilDatePicker({
   id,
   name,
@@ -43,9 +92,31 @@ export function CouncilDatePicker({
   required = false,
   disabled = false,
   className,
+  fromYear: fromYearProp,
+  toYear: toYearProp,
 }: CouncilDatePickerProps) {
   const [open, setOpen] = useState(false);
   const selected = useMemo(() => parseDateValue(value), [value]);
+
+  const currentYear = new Date().getFullYear();
+  const fromYear = fromYearProp ?? currentYear - DEFAULT_YEAR_SPAN_PAST;
+  const toYear = toYearProp ?? currentYear + DEFAULT_YEAR_SPAN_FUTURE;
+
+  const [displayMonth, setDisplayMonth] = useState<Date>(() =>
+    startOfMonth(selected ?? new Date()),
+  );
+
+  useEffect(() => {
+    if (selected) {
+      setDisplayMonth(startOfMonth(selected));
+    }
+  }, [selected]);
+
+  useEffect(() => {
+    if (open && selected) {
+      setDisplayMonth(startOfMonth(selected));
+    }
+  }, [open, selected]);
 
   const handleSelect = (date: Date | undefined) => {
     if (date) {
@@ -108,39 +179,14 @@ export function CouncilDatePicker({
             mode="single"
             selected={selected}
             onSelect={handleSelect}
+            month={displayMonth}
+            onMonthChange={setDisplayMonth}
+            captionLayout="dropdown-buttons"
+            fromYear={fromYear}
+            toYear={toYear}
             initialFocus
             className="council-calendar p-3"
-            classNames={{
-              months: "flex flex-col space-y-4",
-              month: "space-y-4",
-              caption: "relative flex items-center justify-center pt-1",
-              caption_label: "text-sm font-bold text-slate-800",
-              nav: "flex items-center gap-1",
-              nav_button: cn(
-                "inline-flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm",
-                "transition-[background-color,border-color,color,transform] duration-200 hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700 active:scale-95",
-              ),
-              nav_button_previous: "absolute left-1",
-              nav_button_next: "absolute right-1",
-              table: "w-full border-collapse space-y-1",
-              head_row: "flex",
-              head_cell:
-                "w-9 rounded-md text-[0.72rem] font-semibold uppercase tracking-wide text-slate-400",
-              row: "mt-2 flex w-full",
-              cell: "relative p-0 text-center text-sm focus-within:relative focus-within:z-20 [&:has([aria-selected])]:rounded-xl",
-              day: cn(
-                "inline-flex h-9 w-9 items-center justify-center rounded-xl p-0 text-sm font-medium text-slate-700",
-                "transition-[background-color,color,transform] duration-150 hover:bg-teal-50 hover:text-teal-800",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-200",
-              ),
-              day_selected:
-                "bg-teal-600 text-white shadow-sm shadow-teal-600/25 hover:bg-teal-600 hover:text-white focus:bg-teal-600 focus:text-white",
-              day_today:
-                "bg-teal-50 font-bold text-teal-700 ring-1 ring-teal-200/80",
-              day_outside:
-                "text-slate-300 opacity-70 aria-selected:bg-teal-50/50 aria-selected:text-teal-700/70",
-              day_disabled: "text-slate-300 opacity-40",
-            }}
+            classNames={calendarClassNames}
           />
         </PopoverContent>
       </Popover>

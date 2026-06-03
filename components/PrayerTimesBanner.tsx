@@ -1,8 +1,8 @@
 "use client";
 
 import { CouncilCard, CouncilDatePicker } from "@/components/design-system";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
 import {
   CalendarDays,
   MapPin,
@@ -31,6 +31,20 @@ type Payload = {
 const EN_ATOLL = "R";
 const EN_ISLAND = "Innamaadhoo";
 
+const PRAYER_CHIP_CONFIG = [
+  { label: "Fajr", key: "fathisTime" as const, icon: Moon, tone: "teal" },
+  { label: "Sunrise", key: "sunrise" as const, icon: Sunrise, tone: "amber" },
+  { label: "Dhuhr", key: "mendhuruTime" as const, icon: Sun, tone: "cyan" },
+  { label: "Asr", key: "asuruTime" as const, icon: Sun, tone: "sky" },
+  {
+    label: "Maghrib",
+    key: "maqribTime" as const,
+    icon: Sunset,
+    tone: "orange",
+  },
+  { label: "Isha", key: "ishaTime" as const, icon: Moon, tone: "indigo" },
+];
+
 export default function PrayerTimesBanner({ dateISO }: { dateISO: string }) {
   const [selectedDate, setSelectedDate] = useState<Date>(() => {
     const [y, m, d] = dateISO.split("-").map(Number);
@@ -46,7 +60,7 @@ export default function PrayerTimesBanner({ dateISO }: { dateISO: string }) {
 
   const [data, setData] = useState<Payload | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const [y, m, d] = dateISO.split("-").map(Number);
@@ -95,27 +109,6 @@ export default function PrayerTimesBanner({ dateISO }: { dateISO: string }) {
     setSelectedDate(new Date(y, m - 1, d));
   };
 
-  const prayerTimes = data
-    ? [
-        { label: "Fajr", value: data.times.fathisTime, icon: Moon, tone: "teal" },
-        {
-          label: "Sunrise",
-          value: data.times.sunrise,
-          icon: Sunrise,
-          tone: "amber",
-        },
-        { label: "Dhuhr", value: data.times.mendhuruTime, icon: Sun, tone: "cyan" },
-        { label: "Asr", value: data.times.asuruTime, icon: Sun, tone: "sky" },
-        {
-          label: "Maghrib",
-          value: data.times.maqribTime,
-          icon: Sunset,
-          tone: "orange",
-        },
-        { label: "Isha", value: data.times.ishaTime, icon: Moon, tone: "indigo" },
-      ]
-    : [];
-
   return (
     <CouncilCard interactive="none" className="p-5 sm:p-6">
       <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -148,22 +141,6 @@ export default function PrayerTimesBanner({ dateISO }: { dateISO: string }) {
         </div>
       </div>
 
-      {loading ? (
-        <div className="rounded-2xl bg-slate-50 p-5 ring-1 ring-slate-200/60">
-          <div className="flex items-center gap-3">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-teal-600 border-t-transparent" />
-            <div>
-              <p className="text-sm font-bold text-slate-900">
-                Loading prayer times…
-              </p>
-              <p className="text-xs font-medium text-slate-500">
-                Fetching data for {format(selectedDate, "PPP")}
-              </p>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       {err && !loading ? (
         <div className="rounded-2xl border border-red-200/80 bg-red-50/80 p-4 ring-1 ring-red-100">
           <p className="text-sm font-bold text-red-900">Could not load times</p>
@@ -171,15 +148,16 @@ export default function PrayerTimesBanner({ dateISO }: { dateISO: string }) {
         </div>
       ) : null}
 
-      {!loading && !err && data ? (
+      {!err && (loading || data) ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          {prayerTimes.map((p) => (
+          {PRAYER_CHIP_CONFIG.map((p) => (
             <PrayerTimeChip
               key={p.label}
               label={p.label}
-              value={p.value}
+              value={data?.times[p.key]}
               icon={p.icon}
               tone={p.tone}
+              timeLoading={loading}
             />
           ))}
         </div>
@@ -210,11 +188,13 @@ function PrayerTimeChip({
   value,
   icon: Icon,
   tone,
+  timeLoading,
 }: {
   label: string;
-  value: string;
+  value?: string;
   icon: React.ComponentType<{ className?: string }>;
   tone: string;
+  timeLoading?: boolean;
 }) {
   const styles = toneStyles[tone] ?? toneStyles.teal;
 
@@ -238,7 +218,13 @@ function PrayerTimeChip({
           {label}
         </p>
       </div>
-      <p className="text-xl font-black tracking-tight text-slate-900">{value}</p>
+      {timeLoading ? (
+        <Skeleton className="h-7 w-[4.5rem] rounded-md" aria-label="Loading time" />
+      ) : (
+        <p className="text-xl font-black tracking-tight text-slate-900">
+          {value}
+        </p>
+      )}
     </div>
   );
 }

@@ -1,7 +1,32 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
+import {
+  CouncilCard,
+  CouncilDatePicker,
+  PageHeader,
+  PageShell,
+} from "@/components/design-system";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 import { createLandRentHolder } from "@/lib/landrent/landRent.actions";
+import { cn } from "@/lib/utils";
+import {
+  AlertCircle,
+  ArrowLeft,
+  Banknote,
+  CalendarDays,
+  CheckCircle2,
+  FileText,
+  Landmark,
+  Loader2,
+  MapPin,
+  Receipt,
+  RotateCcw,
+  Upload,
+} from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 function toISODate(v: string) {
@@ -37,7 +62,6 @@ function addMonths(d: Date, months: number) {
 }
 
 function daysBetween(a: Date, b: Date) {
-  // whole days between (a -> b), assuming a <= b
   const ms = 24 * 60 * 60 * 1000;
   const aa = dateOnly(a).getTime();
   const bb = dateOnly(b).getTime();
@@ -45,13 +69,11 @@ function daysBetween(a: Date, b: Date) {
 }
 
 function monthStartsBetweenInclusive(fromMonthStart: Date, toMonthStart: Date) {
-  // Return an ARRAY (not a generator) to avoid TS downlevelIteration issues.
   const out: Date[] = [];
-
   let cur = new Date(
     fromMonthStart.getFullYear(),
     fromMonthStart.getMonth(),
-    1
+    1,
   );
   const end = new Date(toMonthStart.getFullYear(), toMonthStart.getMonth(), 1);
 
@@ -72,16 +94,112 @@ function fmtMonthYear(d: Date) {
 
 type BreakdownRow = {
   key: string;
-  label: string; // "May 2025"
+  label: string;
   days: number;
   fine: number;
 };
 
+const formGrid = "grid gap-5 md:grid-cols-2";
+const inputClass =
+  "council-input h-11 w-full min-w-0 px-4 py-0 text-sm font-medium";
+
+function FormField({
+  label,
+  children,
+  className,
+  hint,
+  htmlFor,
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+  hint?: string;
+  htmlFor?: string;
+}) {
+  const labelClass = "block text-sm font-semibold text-slate-700";
+
+  return (
+    <div className={cn("min-w-0 space-y-2", className)}>
+      {htmlFor ? (
+        <label htmlFor={htmlFor} className={labelClass}>
+          {label}
+        </label>
+      ) : (
+        <p className={labelClass}>{label}</p>
+      )}
+      {children}
+      {hint ? <p className="text-xs leading-relaxed text-slate-500">{hint}</p> : null}
+    </div>
+  );
+}
+
+function ComputedStat({
+  label,
+  value,
+  suffix = "MVR",
+  className,
+}: {
+  label: string;
+  value: string;
+  suffix?: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-xl bg-slate-50 px-4 py-3 ring-1 ring-slate-200/80",
+        className,
+      )}
+    >
+      <p className="text-xs font-medium text-slate-500">{label}</p>
+      <p className="mt-1 text-lg font-bold tabular-nums tracking-tight text-slate-900">
+        {value}
+        {suffix ? (
+          <span className="ml-1.5 text-sm font-semibold text-slate-500">
+            {suffix}
+          </span>
+        ) : null}
+      </p>
+    </div>
+  );
+}
+
+function FormSectionCard({
+  icon: Icon,
+  title,
+  description,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <CouncilCard interactive="none" className="mb-6 overflow-hidden p-0">
+      <div className="border-b border-slate-100 bg-gradient-to-r from-teal-50/60 to-white px-5 py-4 sm:px-6">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-600 text-white shadow-sm shadow-teal-600/20">
+            <Icon className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 pt-0.5">
+            <h2 className="text-base font-bold text-slate-900">{title}</h2>
+            <p className="mt-0.5 text-sm text-slate-600">{description}</p>
+          </div>
+        </div>
+      </div>
+      <div className="space-y-5 p-5 sm:p-6">{children}</div>
+    </CouncilCard>
+  );
+}
+
 export default function Page() {
+  const router = useRouter();
+  const { toast } = useToast();
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [msgTone, setMsgTone] = useState<"success" | "error">("error");
 
-  // Base
   const [landName, setLandName] = useState("");
   const [renterName, setRenterName] = useState("");
 
@@ -94,7 +212,6 @@ export default function Page() {
   const [sizeSqft, setSizeSqft] = useState("1800");
   const [rate, setRate] = useState("1.7");
 
-  // PDF Upload State
   const [agreementPdf, setAgreementPdf] = useState<File | null>(null);
   const [agreementPdfBase64, setAgreementPdfBase64] = useState<string>("");
   const [pdfError, setPdfError] = useState<string>("");
@@ -106,13 +223,11 @@ export default function Page() {
 
   const [paymentDueDay, setPaymentDueDay] = useState("10");
 
-  // Fine per day auto: (monthly / 30) * 25%
   const finePerDay = useMemo(() => {
     const v = (monthlyRent / 30) * 0.25;
     return Number.isFinite(v) ? v : 0;
   }, [monthlyRent]);
 
-  // Opening snapshot fields
   const [lastPaymentDate, setLastPaymentDate] = useState<string>("");
 
   const [openingFineDays, setOpeningFineDays] = useState("0");
@@ -126,7 +241,6 @@ export default function Page() {
 
   const [breakdown, setBreakdown] = useState<BreakdownRow[]>([]);
 
-  // Handle PDF file selection
   const handlePdfChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     setPdfError("");
@@ -137,7 +251,6 @@ export default function Page() {
       return;
     }
 
-    // Validate file type
     if (file.type !== "application/pdf") {
       setPdfError("Please select a PDF file");
       setAgreementPdf(null);
@@ -146,7 +259,6 @@ export default function Page() {
       return;
     }
 
-    // Validate file size (max 10MB)
     const maxSize = 10 * 1024 * 1024;
     if (file.size > maxSize) {
       setPdfError("PDF file must be smaller than 10MB");
@@ -158,11 +270,10 @@ export default function Page() {
 
     setAgreementPdf(file);
 
-    // Convert to base64
     try {
       const base64 = await fileToBase64(file);
       setAgreementPdfBase64(base64);
-    } catch (error) {
+    } catch {
       setPdfError("Failed to process PDF file");
       setAgreementPdf(null);
       setAgreementPdfBase64("");
@@ -210,11 +321,16 @@ export default function Page() {
   const onSubmit = async () => {
     setMsg(null);
 
-    if (!landName.trim()) return setMsg("Land name is required.");
-    if (!renterName.trim()) return setMsg("Renter name is required.");
-    if (!rentStartDate) return setMsg("Rent duration start is required.");
-    if (!rentEndDate) return setMsg("Rent duration end is required.");
-    if (!agreementNumber.trim()) return setMsg("Agreement number is required.");
+    const fail = (message: string) => {
+      setMsgTone("error");
+      setMsg(message);
+    };
+
+    if (!landName.trim()) return fail("Land name is required.");
+    if (!renterName.trim()) return fail("Renter name is required.");
+    if (!rentStartDate) return fail("Rent duration start is required.");
+    if (!rentEndDate) return fail("Rent duration end is required.");
+    if (!agreementNumber.trim()) return fail("Agreement number is required.");
 
     const due = clampInt(num(paymentDueDay), 1, 28);
     if (String(due) !== paymentDueDay) setPaymentDueDay(String(due));
@@ -231,7 +347,6 @@ export default function Page() {
         agreementNumber: agreementNumber.trim(),
         letGoDate: letGoDate ? toISODate(letGoDate) : null,
 
-        // PDF agreement (optional)
         agreementPdfBase64: agreementPdfBase64 || null,
         agreementPdfFilename: agreementPdf?.name || null,
 
@@ -240,9 +355,8 @@ export default function Page() {
         monthlyRent,
 
         paymentDueDay: due,
-        finePerDay, // auto
+        finePerDay,
 
-        // Opening snapshot
         lastPaymentDate: lastPaymentDate ? toISODate(lastPaymentDate) : null,
         openingFineDays: Math.floor(num(openingFineDays)),
         openingFineMonths: Math.floor(num(openingFineMonths)),
@@ -252,9 +366,21 @@ export default function Page() {
           num(openingOutstandingFees) + num(openingTotalFine),
       });
 
-      setMsg("Created successfully.");
+      setMsgTone("success");
+      setMsg("Land rent holder created successfully.");
+      toast({
+        title: "Created",
+        description: "The lease is ready in the land rent overview.",
+      });
+      router.push("/landRent");
     } catch (e: any) {
+      setMsgTone("error");
       setMsg(e?.message ?? "Failed to create.");
+      toast({
+        variant: "destructive",
+        title: "Could not create",
+        description: e?.message ?? "Failed to create.",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -277,7 +403,6 @@ export default function Page() {
 
     const dueDay = clampInt(num(paymentDueDay || "10"), 1, 28);
 
-    // Effective "today" is capped by letGo / rentEnd (if they are earlier than today)
     const realToday = dateOnly(new Date());
     const capA = letGo ? dateOnly(letGo) : null;
     const capB = end ? dateOnly(end) : null;
@@ -288,31 +413,24 @@ export default function Page() {
     if (capB && capB.getTime() < effectiveToday.getTime())
       effectiveToday = capB;
 
-    // Unpaid months start: month after last payment month
     let fromMonth = addMonths(startOfMonth(lastPaid), 1);
 
-    // Don’t allow fromMonth before rentStart month (if present)
     if (start) {
       const rentStartMonth = startOfMonth(start);
       if (fromMonth.getTime() < rentStartMonth.getTime())
         fromMonth = rentStartMonth;
     }
 
-    // Last considered month:
-    // - Normally current month of effectiveToday,
-    // - BUT if effectiveToday is in current month and we have NOT reached due day yet,
-    //   then last considered month is previous month.
     let toMonth = startOfMonth(effectiveToday);
     const dueThisMonth = new Date(
       toMonth.getFullYear(),
       toMonth.getMonth(),
-      dueDay
+      dueDay,
     );
     if (effectiveToday.getTime() <= dateOnly(dueThisMonth).getTime()) {
       toMonth = addMonths(toMonth, -1);
     }
 
-    // If no unpaid months
     if (toMonth.getTime() < fromMonth.getTime()) {
       setOpeningFineDays("0");
       setOpeningFineMonths("0");
@@ -334,7 +452,7 @@ export default function Page() {
       const fineStart = new Date(
         dueDate.getFullYear(),
         dueDate.getMonth(),
-        dueDate.getDate() + 1
+        dueDate.getDate() + 1,
       );
 
       const days =
@@ -372,291 +490,317 @@ export default function Page() {
     finePerDay,
   ]);
 
-  return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-10">
-      <div className="surface p-6 md:p-8">
-        <div className="space-y-1">
-          <h1 className="h2">Create Land Rent Holder</h1>
-          <p className="body-2 text-muted-foreground">
-            This creates Tenant + Land Parcel + Lease in Appwrite.
-          </p>
-        </div>
+  const pdfInputId = "land-rent-agreement-pdf";
 
-        <div className="mt-7 space-y-6">
-          {/* Row 1 */}
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-1.5">
-              <label className="subtitle-2">Land name</label>
+  return (
+    <PageShell>
+      <div className="mx-auto max-w-4xl">
+        <Link
+          href="/landRent"
+          aria-label="Back to land rent"
+          className={buttonVariants({
+            variant: "council-outline",
+            className: "mb-6 h-11 rounded-xl px-4",
+          })}
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </Link>
+
+        <PageHeader
+          icon={Landmark}
+          title="Create land rent holder"
+          subtitle="Register the parcel, lease terms, and any opening arrears so statements can be generated from day one."
+          className="mb-8"
+        />
+
+        <FormSectionCard
+          icon={MapPin}
+          title="Land & renter"
+          description="Basic identity for the parcel and the person or entity renting it."
+        >
+          <div className={formGrid}>
+            <FormField label="Land name">
               <input
                 value={landName}
                 onChange={(e) => setLandName(e.target.value)}
-                className="w-full rounded-2xl ring-1 ring-black/10 bg-white px-4 py-3 outline-none"
+                className={inputClass}
+                placeholder="e.g. Plot 12, Ward A"
               />
-            </div>
+            </FormField>
 
-            <div className="space-y-1.5">
-              <label className="subtitle-2">Renter name</label>
+            <FormField label="Renter name">
               <input
                 value={renterName}
                 onChange={(e) => setRenterName(e.target.value)}
-                className="w-full rounded-2xl ring-1 ring-black/10 bg-white px-4 py-3 outline-none"
+                className={inputClass}
+                placeholder="Full legal name"
               />
-            </div>
+            </FormField>
           </div>
+        </FormSectionCard>
 
-          {/* Row 2 */}
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-1.5">
-              <label className="subtitle-2">Rent duration (start)</label>
-              <input
-                type="date"
+        <FormSectionCard
+          icon={FileText}
+          title="Agreement"
+          description="Lease dates, reference number, and an optional signed PDF."
+        >
+          <div className={formGrid}>
+            <FormField label="Rent start">
+              <CouncilDatePicker
                 value={rentStartDate}
-                onChange={(e) => setRentStartDate(e.target.value)}
-                className="w-full rounded-2xl ring-1 ring-black/10 bg-white px-4 py-3 outline-none"
+                onChange={setRentStartDate}
+                placeholder="Start date"
               />
-            </div>
+            </FormField>
 
-            <div className="space-y-1.5">
-              <label className="subtitle-2">Rent duration (end)</label>
-              <input
-                type="date"
+            <FormField label="Rent end">
+              <CouncilDatePicker
                 value={rentEndDate}
-                onChange={(e) => setRentEndDate(e.target.value)}
-                className="w-full rounded-2xl ring-1 ring-black/10 bg-white px-4 py-3 outline-none"
+                onChange={setRentEndDate}
+                placeholder="End date"
               />
-            </div>
-          </div>
+            </FormField>
 
-          {/* Agreement */}
-          <div className="space-y-1.5">
-            <label className="subtitle-2">Agreement number</label>
-            <input
-              value={agreementNumber}
-              onChange={(e) => setAgreementNumber(e.target.value)}
-              className="w-full rounded-2xl ring-1 ring-black/10 bg-white px-4 py-3 outline-none"
-            />
-          </div>
-
-          {/* PDF Upload Section */}
-          <div className="space-y-1.5">
-            <label className="subtitle-2">Agreement PDF (optional)</label>
-            <div className="space-y-2">
+            <FormField label="Agreement number">
               <input
+                value={agreementNumber}
+                onChange={(e) => setAgreementNumber(e.target.value)}
+                className={inputClass}
+                placeholder="Council agreement reference"
+              />
+            </FormField>
+
+            <FormField
+              label="Let go date"
+              hint="Optional. Caps fines when the lease ends early."
+            >
+              <CouncilDatePicker
+                value={letGoDate}
+                onChange={setLetGoDate}
+                placeholder="Not set"
+              />
+            </FormField>
+          </div>
+
+          <FormField
+            label="Agreement PDF"
+            htmlFor={pdfInputId}
+            hint="Optional. PDF only, max 10MB."
+          >
+            <label
+              htmlFor={pdfInputId}
+              className={cn(
+                "flex min-h-[5.5rem] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-5 text-center transition-colors",
+                agreementPdf && !pdfError
+                  ? "border-teal-200 bg-teal-50/40"
+                  : "border-slate-200 bg-slate-50/50 hover:border-teal-300 hover:bg-teal-50/30",
+              )}
+            >
+              <input
+                id={pdfInputId}
                 type="file"
                 accept="application/pdf"
                 onChange={handlePdfChange}
-                className="w-full rounded-2xl ring-1 ring-black/10 bg-white px-4 py-3 outline-none file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:bg-black/5 file:text-black hover:file:bg-black/10 file:cursor-pointer"
+                className="sr-only"
               />
-              {pdfError && <p className="text-sm text-red-600">{pdfError}</p>}
-              {agreementPdf && !pdfError && (
-                <div className="flex items-center gap-2 text-sm text-green-600">
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                  <span>
-                    {agreementPdf.name} ({(agreementPdf.size / 1024).toFixed(1)}{" "}
-                    KB)
+              {agreementPdf && !pdfError ? (
+                <>
+                  <CheckCircle2 className="h-6 w-6 text-teal-600" />
+                  <span className="text-sm font-semibold text-teal-800">
+                    {agreementPdf.name}
                   </span>
-                </div>
+                  <span className="text-xs text-teal-700/80">
+                    {(agreementPdf.size / 1024).toFixed(1)} KB · tap to replace
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Upload className="h-6 w-6 text-slate-400" />
+                  <span className="text-sm font-semibold text-slate-700">
+                    Upload agreement PDF
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    Click to browse
+                  </span>
+                </>
               )}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Upload a PDF copy of the rental agreement (max 10MB)
-            </p>
-          </div>
+            </label>
+            {pdfError ? (
+              <p className="text-sm font-medium text-rose-600">{pdfError}</p>
+            ) : null}
+          </FormField>
+        </FormSectionCard>
 
-          {/* Let go */}
-          <div className="space-y-1.5">
-            <label className="subtitle-2">Let go date (optional)</label>
-            <input
-              type="date"
-              value={letGoDate}
-              onChange={(e) => setLetGoDate(e.target.value)}
-              className="w-full max-w-sm rounded-2xl ring-1 ring-black/10 bg-white px-4 py-3 outline-none"
-            />
-          </div>
-
-          {/* Size / Rate / Monthly */}
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-1.5">
-              <label className="subtitle-2">Size (sqft)</label>
+        <FormSectionCard
+          icon={Banknote}
+          title="Rent & fines"
+          description="Monthly rent is size × rate. Fine per day is 25% of the daily rent."
+        >
+          <div className={formGrid}>
+            <FormField label="Size (sqft)">
               <input
                 value={sizeSqft}
                 onChange={(e) => setSizeSqft(e.target.value)}
                 inputMode="decimal"
-                className="w-full rounded-2xl ring-1 ring-black/10 bg-white px-4 py-3 outline-none"
+                className={inputClass}
               />
-            </div>
+            </FormField>
 
-            <div className="space-y-1.5">
-              <label className="subtitle-2">Rate (lari per sqft)</label>
+            <FormField label="Rate (MVR per sqft)">
               <input
                 value={rate}
                 onChange={(e) => setRate(e.target.value)}
                 inputMode="decimal"
-                className="w-full rounded-2xl ring-1 ring-black/10 bg-white px-4 py-3 outline-none"
+                className={inputClass}
               />
-            </div>
+            </FormField>
 
-            <div className="space-y-1.5">
-              <label className="subtitle-2">Monthly rent (auto)</label>
-              <input
-                value={monthlyRent.toFixed(2)}
-                readOnly
-                className="w-full rounded-2xl ring-1 ring-black/10 bg-black/[0.03] px-4 py-3 outline-none"
-              />
-            </div>
-          </div>
-
-          {/* Due day / fine per day */}
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-1.5">
-              <label className="subtitle-2">Payment due day (1–28)</label>
+            <FormField
+              label="Payment due day"
+              hint="Day of the month (1–28) when rent is due."
+            >
               <input
                 value={paymentDueDay}
                 onChange={(e) => setPaymentDueDay(e.target.value)}
                 inputMode="numeric"
-                className="w-full rounded-2xl ring-1 ring-black/10 bg-white px-4 py-3 outline-none"
+                className={inputClass}
               />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="subtitle-2">Fine (lari per day) (auto)</label>
-              <input
-                value={finePerDay.toFixed(2)}
-                readOnly
-                className="w-full rounded-2xl ring-1 ring-black/10 bg-black/[0.03] px-4 py-3 outline-none"
-              />
-            </div>
+            </FormField>
           </div>
 
-          {/* Existing fines */}
-          <div className="pt-2">
-            <div className="h4">Existing fines / arrears (if any)</div>
-            <p className="body-2 text-muted-foreground mt-1">
-              Use this only if the renter already has unpaid rent or fines from
-              before you started tracking.
-            </p>
-
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <div className="space-y-1.5">
-                <label className="subtitle-2">Last payment date</label>
-                <input
-                  type="date"
-                  value={lastPaymentDate}
-                  onChange={(e) => setLastPaymentDate(e.target.value)}
-                  className="w-full rounded-2xl ring-1 ring-black/10 bg-white px-4 py-3 outline-none"
-                />
-
-                {breakdown.length > 0 ? (
-                  <div className="mt-3 rounded-2xl bg-black/[0.03] ring-1 ring-black/10 p-4">
-                    <div className="subtitle-2 mb-2">
-                      Fine breakdown (per unpaid month)
-                    </div>
-                    <div className="space-y-1.5 text-[13px]">
-                      {breakdown.map((b) => (
-                        <div
-                          key={b.key}
-                          className="flex items-center justify-between gap-4"
-                        >
-                          <div className="text-muted-foreground">
-                            {b.label}:
-                          </div>
-                          <div className="font-semibold tabular-nums">
-                            {b.days} days • {b.fine.toFixed(2)}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="subtitle-2">Chargeable fine days</label>
-                <input
-                  value={openingFineDays}
-                  readOnly
-                  className="w-full rounded-2xl ring-1 ring-black/10 bg-black/[0.03] px-4 py-3 outline-none"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="subtitle-2">Chargeable fine months</label>
-                <input
-                  value={openingFineMonths}
-                  readOnly
-                  className="w-full rounded-2xl ring-1 ring-black/10 bg-black/[0.03] px-4 py-3 outline-none"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="subtitle-2">Total fine</label>
-                <input
-                  value={openingTotalFine}
-                  readOnly
-                  className="w-full rounded-2xl ring-1 ring-black/10 bg-black/[0.03] px-4 py-3 outline-none"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="subtitle-2">Total outstanding fees</label>
-                <input
-                  value={openingOutstandingFees}
-                  readOnly
-                  className="w-full rounded-2xl ring-1 ring-black/10 bg-black/[0.03] px-4 py-3 outline-none"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="subtitle-2">
-                  Total outstanding (fees + fine)
-                </label>
-                <input
-                  value={(
-                    num(openingOutstandingFees) + num(openingTotalFine)
-                  ).toFixed(2)}
-                  readOnly
-                  className="w-full rounded-2xl ring-1 ring-black/10 bg-black/[0.03] px-4 py-3 outline-none"
-                />
-              </div>
-            </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <ComputedStat
+              label="Monthly rent"
+              value={monthlyRent.toFixed(2)}
+            />
+            <ComputedStat
+              label="Fine per day"
+              value={finePerDay.toFixed(2)}
+            />
           </div>
+        </FormSectionCard>
 
-          {/* Actions */}
-          <div className="flex items-center gap-3 pt-2">
-            <button
+        <FormSectionCard
+          icon={Receipt}
+          title="Opening arrears"
+          description="Only if the renter already owes rent or fines before you start tracking."
+        >
+          <FormField
+            label="Last payment date"
+            hint="Leave empty if there is no prior payment history. Fills in the totals below automatically."
+          >
+            <CouncilDatePicker
+              value={lastPaymentDate}
+              onChange={setLastPaymentDate}
+              placeholder="No prior payment"
+            />
+          </FormField>
+
+          {breakdown.length > 0 ? (
+            <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200/80">
+              <p className="mb-3 text-sm font-semibold text-slate-800">
+                Fine breakdown by month
+              </p>
+              <ul className="divide-y divide-slate-200/80">
+                {breakdown.map((b) => (
+                  <li
+                    key={b.key}
+                    className="flex items-center justify-between gap-4 py-2.5 text-sm first:pt-0 last:pb-0"
+                  >
+                    <span className="font-medium text-slate-600">
+                      {b.label}
+                    </span>
+                    <span className="shrink-0 font-semibold tabular-nums text-slate-900">
+                      {b.days} days · {b.fine.toFixed(2)} MVR
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <ComputedStat
+              label="Chargeable fine days"
+              value={openingFineDays}
+              suffix=""
+            />
+            <ComputedStat
+              label="Chargeable fine months"
+              value={openingFineMonths}
+              suffix=""
+            />
+            <ComputedStat label="Total fine" value={openingTotalFine} />
+            <ComputedStat
+              label="Outstanding fees"
+              value={openingOutstandingFees}
+            />
+            <ComputedStat
+              label="Total outstanding"
+              value={openingOutstandingTotal.toFixed(2)}
+              className="sm:col-span-2 lg:col-span-3"
+            />
+          </div>
+        </FormSectionCard>
+
+        {msg ? (
+          <div
+            role="alert"
+            className={cn(
+              "mb-6 flex items-start gap-3 rounded-2xl px-4 py-3 text-sm ring-1",
+              msgTone === "success"
+                ? "bg-teal-50 text-teal-900 ring-teal-200"
+                : "bg-rose-50 text-rose-900 ring-rose-200",
+            )}
+          >
+            {msgTone === "success" ? (
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-teal-600" />
+            ) : (
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+            )}
+            <span className="font-medium">{msg}</span>
+          </div>
+        ) : null}
+
+        <CouncilCard
+          interactive="none"
+          className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5"
+        >
+          <p className="text-sm text-slate-600">
+            Creates the tenant, parcel, and lease records in one step.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Button
+              type="button"
+              variant="council"
+              className="h-11 rounded-xl px-6"
               onClick={onSubmit}
               disabled={submitting}
-              className="rounded-2xl bg-black px-6 py-3 text-white button disabled:opacity-60"
             >
-              {submitting ? "Creating..." : "Create"}
-            </button>
+              {submitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Creating…
+                </>
+              ) : (
+                "Create holder"
+              )}
+            </Button>
 
-            <button
+            <Button
               type="button"
+              variant="council-outline"
+              className="h-11 rounded-xl px-6"
               onClick={reset}
-              className="rounded-2xl ring-1 ring-black/10 px-6 py-3 button bg-white"
+              disabled={submitting}
             >
+              <RotateCcw className="h-4 w-4" />
               Reset
-            </button>
-
-            {msg ? (
-              <div className="ml-auto body-2 text-muted-foreground">{msg}</div>
-            ) : null}
+            </Button>
           </div>
-        </div>
+        </CouncilCard>
       </div>
-    </div>
+    </PageShell>
   );
 }
