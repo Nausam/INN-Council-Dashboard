@@ -2,7 +2,7 @@
 
 import { auth, clerkClient, currentUser } from "@clerk/nextjs/server";
 
-import { isEmailAllowed } from "@/lib/auth/allowed-emails";
+import { isAnyEmailAllowed } from "@/lib/auth/allowed-emails";
 import { parseStringify } from "@/lib/utils";
 
 export type AuthProfile = {
@@ -19,6 +19,7 @@ export async function getAuthProfile(): Promise<AuthProfile | null> {
 
     const user = await currentUser();
     if (!user) return null;
+    const emails = user.emailAddresses.map((e) => e.emailAddress);
     const email =
       user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId)
         ?.emailAddress ??
@@ -32,7 +33,7 @@ export async function getAuthProfile(): Promise<AuthProfile | null> {
 
     const isAdmin = user.privateMetadata?.role === "admin";
 
-    if (!isEmailAllowed(email)) return null;
+    if (!isAnyEmailAllowed(emails)) return null;
 
     return parseStringify({ id: userId, fullName, email, isAdmin });
   } catch {

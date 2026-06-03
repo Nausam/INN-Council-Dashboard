@@ -6,8 +6,9 @@ import {
 import { NextResponse } from "next/server";
 
 import {
-  isEmailAllowed,
-  resolveUserEmail,
+  getAllowedLoginEmails,
+  isAnyEmailAllowed,
+  resolveUserEmails,
 } from "@/lib/auth/allowed-emails";
 
 const isPublicRoute = createRouteMatcher([
@@ -29,12 +30,22 @@ export default clerkMiddleware(async (auth, request) => {
   const { userId, sessionId, sessionClaims } = await auth();
 
   if (userId && !isServerAction) {
-    const email = await resolveUserEmail(
-      userId,
-      sessionClaims as Record<string, unknown> | null,
-    );
+    const allowed = getAllowedLoginEmails();
+    if (allowed.size === 0) {
+      console.error(
+        "ALLOWED_LOGIN_EMAILS is empty — no users can sign in. Set it in .env.local and restart the dev server.",
+      );
+    }
 
-    if (!isEmailAllowed(email)) {
+    const claims = sessionClaims as Record<string, unknown> | null;
+    const emails = await resolveUserEmails(userId, claims);
+    const claimEmails = [
+      claims?.email,
+      claims?.primary_email_address,
+      claims?.primaryEmail,
+    ].filter((value): value is string => typeof value === "string");
+
+    if (!isAnyEmailAllowed([...emails, ...claimEmails])) {
       if (sessionId) {
         const client = await clerkClient();
         await client.sessions.revokeSession(sessionId);
