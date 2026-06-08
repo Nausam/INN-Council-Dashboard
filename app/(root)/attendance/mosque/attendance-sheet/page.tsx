@@ -12,6 +12,19 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { AttendanceSheetControlsPanel } from "@/components/mosque/attendance-sheet-controls-panel";
+import {
+  type ImamOptionKey,
+  SIGNATURE_HEIGHT_CLASSES,
+  addPrayerCellRule,
+  canConfigureSignatureStart,
+  hasPrayerCellRule,
+  loadSignatureStartDates,
+  removePrayerCellRule,
+  resolveRowSignatureSrc,
+  saveSignatureStartDates,
+  trimPrayerCellRules,
+  type PrayerCellRules,
+} from "@/lib/attendance/mosque-sign-sheet-config";
 
 type HHMM = { h: number | ""; m: number | "" };
 
@@ -163,14 +176,6 @@ const th =
 const td =
   "border border-neutral-700/70 text-center align-middle whitespace-nowrap px-[2px] py-1";
 
-/** Odd days: Zahidh, even days: Shahidh (matches alternating rows in the sheet). */
-const SIG_SRC_ZAHIDH = "/assets/images/Zahidh-Sign.png";
-const SIG_SRC_SHAHIDH = "/assets/images/Shahidh-Sign.png";
-
-function signatureSrcForDay(day: number) {
-  return day % 2 === 1 ? SIG_SRC_ZAHIDH : SIG_SRC_SHAHIDH;
-}
-
 type RangeKey = "A" | "B" | "BOTH";
 
 /** Range A = 1..10, Range B = 11..end */
@@ -222,51 +227,47 @@ export default function Page() {
 
   // ===== Empty rules: day -> which prayer(s) should be blank =====
   type PrayerSelect = GroupKey | "ALL";
-  type EmptyRules = Record<number, Partial<Record<GroupKey, true>>>;
+  type EmptyRules = PrayerCellRules;
 
   const [emptyRules, setEmptyRules] = useState<EmptyRules>({});
+  const [signatureHideRules, setSignatureHideRules] = useState<PrayerCellRules>(
+    {},
+  );
   const [emptyDay, setEmptyDay] = useState<number>(1);
   const [emptyPrayer, setEmptyPrayer] = useState<PrayerSelect>("ALL");
 
+  const prayerKeys = useMemo(() => GROUPS.map((g) => g.key), []);
+
   function isEmpty(day: number, key: GroupKey) {
-    return !!emptyRules[day]?.[key];
+    return hasPrayerCellRule(emptyRules, day, key);
+  }
+
+  function isSignatureHidden(day: number, key: GroupKey) {
+    return hasPrayerCellRule(signatureHideRules, day, key);
   }
 
   function addEmptyRule(day: number, prayer: PrayerSelect) {
-    setEmptyRules((prev) => {
-      const next: EmptyRules = { ...prev };
-      const dayMap = { ...(next[day] ?? {}) };
-
-      if (prayer === "ALL") {
-        for (const g of GROUPS) dayMap[g.key] = true;
-      } else {
-        dayMap[prayer] = true;
-      }
-
-      next[day] = dayMap;
-      return next;
-    });
+    setEmptyRules((prev) => addPrayerCellRule(prev, day, prayer, prayerKeys));
   }
 
   function removeEmptyRule(day: number, prayer: PrayerSelect) {
-    setEmptyRules((prev) => {
-      const existing = prev[day];
-      if (!existing) return prev;
+    setEmptyRules((prev) => removePrayerCellRule(prev, day, prayer));
+  }
 
-      const next: EmptyRules = { ...prev };
-      const dayMap = { ...existing };
+  function addSignatureHideRule(day: number, prayer: PrayerSelect) {
+    setSignatureHideRules((prev) =>
+      addPrayerCellRule(prev, day, prayer, prayerKeys),
+    );
+  }
 
-      if (prayer === "ALL") {
-        delete next[day];
-        return next;
-      }
+  function removeSignatureHideRule(day: number, prayer: PrayerSelect) {
+    setSignatureHideRules((prev) => removePrayerCellRule(prev, day, prayer));
+  }
 
-      delete dayMap[prayer];
-      if (Object.keys(dayMap).length === 0) delete next[day];
-      else next[day] = dayMap;
-
-      return next;
-    });
+  function shouldShowPrayerSignature(day: number, key: GroupKey) {
+    if (isEmpty(day, key)) return false;
+    if (isSignatureHidden(day, key)) return false;
+    return true;
   }
 
   function groupLabel(key: GroupKey) {
@@ -275,15 +276,8 @@ export default function Page() {
 
   // keep empty rules valid when month changes
   useEffect(() => {
-    setEmptyRules((prev) => {
-      const next: EmptyRules = {};
-      for (const [k, v] of Object.entries(prev)) {
-        const day = Number(k);
-        if (day >= 1 && day <= dim) next[day] = v;
-      }
-      return next;
-    });
-
+    setEmptyRules((prev) => trimPrayerCellRules(prev, dim));
+    setSignatureHideRules((prev) => trimPrayerCellRules(prev, dim));
     setEmptyDay((d) => (d >= 1 && d <= dim ? d : 1));
   }, [dim]);
 
@@ -394,14 +388,6 @@ export default function Page() {
     return rows.filter((x) => x.day >= r.from && x.day <= r.to);
   }, [rows, ranges, printSelect]);
 
-  type ImamOptionKey =
-    | "Shahidh"
-    | "Zahidh"
-    | "Umair"
-    | "Neem"
-    | "Yazaan"
-    | "Ibraheem";
-
   const IMAM_OPTIONS: Record<ImamOptionKey, string> = {
     Shahidh: " އިމާމް: މުހައްމަދު ޝާހިދު / ނީލޯފަރު",
     Zahidh: " އިމާމް: އަޙްމަދު ޒާހިދު / ބަށިމާގެ",
@@ -410,24 +396,39 @@ export default function Page() {
     Neem: "މުދިމު: އިސްމާޢީލް ނީމް / ނޫރާނީގެ",
     Yazaan: "މުދިމު: ޙުސައިން ޔަޒާން އަޙްމަދު / އޯޝަންވިލާ",
     Ibraheem: "މުދިމު: އިބްރާޙީމް ޙަލީމް / ހަވީރީނާޒް",
-  };
-
-  const SIGNATURE_IMAGES: Partial<Record<ImamOptionKey, string>> = {
-    Shahidh: "/assets/images/shahidh.png",
-    Zahidh: "/assets/images/Zahidh.png",
-    Umair: "/assets/images/umair.png",
-  };
-
-  const SIGNATURE_HEIGHT_CLASSES: Partial<Record<ImamOptionKey, string>> = {
-    Shahidh: "h-8",
-    Zahidh: "h-8",
-    Umair: "h-8",
+    Waseem: " އިމާމް: އިބްރާހިމް ވަސީމް / ފިނިފަރު",
   };
 
   const [imamKey, setImamKey] = useState<ImamOptionKey>("Shahidh");
+  const [signatureStartDates, setSignatureStartDates] = useState<
+    Partial<Record<ImamOptionKey, string>>
+  >(() => loadSignatureStartDates());
+
+  useEffect(() => {
+    saveSignatureStartDates(signatureStartDates);
+  }, [signatureStartDates]);
+
   const imamText = IMAM_OPTIONS[imamKey];
-  const signatureSrc = SIGNATURE_IMAGES[imamKey];
   const signatureHeightClass = SIGNATURE_HEIGHT_CLASSES[imamKey] ?? "h-7";
+  const signatureStartDate = signatureStartDates[imamKey] ?? "";
+
+  function setSignatureStartDateForImam(date: string) {
+    setSignatureStartDates((prev) => {
+      const next = { ...prev };
+      if (!date) delete next[imamKey];
+      else next[imamKey] = date;
+      return next;
+    });
+  }
+
+  function rowSignatureSrc(day: number): string | undefined {
+    return resolveRowSignatureSrc({
+      imamKey,
+      iso: isoForDay(year, month, day),
+      day,
+      startFrom: signatureStartDates[imamKey],
+    });
+  }
 
   return (
     <div dir="rtl" className="min-h-dvh bg-white p-6 font-dh1">
@@ -477,6 +478,9 @@ export default function Page() {
           onHeadingModeChange={setHeadingMode}
           imamKey={imamKey}
           onImamKeyChange={setImamKey}
+          signatureStartDate={signatureStartDate}
+          onSignatureStartDateChange={setSignatureStartDateForImam}
+          showSignatureStartDate={canConfigureSignatureStart(imamKey)}
           emptyDay={emptyDay}
           onEmptyDayChange={setEmptyDay}
           emptyPrayer={emptyPrayer}
@@ -486,9 +490,17 @@ export default function Page() {
           dim={dim}
           prayerGroups={GROUPS}
           emptyRules={emptyRules}
+          signatureHideRules={signatureHideRules}
           onApplyEmptyRule={() => addEmptyRule(emptyDay, emptyPrayer)}
+          onApplySignatureHideRule={() =>
+            addSignatureHideRule(emptyDay, emptyPrayer)
+          }
           onClearEmptyRules={() => setEmptyRules({})}
+          onClearSignatureHideRules={() => setSignatureHideRules({})}
           onRemoveEmptyRule={(day) => removeEmptyRule(day, "ALL")}
+          onRemoveSignatureHideRule={(day) =>
+            removeSignatureHideRule(day, "ALL")
+          }
           groupLabel={(key) => groupLabel(key as GroupKey)}
           onPrint={printOnePage}
         />
@@ -565,7 +577,7 @@ export default function Page() {
             <TableBody>
               {viewRows.map((r) => {
                 const t = timesByDay[r.day];
-                const signatureSrc = signatureSrcForDay(r.day);
+                const rowSig = rowSignatureSrc(r.day);
 
                 const get = (k: GroupKey): HHMM =>
                   k === "fajr"
@@ -595,6 +607,9 @@ export default function Page() {
                     </TableCell>
 
                     {GROUPS.flatMap((g) => {
+                      const showSig =
+                        rowSig && shouldShowPrayerSignature(r.day, g.key);
+
                       if (isEmpty(r.day, g.key)) {
                         return [
                           <TableCell
@@ -613,11 +628,13 @@ export default function Page() {
                             key={`${g.key}-sig-${r.day}`}
                             className={`${td} p-0 align-middle`}
                           >
-                            <img
-                              src={signatureSrc}
-                              alt=""
-                              className="mx-auto h-7 max-h-[28px] w-auto max-w-[36px] object-contain"
-                            />
+                            {showSig ? (
+                              <img
+                                src={rowSig}
+                                alt=""
+                                className="mx-auto h-7 max-h-[28px] w-auto max-w-[36px] object-contain"
+                              />
+                            ) : null}
                           </TableCell>,
                         ];
                       }
@@ -640,9 +657,9 @@ export default function Page() {
                           key={`${g.key}-sig-${r.day}`}
                           className={`${td} relative p-0`}
                         >
-                          {signatureSrc ? (
+                          {showSig ? (
                             <img
-                              src={signatureSrc}
+                              src={rowSig}
                               alt="signature"
                               className={`pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 ${signatureHeightClass} w-auto max-w-none object-contain`}
                             />
@@ -744,7 +761,7 @@ export default function Page() {
             <TableBody>
               {printRows.map((r) => {
                 const t = timesByDay[r.day];
-                const signatureSrc = signatureSrcForDay(r.day);
+                const rowSig = rowSignatureSrc(r.day);
 
                 const get = (k: GroupKey): HHMM =>
                   k === "fajr"
@@ -770,6 +787,9 @@ export default function Page() {
                     </TableCell>
 
                     {GROUPS.flatMap((g) => {
+                      const showSig =
+                        rowSig && shouldShowPrayerSignature(r.day, g.key);
+
                       if (isEmpty(r.day, g.key)) {
                         return [
                           <TableCell
@@ -788,11 +808,13 @@ export default function Page() {
                             key={`${g.key}-sig-${r.day}`}
                             className={`${td} p-0 align-middle`}
                           >
-                            <img
-                              src={signatureSrc}
-                              alt=""
-                              className="mx-auto h-7 max-h-[28px] w-auto max-w-[36px] object-contain"
-                            />
+                            {showSig ? (
+                              <img
+                                src={rowSig}
+                                alt=""
+                                className="mx-auto h-7 max-h-[28px] w-auto max-w-[36px] object-contain"
+                              />
+                            ) : null}
                           </TableCell>,
                         ];
                       }
@@ -815,9 +837,9 @@ export default function Page() {
                           key={`${g.key}-sig-${r.day}`}
                           className={`${td} relative p-0`}
                         >
-                          {signatureSrc ? (
+                          {showSig ? (
                             <img
-                              src={signatureSrc}
+                              src={rowSig}
                               alt="signature"
                               className={`pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 ${signatureHeightClass} w-auto max-w-none object-contain`}
                             />
