@@ -1,3 +1,15 @@
+export function formatJoinedDate(value?: string): string {
+  const trimmed = value?.trim();
+  if (!trimmed) return "-";
+  const date = new Date(trimmed);
+  if (Number.isNaN(date.getTime())) return trimmed;
+  return date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export function formatMvr(amount: number): string {
   const n = Number.isFinite(amount) ? amount : 0;
   return n.toLocaleString("en-US", {

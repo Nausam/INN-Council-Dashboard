@@ -8,6 +8,7 @@ import {
   invalidateEmployees,
   invalidateLandRent,
   invalidateLeaveRequests,
+  invalidateOvertimeRequests,
   invalidateMosqueAttendance,
   invalidatePrayerTimes,
   invalidateSalarySlips,
@@ -33,6 +34,10 @@ export function useQueryInvalidation() {
     ),
     invalidateLeaveRequests: useCallback(
       () => invalidateLeaveRequests(queryClient),
+      [queryClient],
+    ),
+    invalidateOvertimeRequests: useCallback(
+      () => invalidateOvertimeRequests(queryClient),
       [queryClient],
     ),
     invalidateCorrespondence: useCallback(

@@ -2,8 +2,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { AttendanceChangesBanner } from "@/components/attendance/attendance-changes-banner";
 import { AttendanceLeaveSelect } from "@/components/attendance/attendance-leave-select";
+import { AttendanceLeaveUsage } from "@/components/attendance/attendance-leave-usage";
 import { AttendanceTimeInput } from "@/components/attendance/attendance-time-input";
 import { AvatarGlow, CouncilCard } from "@/components/design-system";
 import {
@@ -28,18 +28,16 @@ import {
 } from "@/components/ui/table";
 import { useEmployeesQuery, useQueryInvalidation } from "@/hooks/queries";
 import { useToast } from "@/hooks/use-toast";
-import {
-  deductLeave,
-  deleteAttendancesByDate,
-  EmployeeDoc,
-  fetchEmployeeById,
-  updateAttendanceRecord,
-} from "@/lib/firebase/hr";
+import { computeCouncilMinutesLate } from "@/lib/attendance/council-lateness";
+import { submitCouncilAttendanceAction } from "@/lib/attendance/attendance.actions";
+import { getLeaveUsageSummary } from "@/lib/employees/leave-usage";
+import { deleteAttendancesByDate, type EmployeeDoc } from "@/lib/firebase/hr";
 import { cn } from "@/lib/utils";
 import { useUser } from "@/Providers/UserProvider";
 import {
   AlertCircle,
   Briefcase,
+  Building2,
   Recycle,
   Save,
   Trash2,
@@ -47,37 +45,6 @@ import {
   Users,
 } from "lucide-react";
 /* ---------------- Helpers ---------------- */
-const ADDITIVE_LEAVES = [
-  "maternityLeave",
-  "preMaternityLeave",
-  "paternityLeave",
-  "noPayLeave",
-  "officialLeave",
-] as const;
-type AdditiveLeave = (typeof ADDITIVE_LEAVES)[number];
-
-const BALANCE_LEAVES = [
-  "sickLeave",
-  "certificateSickLeave",
-  "annualLeave",
-  "familyRelatedLeave",
-] as const;
-type BalanceLeave = (typeof BALANCE_LEAVES)[number];
-
-const isAdditiveLeave = (k: string): k is AdditiveLeave =>
-  (ADDITIVE_LEAVES as readonly string[]).includes(k);
-
-const isBalanceLeave = (k: string): k is BalanceLeave =>
-  (BALANCE_LEAVES as readonly string[]).includes(k);
-
-function getNumericLeave(emp: EmployeeDoc, key: string): number {
-  if (isAdditiveLeave(key) || isBalanceLeave(key)) {
-    const v = emp[key as keyof EmployeeDoc];
-    return typeof v === "number" && Number.isFinite(v) ? v : 0;
-  }
-  return 0;
-}
-
 /* ---------------- Types ---------------- */
 type EmployeeRef =
   | string
@@ -85,6 +52,7 @@ type EmployeeRef =
       $id: string;
       name: string;
       section?: string;
+      designation?: string;
     };
 
 interface AttendanceRecord {
@@ -151,21 +119,27 @@ const formatTimeForInput = (dateTime: string | null) => {
 };
 
 const convertTimeToDateTime = (time: string, date: string) => {
-  const [hh, mm] = time.split(":").map((v) => parseInt(v, 10));
+  const parts = time.split(":");
+  if (parts.length < 2) return null;
+
+  const hh = parseInt(parts[0], 10);
+  const mm = parseInt(parts[1], 10);
+  if (
+    Number.isNaN(hh) ||
+    Number.isNaN(mm) ||
+    hh < 0 ||
+    hh > 23 ||
+    mm < 0 ||
+    mm > 59
+  ) {
+    return null;
+  }
+
   const utc = new Date(`${date}T00:00:00.000Z`);
   const mvMinutes = hh * 60 + mm;
   const utcMinutes = mvMinutes - MV_OFFSET_MIN;
   utc.setUTCMinutes(utcMinutes);
   return utc.toISOString();
-};
-
-const mvLocalToUtcDate = (date: string, hhmm: string) => {
-  const [hh, mm] = hhmm.split(":").map((v) => parseInt(v, 10));
-  const utc = new Date(`${date}T00:00:00.000Z`);
-  const mvMinutes = hh * 60 + mm;
-  const utcMinutes = mvMinutes - MV_OFFSET_MIN;
-  utc.setUTCMinutes(utcMinutes);
-  return utc;
 };
 
 const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
@@ -179,7 +153,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
   const monthKey = date.slice(0, 7);
 
   const [employeeCache, setEmployeeCache] = useState<
-    Record<string, { name: string; section?: string }>
+    Record<string, { name: string; section?: string; designation?: string }>
   >({});
 
   const idFromRef = (ref: EmployeeRef) =>
@@ -187,6 +161,44 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
 
   const normalize = (s?: string) => (s ?? "").toLowerCase().trim();
   const clean = (s?: string) => normalize(s).replace(/[^a-z]/g, "");
+  const nameOrderKey = (s?: string) =>
+    clean(s).replace(/(.)\1+/g, "$1");
+
+  const buildSectionOrderIndex = (names: string[]) => {
+    const map = new Map<string, number>();
+    names.forEach((name, index) => {
+      map.set(normalize(name), index);
+      map.set(clean(name), index);
+      map.set(nameOrderKey(name), index);
+    });
+    return map;
+  };
+
+  const registerOrderAlias = (
+    map: Map<string, number>,
+    canonicalName: string,
+    aliasName: string,
+  ) => {
+    const rank =
+      map.get(nameOrderKey(canonicalName)) ??
+      map.get(normalize(canonicalName));
+    if (rank === undefined) return;
+
+    map.set(normalize(aliasName), rank);
+    map.set(clean(aliasName), rank);
+    map.set(nameOrderKey(aliasName), rank);
+  };
+
+  const getSectionOrderRank = (
+    name: string,
+    sectionOrder: Map<string, number>,
+  ) => {
+    for (const key of [normalize(name), clean(name), nameOrderKey(name)]) {
+      const rank = sectionOrder.get(key);
+      if (rank !== undefined) return rank;
+    }
+    return Number.MAX_SAFE_INTEGER;
+  };
 
   const sectionFromRecord = (r: AttendanceRecord) => {
     if (typeof r.employeeId === "object") return r.employeeId.section ?? "";
@@ -212,39 +224,75 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     return (id && employeeCache[id]?.name) || "Unknown";
   };
 
+  const designationFromRecord = (r: AttendanceRecord) => {
+    if (typeof r.employeeId === "object" && r.employeeId.designation?.trim()) {
+      return r.employeeId.designation.trim();
+    }
+
+    const id = idFromRef(r.employeeId);
+    const cached = id ? employeeCache[id] : undefined;
+    if (cached?.designation?.trim()) return cached.designation.trim();
+
+    return "";
+  };
+
   useEffect(() => {
     setAttendanceUpdates(data);
   }, [data]);
 
-  const unresolvedIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const r of attendanceUpdates) {
-      if (typeof r.employeeId === "string") {
-        const id = r.employeeId;
-        if (id && !employeeCache[id]) ids.add(id);
-      }
-    }
-    return Array.from(ids);
-  }, [attendanceUpdates, employeeCache]);
-
   const { data: allEmployees } = useEmployeesQuery();
 
-  useEffect(() => {
-    if (!allEmployees?.length || unresolvedIds.length === 0) return;
+  const employeeById = useMemo(
+    () => new Map(allEmployees?.map((emp) => [emp.$id, emp]) ?? []),
+    [allEmployees],
+  );
 
-    const lookup: Record<string, { name: string; section?: string }> = {};
-    for (const emp of allEmployees) {
-      if (unresolvedIds.includes(emp.$id)) {
-        lookup[emp.$id] = { name: emp.name, section: emp.section };
+  const leaveUsageFromRecord = (r: AttendanceRecord) => {
+    if (!r.leaveType) return null;
+
+    const employee = employeeById.get(idFromRef(r.employeeId));
+    if (!employee) return null;
+
+    const value = employee[r.leaveType as keyof EmployeeDoc];
+    const balance =
+      typeof value === "number" && Number.isFinite(value) ? value : 0;
+
+    return getLeaveUsageSummary(r.leaveType, balance);
+  };
+
+  useEffect(() => {
+    if (!allEmployees?.length) return;
+
+    const byId = new Map(allEmployees.map((emp) => [emp.$id, emp]));
+    const lookup: Record<
+      string,
+      { name: string; section?: string; designation?: string }
+    > = {};
+
+    for (const record of attendanceUpdates) {
+      const id = idFromRef(record.employeeId);
+      const emp = byId.get(id);
+      if (emp) {
+        lookup[id] = {
+          name: emp.name,
+          section: emp.section,
+          designation: emp.designation,
+        };
       }
     }
 
     if (Object.keys(lookup).length > 0) {
       setEmployeeCache((prev) => ({ ...prev, ...lookup }));
     }
-  }, [allEmployees, unresolvedIds]);
+  }, [allEmployees, attendanceUpdates]);
 
   /* ---------------- Custom order + section-first sort ---------------- */
+  const councillorOrder = [
+    "Ibrahim Haleem",
+    "Hussain Areef",
+    "Hawwa Nazleena",
+  ];
+
   const employeeOrder = [
     "Ahmed Azmeen",
     "Ahmed Ruzaan",
@@ -273,13 +321,47 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     "Ubaidh",
   ];
 
-  const orderIndex = useMemo(() => {
-    const map = new Map<string, number>();
-    employeeOrder.forEach((n, i) => map.set(normalize(n), i));
+  const adminSectionOrder = [
+    "Imran Shareef",
+    "Aminath Shazuly",
+    "Fazeel Ahmed",
+    "Hussain Sazeen",
+    "Mohamed Suhail",
+    "Aminath Shaliya",
+    "Fathimath Jazlee",
+    "Aminath Nuha",
+    "Hussain Nausam",
+    "Fathimath Zeyba",
+    "Fathimath Usaira",
+    "Mohamed Waheedh",
+    "Aishath Shaila",
+    "Aishath Naahidha",
+    "Aishath Simaana",
+    "Fazeela Naseer",
+    "Azlifa Mohamed Saleem",
+    "Aishath Shabaana",
+  ];
+
+  const councillorOrderIndex = useMemo(
+    () => buildSectionOrderIndex(councillorOrder),
+    [],
+  );
+
+  const adminOrderIndex = useMemo(() => {
+    const map = buildSectionOrderIndex(adminSectionOrder);
+    registerOrderAlias(map, "Azlifa Mohamed Saleem", "Azlifa Saleem");
+    registerOrderAlias(map, "Aishath Shabaana", "Aishath Shabana");
     return map;
   }, []);
 
-  type CanonicalSection = "Councillor" | "Admin" | "Waste Management" | "Other";
+  const orderIndex = useMemo(() => buildSectionOrderIndex(employeeOrder), []);
+
+  type CanonicalSection =
+    | "Councillor"
+    | "Admin"
+    | "WDC"
+    | "Waste Management"
+    | "Other";
   const getCanonicalSection = (raw?: string): CanonicalSection => {
     const n = clean(raw);
     if (["councillor", "councilor", "council", "counciler"].includes(n))
@@ -294,6 +376,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
       ].includes(n)
     )
       return "Admin";
+    if (n === "wdc") return "WDC";
     if (
       [
         "wastemanagement",
@@ -312,6 +395,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     const g: Record<CanonicalSection, AttendanceRecord[]> = {
       Councillor: [],
       Admin: [],
+      WDC: [],
       "Waste Management": [],
       Other: [],
     };
@@ -322,12 +406,15 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     return g;
   }, [attendanceUpdates, employeeCache]);
 
-  const sortWithin = (arr: AttendanceRecord[]) => {
+  const sortWithin = (
+    arr: AttendanceRecord[],
+    sectionOrder: Map<string, number> = orderIndex,
+  ) => {
     return [...arr].sort((a, b) => {
       const an = nameFromRecord(a);
       const bn = nameFromRecord(b);
-      const ai = orderIndex.get(normalize(an)) ?? Number.MAX_SAFE_INTEGER;
-      const bi = orderIndex.get(normalize(bn)) ?? Number.MAX_SAFE_INTEGER;
+      const ai = getSectionOrderRank(an, sectionOrder);
+      const bi = getSectionOrderRank(bn, sectionOrder);
       if (ai !== bi) return ai - bi;
       return an.localeCompare(bn);
     });
@@ -335,7 +422,9 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
 
   /* ---------------- Handlers ---------------- */
   const handleSignInChange = (attendanceId: string, newSignInTime: string) => {
-    const dateTime = convertTimeToDateTime(newSignInTime, date);
+    const dateTime = newSignInTime.trim()
+      ? convertTimeToDateTime(newSignInTime, date)
+      : null;
     setAttendanceUpdates((prev) =>
       prev.map((r) =>
         r.$id === attendanceId
@@ -369,14 +458,10 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
 
     const withLateness = attendanceUpdates.map((r) => {
       if (!r.signInTime) return r;
-      const sec = getCanonicalSection(sectionFromRecord(r));
-      const required = sec === "Councillor" ? "08:30" : "08:00";
-      const requiredTime = mvLocalToUtcDate(date, required);
-      const actual = new Date(r.signInTime);
-
-      const minutesLate = Math.max(
-        0,
-        Math.round((actual.getTime() - requiredTime.getTime()) / 60000)
+      const minutesLate = computeCouncilMinutesLate(
+        r.signInTime,
+        date,
+        sectionFromRecord(r),
       );
       return { ...r, minutesLate };
     });
@@ -393,51 +478,25 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     }
 
     try {
-      await Promise.all(
-        changed.map(async (r) => {
-          const empId = idFromRef(r.employeeId);
-          const employee = await fetchEmployeeById(empId);
-
-          const leaveType = r.leaveType ?? "";
-          if (leaveType) {
-            if (isBalanceLeave(leaveType)) {
-              const available = getNumericLeave(employee, leaveType);
-              if (available <= 0) {
-                throw new Error(
-                  `${nameFromRecord(r)} does not have any ${leaveType} left.`
-                );
-              }
-            }
-          }
-
-          if (r.previousLeaveType && r.previousLeaveType !== r.leaveType) {
-            await deductLeave(empId, r.previousLeaveType, true);
-          }
-          if (
-            r.leaveType &&
-            (!r.leaveDeducted || r.previousLeaveType !== r.leaveType)
-          ) {
-            await deductLeave(empId, r.leaveType);
-          }
-
-          await updateAttendanceRecord(r.$id, {
-            signInTime: r.signInTime,
-            leaveType: r.leaveType ?? null,
-            minutesLate: r.minutesLate ?? 0,
-            previousLeaveType: r.leaveType ?? null,
-            leaveDeducted: Boolean(r.leaveType),
-          });
-        })
+      const result = await submitCouncilAttendanceAction(
+        changed.map((r) => ({
+          attendanceId: r.$id,
+          employeeId: idFromRef(r.employeeId),
+          employeeName: nameFromRecord(r),
+          signInTime: r.signInTime,
+          leaveType: r.leaveType ?? null,
+          minutesLate: r.minutesLate ?? 0,
+          previousLeaveType: r.previousLeaveType ?? null,
+          leaveDeducted: r.leaveDeducted,
+        })),
       );
 
-      const affectedEmployeeIds = new Set(
-        changed.map((r) => idFromRef(r.employeeId)),
-      );
+      if (!result.success) {
+        throw new Error(result.error || "Failed to update attendance");
+      }
 
       await invalidateCouncilAttendance(date, monthKey);
-      await Promise.all(
-        Array.from(affectedEmployeeIds).map((id) => invalidateEmployees(id)),
-      );
+      invalidateEmployees();
 
       toast({
         title: "Success",
@@ -450,7 +509,8 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
       console.error(e);
       toast({
         title: "Error",
-        description: "Error updating attendance.",
+        description:
+          e instanceof Error ? e.message : "Error updating attendance.",
         variant: "destructive",
       });
     } finally {
@@ -479,8 +539,6 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
       setSubmitting(false);
     }
   };
-
-  const changedCount = attendanceUpdates.filter((r) => r.changed).length;
 
   /* ---------------- UI helpers ---------------- */
   let rowCounter = 0;
@@ -515,7 +573,12 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     icon: React.ComponentType<{ className?: string }>,
   ) => {
     if (!rows.length) return null;
-    const sorted = sortWithin(rows);
+    const sorted =
+      title === "Council"
+        ? sortWithin(rows, councillorOrderIndex)
+        : title === "Admin"
+          ? sortWithin(rows, adminOrderIndex)
+          : sortWithin(rows);
 
     return (
       <>
@@ -523,6 +586,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
         {sorted.map((record) => {
           rowCounter += 1;
           const isChanged = record.changed;
+          const leaveUsage = leaveUsageFromRecord(record);
 
           return (
             <TableRow
@@ -560,7 +624,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
                     </div>
 
                     <div className="text-xs font-medium text-slate-500">
-                      {sectionFromRecord(record) || "—"}
+                      {designationFromRecord(record) || "—"}
                     </div>
                   </div>
                 </div>
@@ -574,10 +638,10 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
                       handleSignInChange(record.$id, value)
                     }
                   />
+                ) : leaveUsage ? (
+                  <AttendanceLeaveUsage usage={leaveUsage} />
                 ) : (
-                  <span className="text-sm font-semibold text-slate-400">
-                    —
-                  </span>
+                  <span className="text-sm font-semibold text-slate-400">—</span>
                 )}
               </TableCell>
 
@@ -603,13 +667,12 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
 
   const councillor = grouped["Councillor"];
   const admin = grouped["Admin"];
+  const wdc = grouped["WDC"];
   const waste = grouped["Waste Management"];
   const other = grouped["Other"];
 
   return (
     <div className="space-y-6">
-      <AttendanceChangesBanner count={changedCount} />
-
       <CouncilCard interactive="none" className="overflow-hidden p-0">
         <Table>
           <TableHeader>
@@ -631,6 +694,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
 
           <TableBody>
             {renderSection("Council", councillor, Users)}
+            {renderSection("WDC", wdc, Building2)}
             {renderSection("Admin", admin, Briefcase)}
             {renderSection("Waste Management", waste, Recycle)}
             {renderSection("Other", sortWithin(other), UserCheck)}

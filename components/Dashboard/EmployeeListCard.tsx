@@ -14,6 +14,8 @@ import React from "react";
 interface Employee {
   name: string;
   leaveType?: string | null;
+  designation?: string | null;
+  minutesLate?: number | null;
 }
 
 interface EmployeeListCardProps {
@@ -77,10 +79,18 @@ const EmployeeListCard: React.FC<EmployeeListCardProps> = ({
                 typeof employee === "string" ? employee : employee.name;
               const leaveType =
                 typeof employee === "string" ? null : employee.leaveType;
+              const designation =
+                typeof employee === "string" ? null : employee.designation;
+              const minutesLate =
+                typeof employee === "string" ? null : employee.minutesLate;
               const status =
                 variant === "leave"
                   ? getLeaveTypeStyle(leaveType)
                   : leaveTypeStyles.late;
+              const subtitle =
+                variant === "late" && typeof minutesLate === "number"
+                  ? `${minutesLate} min late`
+                  : designation?.trim() || "Employee";
 
               return (
                 <li
@@ -93,7 +103,7 @@ const EmployeeListCard: React.FC<EmployeeListCardProps> = ({
                       {name}
                     </p>
                     <p className={cn(typography.body, "text-xs font-medium")}>
-                      Employee
+                      {subtitle}
                     </p>
                   </div>
                   <span

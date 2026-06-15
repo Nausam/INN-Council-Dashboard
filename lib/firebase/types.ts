@@ -18,6 +18,28 @@ export type LeaveRequest = LegacyDocument & {
   actionBy?: string;
 };
 
+export type OvertimeRequestEmployee = {
+  employeeId: string;
+  name: string;
+  designation?: string;
+  section?: string;
+  recordCardNumber?: string;
+  recordCardLabel?: string;
+  address?: string;
+  joinedDate?: string;
+};
+
+export type OvertimeRequest = LegacyDocument & {
+  details: string;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  employees: OvertimeRequestEmployee[];
+  approvalStatus: string;
+  createdAt?: string;
+  actionBy?: string;
+};
+
 export type EmployeeDoc = LegacyDocument & {
   name: string;
   designation?: string;
@@ -46,6 +68,8 @@ export type EmployeeDoc = LegacyDocument & {
     endMonthAmount: number;
   }>;
   retirementPension?: number;
+  /** When false, pension deduction is not applied (defaults to true). */
+  retirementPensionApplies?: boolean;
   jobAllowance?: number;
   /** MVR per working day */
   attendanceBenefit?: number;
@@ -53,6 +77,7 @@ export type EmployeeDoc = LegacyDocument & {
   temporaryZvAllowance?: number;
   ramazanAllowance?: number;
   livingAllowance?: number;
+  foodAllowance?: number;
   phoneAllowance?: number;
   [key: string]: unknown;
 };
@@ -102,6 +127,13 @@ export type SalarySlipDoc = LegacyDocument & {
   periodLabel: string;
   objectKey: string;
   fileName?: string;
+};
+
+/** Per-period settings for generated salary slips (pay period = prior month 16 → month 15). */
+export type SalaryPeriodConfigDoc = LegacyDocument & {
+  periodLabel: string;
+  /** ISO dates within the pay period; Fri/Sat are excluded when saving. */
+  holidayDates: string[];
 };
 
 export type PunchLogRaw = LegacyDocument & {

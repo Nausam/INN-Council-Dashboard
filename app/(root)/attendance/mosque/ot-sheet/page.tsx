@@ -12,6 +12,11 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { OtSheetControlsPanel } from "@/components/mosque/ot-sheet-controls-panel";
+import { leaveLabelToDhivehi, buildLeaveByIso } from "@/lib/attendance/mosque-sheet-leave";
+import {
+  useEmployeesQuery,
+  useMosqueDailyAttendanceMonthQuery,
+} from "@/hooks/queries";
 
 type HHMM = { h: number | ""; m: number | "" };
 
@@ -186,6 +191,8 @@ const th =
   "border border-neutral-700/70 bg-neutral-200 text-center align-middle whitespace-nowrap px-1 py-1 font-semibold text-black";
 const td =
   "border border-neutral-700/70 text-center align-middle whitespace-nowrap px-1 py-1";
+const leaveMergedTd =
+  "border border-neutral-700/70 text-center align-middle whitespace-normal px-2 py-4 text-[18px] font-semibold leading-relaxed text-black";
 
 type ImamOptionKey = "Shahidh" | "Zahidh";
 
@@ -226,6 +233,18 @@ export default function Page() {
   const [endYear, setEndYear] = useState<number>(now.getFullYear());
   const [endMonth, setEndMonth] = useState<number>(now.getMonth());
   const [imamKey, setImamKey] = useState<ImamOptionKey>("Shahidh");
+
+  const imam = IMAM_INFO[imamKey];
+
+  const [empId, setEmpId] = useState<string>(imam.idNumber);
+  const [empPosition, setEmpPosition] = useState<string>(imam.position);
+  const [empName, setEmpName] = useState<string>(imam.name);
+
+  useEffect(() => {
+    setEmpId(IMAM_INFO[imamKey].idNumber);
+    setEmpPosition(IMAM_INFO[imamKey].position);
+    setEmpName(IMAM_INFO[imamKey].name);
+  }, [imamKey]);
 
   const [otMinutes, setOtMinutes] = useState<number>(60);
 
@@ -397,6 +416,9 @@ export default function Page() {
     endTime: HHMM;
     totalH: number;
     totalM: number;
+    leaveLabel: string | null;
+    leaveDhivehi: string | null;
+    isLeaveRow: boolean;
   };
 
   const sortedHolidayDates: DateEntry[] = useMemo(
@@ -404,10 +426,90 @@ export default function Page() {
     [rangeDates, holidayDates],
   );
 
+  const { data: employees = [], isPending: employeesPending } =
+    useEmployeesQuery();
+
+  const employeeId = useMemo(() => {
+    const recordCard = empId.trim().toUpperCase();
+    if (!recordCard) return "";
+    const match = employees.find(
+      (employee) =>
+        employee.recordCardNumber?.trim().toUpperCase() === recordCard,
+    );
+    return match?.$id ?? "";
+  }, [employees, empId]);
+
+  const monthKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const d of rangeDates) {
+      keys.add(`${d.year}-${pad2(d.month0 + 1)}`);
+    }
+    return Array.from(keys);
+  }, [rangeDates]);
+
+  const leaveMonthA = monthKeys[0] ?? "";
+  const leaveMonthB = monthKeys[1] ?? "";
+
+  const { data: leaveAttendanceA = [], isFetching: leaveLoadingA, isPending: leavePendingA } =
+    useMosqueDailyAttendanceMonthQuery(leaveMonthA, employeeId);
+  const { data: leaveAttendanceB = [], isFetching: leaveLoadingB, isPending: leavePendingB } =
+    useMosqueDailyAttendanceMonthQuery(leaveMonthB, employeeId);
+
+  const leaveByDate = useMemo(
+    () => buildLeaveByIso([...leaveAttendanceA, ...leaveAttendanceB]),
+    [leaveAttendanceA, leaveAttendanceB],
+  );
+
+  const leaveDaysInRange = useMemo(
+    () => sortedHolidayDates.filter((d) => leaveByDate[d.iso]).length,
+    [sortedHolidayDates, leaveByDate],
+  );
+
+  const leaveLookupLoading =
+    Boolean(empId.trim()) &&
+    (employeesPending ||
+      (Boolean(employeeId) &&
+        (leavePendingA ||
+          leavePendingB ||
+          leaveLoadingA ||
+          leaveLoadingB)));
+
+  const [leaveStatusReady, setLeaveStatusReady] = useState(false);
+
+  useEffect(() => {
+    setLeaveStatusReady(true);
+  }, []);
+
   const otRows: OtRow[] = useMemo(() => {
     const rows: OtRow[] = [];
     let counter = 0;
     for (const d of sortedHolidayDates) {
+      const leaveLabel = leaveByDate[d.iso] ?? null;
+
+      if (leaveLabel) {
+        counter += 1;
+        rows.push({
+          runningNo: counter,
+          iso: d.iso,
+          year: d.year,
+          month0: d.month0,
+          day: d.day,
+          weekday: d.weekday,
+          prayer: "fajr",
+          prayerLabel: "",
+          isFirstOfDay: true,
+          daySpan: 1,
+          startTime: { h: "", m: "" },
+          endTime: { h: "", m: "" },
+          totalH: 0,
+          totalM: 0,
+          leaveLabel,
+          leaveDhivehi: leaveLabelToDhivehi(leaveLabel),
+          isLeaveRow: true,
+        });
+        continue;
+      }
+
       const t = timesByDate[d.iso];
       const isFriday = d.weekday === 5;
       const includedPrayers = GROUPS.filter((g) => {
@@ -435,11 +537,14 @@ export default function Page() {
           endTime,
           totalH: Math.floor(otMinutes / 60),
           totalM: otMinutes % 60,
+          leaveLabel: null,
+          leaveDhivehi: null,
+          isLeaveRow: false,
         });
       });
     }
     return rows;
-  }, [sortedHolidayDates, timesByDate, otMinutes, emptyRules]);
+  }, [sortedHolidayDates, timesByDate, otMinutes, emptyRules, leaveByDate]);
 
   // ===== Range filtering for View / Print =====
   // Range A = 11th of prev month → end of prev month
@@ -510,19 +615,6 @@ export default function Page() {
     return `ބަންދު ދުވަސްތަކުގެ އިތުރުގަޑީ ${left} އިން ${right} އަށް`;
   }, [prevYear, prevMonth0, endYear, endMonth]);
 
-  const imam = IMAM_INFO[imamKey];
-
-  // editable employee info (pre-filled from imam)
-  const [empId, setEmpId] = useState<string>(imam.idNumber);
-  const [empPosition, setEmpPosition] = useState<string>(imam.position);
-  const [empName, setEmpName] = useState<string>(imam.name);
-
-  useEffect(() => {
-    setEmpId(IMAM_INFO[imamKey].idNumber);
-    setEmpPosition(IMAM_INFO[imamKey].position);
-    setEmpName(IMAM_INFO[imamKey].name);
-  }, [imamKey]);
-
   const sigSrc = imam.signatureSrc;
   const sigCls = imam.signatureHeightClass ?? "h-8";
 
@@ -531,19 +623,19 @@ export default function Page() {
   function renderTable(rows: OtRow[]) {
     return (
       <Table
-        className="w-full table-fixed border-collapse text-center text-[18px] leading-none text-black"
+        className="ot-sheet-table w-full table-fixed border-collapse text-center text-[18px] leading-none text-black"
         style={{ direction: "rtl" }}
       >
         <colgroup>
-          <col style={{ width: "40px" }} />
-          <col style={{ width: "150px" }} />
-          <col style={{ width: "140px" }} />
-          <col style={{ width: "70px" }} />
-          <col style={{ width: "70px" }} />
-          <col style={{ width: "70px" }} />
-          <col style={{ width: "70px" }} />
-          <col style={{ width: "55px" }} />
-          <col style={{ width: "60px" }} />
+          <col style={{ width: "5%" }} />
+          <col style={{ width: "19%" }} />
+          <col style={{ width: "17%" }} />
+          <col style={{ width: "9.5%" }} />
+          <col style={{ width: "9.5%" }} />
+          <col style={{ width: "9.5%" }} />
+          <col style={{ width: "9.5%" }} />
+          <col style={{ width: "10%" }} />
+          <col style={{ width: "10%" }} />
         </colgroup>
 
         <TableHeader>
@@ -596,7 +688,33 @@ export default function Page() {
               </TableCell>
             </TableRow>
           ) : (
-            rows.map((r) => (
+            rows.map((r) => {
+              if (r.isLeaveRow) {
+                return (
+                  <TableRow key={`${r.iso}-leave`} className="ot-leave-row">
+                    <TableCell className={`${td} text-[16px] font-semibold`}>
+                      {r.runningNo}
+                    </TableCell>
+
+                    <TableCell className={`${td} text-[15px] font-semibold`}>
+                      {englishDateLabel(r.year, r.month0, r.day)}
+                      <br />
+                      <span className="text-[13px] text-neutral-600">
+                        {DHIVEHI_WEEKDAYS[r.weekday]}
+                      </span>
+                    </TableCell>
+
+                    <TableCell
+                      colSpan={7}
+                      className={`${leaveMergedTd} ot-leave-merged`}
+                    >
+                      {r.leaveDhivehi}
+                    </TableCell>
+                  </TableRow>
+                );
+              }
+
+              return (
               <TableRow key={`${r.iso}-${r.prayer}`}>
                 <TableCell className={`${td} text-[16px] font-semibold`}>
                   {r.runningNo}
@@ -653,7 +771,8 @@ export default function Page() {
                   {r.totalH}
                 </TableCell>
               </TableRow>
-            ))
+              );
+            })
           )}
         </TableBody>
 
@@ -715,40 +834,118 @@ export default function Page() {
   );
 
   return (
-    <div dir="rtl" className="min-h-dvh bg-white p-6 font-dh1">
+    <div dir="rtl" className="ot-sheet-page min-h-dvh bg-white p-6 font-dh1">
       <style>{`
         @media print {
-          @page { size: A4 portrait; margin: 6mm; }
-          .no-print { display: none !important; }
-          #view-area { display: none !important; }
+          @page {
+            size: A4 portrait;
+            margin: 6mm;
+          }
 
-          /* Override the single-page pin from globals.css so the OT table
-             can flow across multiple pages. */
-          #print-area {
-            display: block !important;
-            position: static !important;
-            inset: auto !important;
+          html,
+          body {
+            margin: 0 !important;
+            padding: 0 !important;
             width: 100% !important;
             height: auto !important;
             overflow: visible !important;
+            font-size: 11pt !important;
           }
 
-          thead { display: table-header-group; }
-          /* keep the footer (supervisor signature) on the last page only */
-          tfoot { display: table-row-group; }
+          .ot-sheet-page {
+            padding: 0 !important;
+            margin: 0 !important;
+            min-height: 0 !important;
+          }
 
-          /* Avoid splitting a grouped day across pages when possible. */
-          tr { page-break-inside: avoid; break-inside: avoid; }
+          .no-print,
+          #view-area {
+            display: none !important;
+          }
+
+          #print-area.ot-sheet-print-area {
+            display: block !important;
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            width: 100% !important;
+            max-width: none !important;
+            height: auto !important;
+            overflow: visible !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #fff !important;
+            direction: rtl !important;
+          }
+
+          #print-area.ot-sheet-print-area .ot-sheet-table {
+            width: 100% !important;
+            max-width: 100% !important;
+            table-layout: fixed !important;
+            border-collapse: collapse !important;
+            font-size: 11pt !important;
+          }
+
+          #print-area.ot-sheet-print-area th,
+          #print-area.ot-sheet-print-area td {
+            font-size: 11pt !important;
+            line-height: 1.25 !important;
+            padding: 1.5mm 1mm !important;
+            overflow: visible !important;
+            word-wrap: break-word;
+          }
+
+          #print-area.ot-sheet-print-area thead th {
+            font-size: 12pt !important;
+          }
+
+          #print-area.ot-sheet-print-area thead tr:first-child th {
+            font-size: 14pt !important;
+          }
+
+          #print-area.ot-sheet-print-area td[colspan],
+          #print-area.ot-sheet-print-area th[colspan] {
+            width: auto !important;
+            white-space: normal !important;
+          }
+
+          #print-area.ot-sheet-print-area .ot-leave-merged {
+            white-space: normal !important;
+            font-size: 12pt !important;
+            vertical-align: middle !important;
+          }
+
+          #print-area.ot-sheet-print-area .ot-leave-row {
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+
+          thead {
+            display: table-header-group;
+          }
+
+          tfoot {
+            display: table-row-group;
+          }
+
+          tr {
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
 
           img {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
         }
-        #print-area { display: none; }
+
+        #print-area {
+          display: none;
+        }
       `}</style>
 
-      <div className="mx-auto w-full max-w-[1400px] overflow-auto">
+      <div className="no-print mx-auto w-full max-w-[1400px] overflow-auto">
         <OtSheetControlsPanel
           rangeSubtitle={controlsRangeSubtitle}
           endMonth={endMonth}
@@ -800,24 +997,37 @@ export default function Page() {
           {renderTable(viewRows)}
         </div>
 
-        {/* ===== Print clone (selected print range only) ===== */}
-        <div id="print-area" className="bg-white">
-          {renderTable(printRows)}
-        </div>
-
         {/* status */}
         {timesError ? (
-          <div className="no-print mt-2 text-right text-sm text-red-600">
+          <div className="mt-2 text-right text-sm text-red-600">
             {timesError}
           </div>
         ) : loadingTimes ? (
-          <div className="no-print mt-2 text-right text-sm text-neutral-600">
+          <div className="mt-2 text-right text-sm text-neutral-600">
             Loading prayer times...
+          </div>
+        ) : leaveStatusReady && leaveLookupLoading ? (
+          <div className="mt-2 text-right text-sm text-neutral-600">
+            Loading leave records...
+          </div>
+        ) : leaveStatusReady && !leaveLookupLoading && !employeeId && empId.trim() ? (
+          <div className="mt-2 text-right text-sm text-amber-700">
+            Employee not found for ID {empId.trim()} — leave status unavailable.
+          </div>
+        ) : leaveStatusReady && !leaveLookupLoading && leaveDaysInRange > 0 ? (
+          <div className="mt-2 text-right text-sm text-rose-700">
+            {leaveDaysInRange} holiday day{leaveDaysInRange === 1 ? "" : "s"} on
+            leave in this range.
           </div>
         ) : null}
 
         {/* Unused local for lint-safety */}
         {endMonthLabel ? null : null}
+      </div>
+
+      {/* ===== Print clone (outside width-constrained wrapper) ===== */}
+      <div id="print-area" className="ot-sheet-print-area bg-white">
+        {renderTable(printRows)}
       </div>
     </div>
   );

@@ -44,6 +44,7 @@ export function AttendanceLeaveSelect({
       placeholder="Present"
       disabled={disabled}
       compact
+      excludeFromTabOrder
       className={cn(className)}
     />
   );

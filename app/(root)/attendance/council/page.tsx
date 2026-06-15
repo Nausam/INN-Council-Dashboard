@@ -113,15 +113,30 @@ const AdminAttendancePage = () => {
         throw new Error(result.error || "Failed to sync");
       }
 
-      const updated = result.updated || 0;
+      const synced = result.synced ?? 0;
+      const added = result.added ?? 0;
+      const total = synced + added;
 
       if (!silent) {
+        const descriptionParts: string[] = [];
+        if (synced > 0) {
+          descriptionParts.push(
+            `${synced} row${synced === 1 ? "" : "s"} synced from device punches`,
+          );
+        }
+        if (added > 0) {
+          descriptionParts.push(
+            `${added} employee${added === 1 ? "" : "s"} added to the sheet`,
+          );
+        }
+
         toast({
-          title: updated ? "Attendance updated" : "No new punches",
-          description: updated
-            ? `${updated} row${updated === 1 ? "" : "s"} synced from device punches.`
-            : "Everything is already up to date.",
-          variant: updated ? "success" : "default",
+          title: total ? "Attendance updated" : "No changes",
+          description:
+            total > 0
+              ? descriptionParts.join(". ") + "."
+              : "Everything is already up to date.",
+          variant: total ? "success" : "default",
         });
       }
 

@@ -28,6 +28,10 @@ export const queryKeys = {
       ["leave-requests", "admin", page, limit] as const,
     user: (userId: string) => ["leave-requests", "user", userId] as const,
   },
+  overtime: {
+    admin: (page: number, limit: number) =>
+      ["overtime-requests", "admin", page, limit] as const,
+  },
   correspondence: {
     list: (filters: Record<string, string | number>) =>
       ["correspondence", "list", filters] as const,

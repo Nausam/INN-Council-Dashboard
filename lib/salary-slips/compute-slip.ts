@@ -1,9 +1,22 @@
 import { parseCreditSchemesFromDoc } from "@/lib/employees/credit-schemes";
+import { recordCardLabelForEmployee } from "@/lib/employees/record-card-label";
+import {
+  computeRetirementPension,
+  retirementPensionAppliesFromDoc,
+} from "@/lib/employees/retirement-pension";
 import {
   ALLOWANCE_SLIP_LINES,
   DEDUCTION_SLIP_LINES,
 } from "@/lib/salary-slips/slip-labels";
-import { formatPeriodTitle } from "@/lib/salary-slips/format";
+import { formatJoinedDate, formatPeriodTitle } from "@/lib/salary-slips/format";
+import {
+  countAttendanceBenefitEligibleDaysInPeriod,
+  getPayPeriodBounds,
+  isOnAttendanceLeave,
+  parsePayPeriodBoundsAsDates,
+  qualifiesForAttendanceBenefit,
+  resolveAttendanceRowDate,
+} from "@/lib/salary-slips/pay-period";
 import type { AttendanceDoc, EmployeeDoc } from "@/lib/firebase/types";
 
 export type SalarySlipLine = {
@@ -18,12 +31,13 @@ export type SalarySlipComputed = {
   periodLabel: string;
   periodTitle: string;
   staff: {
-    staffSerialNumber: string;
     recordCardNumber: string;
+    recordCardLabel: string;
     name: string;
+    address: string;
     designation: string;
-    section: string;
     office: string;
+    joinedDate: string;
   };
   basicSalary: number;
   deductions: SalarySlipLine[];
@@ -35,14 +49,19 @@ export type SalarySlipComputed = {
   netIncome: number;
   attendanceSummary: {
     presentDays: number;
+    benefitPresentDays: number;
+    eligibleBenefitDaysInPeriod: number;
     totalMinutesLate: number;
     absentDays: number;
   };
 };
 
 const COUNCIL_OFFICE = "INNAMADHOO COUNCIL";
+/** Working days used for absent-day deduction from basic salary. */
 const WORKING_DAYS_PER_MONTH = 26;
-const HOURS_PER_DAY = 8;
+/** Calendar days used to derive per-minute late deduction from basic salary. */
+const SALARY_CALENDAR_DAYS = 30;
+const WORKING_HOURS_PER_DAY = 8;
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -53,13 +72,7 @@ function num(v: unknown, fallback = 0): number {
 }
 
 function parsePeriodBounds(periodLabel: string): { start: Date; end: Date } | null {
-  const m = periodLabel.match(/^(\d{4})-(\d{2})$/);
-  if (!m) return null;
-  const y = parseInt(m[1], 10);
-  const mo = parseInt(m[2], 10) - 1;
-  const start = new Date(y, mo, 1);
-  const end = new Date(y, mo + 1, 0);
-  return { start, end };
+  return parsePayPeriodBoundsAsDates(periodLabel);
 }
 
 function parseDateOnly(iso: string): Date | null {
@@ -112,56 +125,128 @@ function creditSchemeDeductionForPeriod(
   return round2(total);
 }
 
+function pickAttendanceRowForDate(
+  existing: AttendanceDoc | undefined,
+  row: AttendanceDoc,
+): AttendanceDoc {
+  if (!existing) return row;
+  if (isOnAttendanceLeave(row.leaveType)) return row;
+  if (isOnAttendanceLeave(existing.leaveType)) return existing;
+  if (row.signInTime && !existing.signInTime) return row;
+  if (
+    row.signInTime &&
+    existing.signInTime &&
+    num(row.minutesLate) > num(existing.minutesLate)
+  ) {
+    return row;
+  }
+  return existing;
+}
+
 function summarizeAttendance(
   employeeId: string,
   rows: AttendanceDoc[],
+  periodLabel: string,
+  holidayDates: ReadonlySet<string>,
 ): {
   presentDays: number;
+  benefitPresentDays: number;
+  eligibleBenefitDaysInPeriod: number;
   totalMinutesLate: number;
   absentDays: number;
 } {
-  let presentDays = 0;
-  let totalMinutesLate = 0;
-  let absentDays = 0;
+  const bounds = getPayPeriodBounds(periodLabel);
+  const eligibleBenefitDaysInPeriod = countAttendanceBenefitEligibleDaysInPeriod(
+    periodLabel,
+    holidayDates,
+  );
+
+  const rowsByDate = new Map<string, AttendanceDoc>();
 
   for (const row of rows) {
     if (row.employeeId !== employeeId) continue;
-    const minutesLate = num(row.minutesLate);
-    totalMinutesLate += minutesLate;
 
-    const leave = row.leaveType?.trim() ?? "";
-    if (leave === "noPayLeave") {
-      absentDays += 1;
+    const rowDate = resolveAttendanceRowDate(row);
+    if (!rowDate) continue;
+    if (
+      bounds &&
+      (rowDate < bounds.startIso || rowDate > bounds.endIso)
+    ) {
       continue;
     }
-    if (leave) continue;
+
+    rowsByDate.set(
+      rowDate,
+      pickAttendanceRowForDate(rowsByDate.get(rowDate), row),
+    );
+  }
+
+  let presentDays = 0;
+  let benefitPresentDays = 0;
+  let totalMinutesLate = 0;
+  let absentDays = 0;
+
+  for (const [rowDate, row] of Array.from(rowsByDate.entries())) {
+    totalMinutesLate += num(row.minutesLate);
+
+    const leave = row.leaveType?.trim() ?? "";
+    const onLeave = isOnAttendanceLeave(row.leaveType);
+
+    if (onLeave) {
+      if (leave === "noPayLeave") absentDays += 1;
+      continue;
+    }
 
     if (row.signInTime) {
       presentDays += 1;
+      if (
+        qualifiesForAttendanceBenefit(
+          row.signInTime,
+          row.leaveType,
+          rowDate,
+          holidayDates,
+        )
+      ) {
+        benefitPresentDays += 1;
+      }
     } else {
       absentDays += 1;
     }
   }
 
-  return { presentDays, totalMinutesLate, absentDays };
+  return {
+    presentDays,
+    benefitPresentDays,
+    eligibleBenefitDaysInPeriod,
+    totalMinutesLate,
+    absentDays,
+  };
 }
 
 function dailyRate(basicSalary: number): number {
   return basicSalary / WORKING_DAYS_PER_MONTH;
 }
 
-function minuteRate(basicSalary: number): number {
-  return dailyRate(basicSalary) / HOURS_PER_DAY / 60;
+/** Basic salary ÷ 30 days ÷ working hours per day ÷ 60 minutes. */
+function lateMinuteRate(basicSalary: number): number {
+  return (
+    basicSalary / SALARY_CALENDAR_DAYS / WORKING_HOURS_PER_DAY / 60
+  );
 }
 
 export function computeSalarySlip(
   employee: EmployeeDoc,
   periodLabel: string,
   attendanceRows: AttendanceDoc[],
+  holidayDates: ReadonlySet<string> = new Set(),
 ): SalarySlipComputed {
   const basicSalary = round2(num(employee.basicSalary));
-  const pension = round2(num(employee.retirementPension));
+  const pension = computeRetirementPension(
+    basicSalary,
+    retirementPensionAppliesFromDoc(employee.retirementPensionApplies),
+  );
   const livingAllowance = round2(num(employee.livingAllowance));
+  const foodAllowance = round2(num(employee.foodAllowance));
   const ramazanAllowance = round2(num(employee.ramazanAllowance));
   const phoneAllowance = round2(num(employee.phoneAllowance));
   const jobAllowance = round2(num(employee.jobAllowance));
@@ -175,13 +260,20 @@ export function computeSalarySlip(
       ? creditSchemeDeductionForPeriod(creditSchemes, periodLabel)
       : round2(legacyCredit);
 
-  const summary = summarizeAttendance(employee.$id, attendanceRows);
-  const lateFine = round2(summary.totalMinutesLate * minuteRate(basicSalary));
+  const summary = summarizeAttendance(
+    employee.$id,
+    attendanceRows,
+    periodLabel,
+    holidayDates,
+  );
+  const lateFine = round2(
+    summary.totalMinutesLate * lateMinuteRate(basicSalary),
+  );
   const absentDaysFine = round2(summary.absentDays * dailyRate(basicSalary));
   const absentHoursFine = 0;
 
   const attendanceBenefit = round2(
-    attendanceBenefitRate * summary.presentDays,
+    attendanceBenefitRate * summary.benefitPresentDays,
   );
   const zvAllowance = round2(zvAllowanceRate * summary.presentDays);
 
@@ -212,6 +304,7 @@ export function computeSalarySlip(
   const allowanceAmounts = {
     overtime,
     living: livingAllowance,
+    food: foodAllowance,
     holiday: 0,
     ramazan: ramazanAllowance,
     zv: zvAllowance,
@@ -237,12 +330,16 @@ export function computeSalarySlip(
     periodLabel,
     periodTitle: formatPeriodTitle(periodLabel),
     staff: {
-      staffSerialNumber: employee.deviceUserId?.trim() || "-",
       recordCardNumber: employee.recordCardNumber?.trim() || "-",
+      recordCardLabel: recordCardLabelForEmployee(
+        employee.section,
+        employee.designation,
+      ),
       name: employee.name?.trim() || "-",
+      address: employee.address?.trim() || "-",
       designation: employee.designation?.trim() || "-",
-      section: employee.section?.trim() || "-",
       office: COUNCIL_OFFICE,
+      joinedDate: formatJoinedDate(employee.joinedDate),
     },
     basicSalary,
     deductions,
@@ -260,11 +357,13 @@ export function computeSalarySlipsForPeriod(
   employees: EmployeeDoc[],
   periodLabel: string,
   attendanceRows: AttendanceDoc[],
+  holidayDates: string[] = [],
 ): SalarySlipComputed[] {
+  const holidaySet = new Set(holidayDates);
   return employees
     .filter((e) => e.name?.trim())
     .map((employee) =>
-      computeSalarySlip(employee, periodLabel, attendanceRows),
+      computeSalarySlip(employee, periodLabel, attendanceRows, holidaySet),
     )
     .sort((a, b) => a.staff.name.localeCompare(b.staff.name));
 }

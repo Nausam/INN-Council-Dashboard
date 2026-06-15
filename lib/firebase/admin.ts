@@ -38,6 +38,7 @@ export function getFirestoreDb(): Firestore {
     process.env.FIRESTORE_DATABASE_ID ?? "council-hr-dashboard";
 
   db = getFirestore(getFirebaseApp(), databaseId);
+  db.settings({ ignoreUndefinedProperties: true });
   return db;
 }
 
@@ -45,10 +46,12 @@ export function getFirestoreDb(): Firestore {
 export const COLLECTIONS = {
   employees: "employees",
   salarySlips: "salary_slips",
+  salaryPeriodConfig: "salary_period_config",
   attendance: "attendance",
   mosqueAttendance: "mosque_attendance",
   prayerTimes: "prayer_times",
   leaveRequests: "leave_requests",
+  overtimeRequests: "overtime_requests",
   punchLogs: "punch_logs",
   correspondence: "correspondence",
   landParcels: "land_parcels",

@@ -26,6 +26,65 @@ export function parseTimeValue(value: string): TimeParts | null {
   return { hour24, minute };
 }
 
+/** Parses typed time strings such as "8:30 AM", "08:30", or "830pm". */
+export function parseTypedCouncilTime(input: string): TimeParts | null {
+  const trimmed = input.trim().replace(/\s+/g, " ");
+  if (!trimmed) return null;
+
+  const colonMatch = trimmed.match(
+    /^(\d{1,2}):(\d{2})(?:\s*([AaPp][Mm]?|[AaPp]))?$/,
+  );
+  if (colonMatch) {
+    const hourPart = Number(colonMatch[1]);
+    const minute = Number(colonMatch[2]);
+    const periodRaw = colonMatch[3];
+
+    if (minute < 0 || minute > 59) return null;
+
+    if (periodRaw) {
+      const period: "AM" | "PM" = periodRaw.toUpperCase().startsWith("P")
+        ? "PM"
+        : "AM";
+      if (hourPart < 1 || hourPart > 12) return null;
+      return { hour24: to24Hour(hourPart, period), minute };
+    }
+
+    if (hourPart < 0 || hourPart > 23) return null;
+    return { hour24: hourPart, minute };
+  }
+
+  const compactMatch = trimmed.match(/^(\d{3,4})(?:\s*([AaPp][Mm]?|[AaPp]))?$/);
+  if (compactMatch) {
+    const digits = compactMatch[1];
+    const periodRaw = compactMatch[2];
+    let hourPart: number;
+    let minute: number;
+
+    if (digits.length === 3) {
+      hourPart = Number(digits[0]);
+      minute = Number(digits.slice(1));
+    } else {
+      hourPart = Number(digits.slice(0, 2));
+      minute = Number(digits.slice(2));
+    }
+
+    if (minute < 0 || minute > 59) return null;
+
+    if (periodRaw) {
+      const period: "AM" | "PM" = periodRaw.toUpperCase().startsWith("P")
+        ? "PM"
+        : "AM";
+      if (hourPart < 1 || hourPart > 12) return null;
+      return { hour24: to24Hour(hourPart, period), minute };
+    }
+
+    if (hourPart < 0 || hourPart > 23) return null;
+    return { hour24: hourPart, minute };
+  }
+
+  return parseTimeValue(trimmed);
+}
+
 export function toTimeValue(hour24: number, minute: number): string {
   return `${String(hour24).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }

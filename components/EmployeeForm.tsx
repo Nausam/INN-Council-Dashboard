@@ -17,10 +17,13 @@ import {
   updateEmployeeRecord,
 } from "@/lib/firebase/hr";
 import { CreditSchemesFormSection } from "@/components/employees/CreditSchemesFormSection";
+import type { CreditSchemeEntry } from "@/lib/employees/credit-schemes";
 import {
-  creditSchemesForFirestore,
-  type CreditSchemeEntry,
-} from "@/lib/employees/credit-schemes";
+  DESIGNATION_OPTIONS,
+  SECTION_OPTIONS,
+} from "@/lib/employees/field-options";
+import { employeeFormDataForFirestore } from "@/lib/employees/form-payload";
+import { computeRetirementPension } from "@/lib/employees/retirement-pension";
 import { cn } from "@/lib/utils";
 import { useParams, useRouter } from "next/navigation";
 import React, { useState } from "react";
@@ -37,6 +40,7 @@ import {
   Clock,
   Home,
   Landmark,
+  UtensilsCrossed,
   MapPin,
   Phone,
   User,
@@ -68,12 +72,14 @@ export type EmployeeFormData = {
   preMaternityLeave: number;
   basicSalary: number;
   creditSchemes: CreditSchemeEntry[];
+  retirementPensionApplies: boolean;
   retirementPension: number;
   jobAllowance: number;
   attendanceBenefit: number;
   temporaryZvAllowance: number;
   ramazanAllowance: number;
   livingAllowance: number;
+  foodAllowance: number;
   phoneAllowance: number;
 };
 
@@ -97,16 +103,17 @@ type SalaryFieldKey =
   | "temporaryZvAllowance"
   | "ramazanAllowance"
   | "livingAllowance"
+  | "foodAllowance"
   | "phoneAllowance";
 
 const SALARY_NUMERIC_FIELDS: SalaryFieldKey[] = [
   "basicSalary",
-  "retirementPension",
   "jobAllowance",
   "attendanceBenefit",
   "temporaryZvAllowance",
   "ramazanAllowance",
   "livingAllowance",
+  "foodAllowance",
   "phoneAllowance",
 ];
 
@@ -118,6 +125,7 @@ const defaultSalaryFields: Record<SalaryFieldKey, number> = {
   temporaryZvAllowance: 0,
   ramazanAllowance: 0,
   livingAllowance: 0,
+  foodAllowance: 0,
   phoneAllowance: 0,
 };
 
@@ -142,12 +150,17 @@ function buildInitialFormData(
     preMaternityLeave: initialData?.preMaternityLeave ?? 0,
     basicSalary: initialData?.basicSalary ?? 0,
     creditSchemes: initialData?.creditSchemes ?? [],
-    retirementPension: initialData?.retirementPension ?? 0,
+    retirementPensionApplies: initialData?.retirementPensionApplies ?? true,
+    retirementPension: computeRetirementPension(
+      initialData?.basicSalary ?? 0,
+      initialData?.retirementPensionApplies ?? true,
+    ),
     jobAllowance: initialData?.jobAllowance ?? 0,
     attendanceBenefit: initialData?.attendanceBenefit ?? 0,
     temporaryZvAllowance: initialData?.temporaryZvAllowance ?? 0,
     ramazanAllowance: initialData?.ramazanAllowance ?? 0,
     livingAllowance: initialData?.livingAllowance ?? 0,
+    foodAllowance: initialData?.foodAllowance ?? 0,
     phoneAllowance: initialData?.phoneAllowance ?? 0,
   };
 }
@@ -156,9 +169,15 @@ const SALARY_FIELD_CONFIG: {
   id: SalaryFieldKey;
   label: string;
   icon: LucideIcon;
+  computed?: boolean;
 }[] = [
   { id: "basicSalary", label: "Basic Salary", icon: DollarSign },
-  { id: "retirementPension", label: "Retirement Pension", icon: Landmark },
+  {
+    id: "retirementPension",
+    label: "Retirement Pension (7% of basic)",
+    icon: Landmark,
+    computed: true,
+  },
   { id: "jobAllowance", label: "Job Allowance", icon: Briefcase },
   { id: "attendanceBenefit", label: "Attendance Benefit (per day)", icon: Clock },
   {
@@ -168,6 +187,7 @@ const SALARY_FIELD_CONFIG: {
   },
   { id: "ramazanAllowance", label: "Ramazan Allowance", icon: Award },
   { id: "livingAllowance", label: "Living Allowance", icon: Home },
+  { id: "foodAllowance", label: "Food Allowance", icon: UtensilsCrossed },
   { id: "phoneAllowance", label: "Phone Allowance", icon: Phone },
 ];
 
@@ -183,26 +203,6 @@ interface EmployeeFormProps {
 
 const fieldClass =
   "council-input h-11 pl-10 pr-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60";
-
-const DESIGNATION_OPTIONS: CouncilSelectOption[] = [
-  { value: "Council President", label: "Council President" },
-  { value: "Council Vice President", label: "Council Vice President" },
-  { value: "Council Member", label: "Council Member" },
-  { value: "Council Executive", label: "Council Executive" },
-  { value: "A. Council Executive", label: "A. Council Executive" },
-  { value: "Finance Officer", label: "Finance Officer" },
-  { value: "Council Officer", label: "Council Officer" },
-  { value: "A. Council Officer", label: "A. Council Officer" },
-  { value: "Council Assistant", label: "Council Assistant" },
-  { value: "Imam", label: "Imam" },
-];
-
-const SECTION_OPTIONS: CouncilSelectOption[] = [
-  { value: "Councillor", label: "Councillor" },
-  { value: "Admin", label: "Admin" },
-  { value: "Mosque", label: "Mosque" },
-  { value: "Waste Management", label: "Waste Management" },
-];
 
 /* ---------------- Component ---------------- */
 
@@ -238,6 +238,19 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     const { name, value } = e.target;
     const key = name as keyof EmployeeFormData;
 
+    if (key === "basicSalary") {
+      const basic = parseFloat(value) || 0;
+      setFormData((prev) => ({
+        ...prev,
+        basicSalary: basic,
+        retirementPension: computeRetirementPension(
+          basic,
+          prev.retirementPensionApplies,
+        ),
+      }));
+      return;
+    }
+
     setFormData((prev) => ({
       ...prev,
       [key]: LEAVE_NUMERIC_FIELDS.includes(key)
@@ -259,20 +272,20 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const resetForm = () => setFormData(buildInitialFormData());
-
-  const toFirestorePayload = (data: EmployeeFormData) => {
-    const { creditSchemes, ...rest } = data;
-    return {
-      ...rest,
-      creditSchemes: creditSchemesForFirestore(creditSchemes),
-    };
+  const handleRetirementPensionAppliesChange = (applies: boolean) => {
+    setFormData((prev) => ({
+      ...prev,
+      retirementPensionApplies: applies,
+      retirementPension: computeRetirementPension(prev.basicSalary, applies),
+    }));
   };
+
+  const resetForm = () => setFormData(buildInitialFormData());
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
-    const payload = toFirestorePayload(formData);
+    const payload = employeeFormDataForFirestore(formData);
 
     try {
       if (onSubmit) {
@@ -399,18 +412,32 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
             description="Salary components in MVR; attendance and ZV allowances are per day"
           >
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {SALARY_FIELD_CONFIG.map(({ id, label, icon: Icon }) => (
-                <NumberField
-                  key={id}
-                  id={id}
-                  label={label}
-                  value={formData[id]}
-                  onChange={handleInputChange}
-                  icon={<Icon className="h-4 w-4" />}
-                  required={false}
-                  step="0.01"
-                />
-              ))}
+              {SALARY_FIELD_CONFIG.map(({ id, label, icon: Icon, computed }) => {
+                if (id === "retirementPension") {
+                  return (
+                    <RetirementPensionField
+                      key={id}
+                      applies={formData.retirementPensionApplies}
+                      basicSalary={formData.basicSalary}
+                      onAppliesChange={handleRetirementPensionAppliesChange}
+                    />
+                  );
+                }
+
+                return (
+                  <NumberField
+                    key={id}
+                    id={id}
+                    label={label}
+                    value={formData[id]}
+                    onChange={handleInputChange}
+                    icon={<Icon className="h-4 w-4" />}
+                    required={false}
+                    step="0.01"
+                    readOnly={computed}
+                  />
+                );
+              })}
             </div>
           </FormSection>
 
@@ -730,6 +757,61 @@ type NumberFormFieldKey =
   | SalaryFieldKey
   | (typeof LEAVE_NUMERIC_FIELDS)[number];
 
+function RetirementPensionField({
+  applies,
+  basicSalary,
+  onAppliesChange,
+}: {
+  applies: boolean;
+  basicSalary: number;
+  onAppliesChange: (applies: boolean) => void;
+}) {
+  const amount = computeRetirementPension(basicSalary, applies);
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <label
+          className="text-sm font-semibold text-slate-700"
+          htmlFor="retirementPension"
+        >
+          Retirement Pension (7% of basic)
+        </label>
+        <label
+          className="flex shrink-0 items-center gap-2 text-xs font-semibold text-slate-600"
+          htmlFor="retirementPensionApplies"
+        >
+          <input
+            id="retirementPensionApplies"
+            name="retirementPensionApplies"
+            type="checkbox"
+            checked={applies}
+            onChange={(e) => onAppliesChange(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+          />
+          Apply
+        </label>
+      </div>
+      <div className="relative">
+        <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+          <Landmark className="h-4 w-4" />
+        </div>
+        <input
+          id="retirementPension"
+          name="retirementPension"
+          type="number"
+          min={0}
+          step="0.01"
+          value={amount}
+          readOnly
+          disabled
+          className={fieldClass}
+        />
+      </div>
+    </div>
+  );
+}
+
 function NumberField({
   id,
   label,
@@ -738,6 +820,7 @@ function NumberField({
   icon,
   required = true,
   step = "1",
+  readOnly = false,
 }: {
   id: NumberFormFieldKey;
   label: string;
@@ -746,6 +829,7 @@ function NumberField({
   icon: React.ReactNode;
   required?: boolean;
   step?: string;
+  readOnly?: boolean;
 }) {
   const fieldId = id as string;
 
@@ -766,6 +850,8 @@ function NumberField({
           onChange={onChange}
           className={fieldClass}
           required={required}
+          readOnly={readOnly}
+          disabled={readOnly}
         />
       </div>
     </div>

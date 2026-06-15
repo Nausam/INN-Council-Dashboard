@@ -12,125 +12,62 @@ type SalarySlipDocumentProps = {
   className?: string;
 };
 
-type RowTone =
-  | "default"
-  | "primary"
-  | "deduction"
-  | "deduction-bold"
-  | "allowance"
-  | "allowance-bold"
-  | "net";
-
-function SlipAmountCell({
-  amount,
-  alwaysShow,
-  ruleAbove,
-  netUnderline,
-}: {
-  amount: number;
-  alwaysShow?: boolean;
-  ruleAbove?: boolean;
-  netUnderline?: boolean;
-}) {
-  const text = alwaysShow ? formatMvr(amount) : formatSlipAmount(amount);
-  return (
-    <span
-      className={cn(
-        "salary-slip-pdf__col-amt",
-        ruleAbove && "salary-slip-pdf__col-amt--rule",
-        netUnderline && "salary-slip-pdf__col-amt--net",
-      )}
-    >
-      {text}
-    </span>
-  );
-}
-
-function TripleRow({
+function LineRow({
   labelEn,
   labelDv,
   amount,
-  tone = "default",
   alwaysShowAmount,
-  ruleAbove,
-  netUnderline,
+  bold,
 }: {
   labelEn: string;
   labelDv: string;
   amount: number;
-  tone?: RowTone;
   alwaysShowAmount?: boolean;
-  ruleAbove?: boolean;
-  netUnderline?: boolean;
+  bold?: boolean;
 }) {
-  const toneClass =
-    tone === "primary"
-      ? "salary-slip-pdf__tone-primary"
-      : tone === "deduction"
-        ? "salary-slip-pdf__tone-deduction"
-        : tone === "deduction-bold"
-          ? "salary-slip-pdf__tone-deduction-bold"
-          : tone === "allowance"
-            ? "salary-slip-pdf__tone-allowance"
-            : tone === "allowance-bold"
-              ? "salary-slip-pdf__tone-allowance-bold"
-              : tone === "net"
-                ? "salary-slip-pdf__tone-net"
-                : "";
-
+  const text = alwaysShowAmount ? formatMvr(amount) : formatSlipAmount(amount);
   return (
-    <div className={cn("salary-slip-pdf__triple-row", toneClass)}>
-      <span className="salary-slip-pdf__col-en">{labelEn}</span>
-      <SlipAmountCell
-        amount={amount}
-        alwaysShow={alwaysShowAmount}
-        ruleAbove={ruleAbove}
-        netUnderline={netUnderline}
-      />
-      <span className="salary-slip-pdf__col-dv" lang="dv" dir="rtl">
+    <div className={cn("salary-slip-pdf__line", bold && "salary-slip-pdf__line--bold")}>
+      <span className="salary-slip-pdf__line-en">{labelEn}</span>
+      <span className="salary-slip-pdf__line-amt">{text}</span>
+      <span className="salary-slip-pdf__line-dv" lang="dv" dir="rtl">
         {labelDv}
       </span>
     </div>
   );
 }
 
-function SectionHeadRow({
+function PanelHead({
   labelEn,
   labelDv,
-  variant,
 }: {
   labelEn: string;
   labelDv: string;
-  variant: "deduction" | "allowance";
 }) {
   return (
-    <div
-      className={cn(
-        "salary-slip-pdf__triple-row salary-slip-pdf__section-head",
-        variant === "deduction"
-          ? "salary-slip-pdf__section-head--deduction"
-          : "salary-slip-pdf__section-head--allowance",
-      )}
-    >
-      <span className="salary-slip-pdf__col-en">{labelEn}</span>
-      <span className="salary-slip-pdf__col-amt" aria-hidden />
-      <span className="salary-slip-pdf__col-dv" lang="dv" dir="rtl">
+    <div className="salary-slip-pdf__panel-head">
+      <span className="salary-slip-pdf__line-en">{labelEn}</span>
+      <span className="salary-slip-pdf__line-amt" aria-hidden />
+      <span className="salary-slip-pdf__line-dv" lang="dv" dir="rtl">
         {labelDv}
       </span>
     </div>
   );
 }
 
-const STAFF_FIELDS: Array<{
-  key: keyof SalarySlipComputed["staff"];
-  label: string;
-}> = [
-  { key: "staffSerialNumber", label: "Staff Serial Number" },
-  { key: "recordCardNumber", label: "Record Card No" },
+const STAFF_FIELDS: Array<
+  | { key: keyof SalarySlipComputed["staff"]; label: string }
+  | {
+      key: "recordCardNumber";
+      labelKey: "recordCardLabel";
+    }
+> = [
+  { key: "recordCardNumber", labelKey: "recordCardLabel" as const },
   { key: "name", label: "Name" },
+  { key: "address", label: "Address" },
   { key: "designation", label: "Designation" },
-  { key: "section", label: "Section" },
   { key: "office", label: "Office" },
+  { key: "joinedDate", label: "Joined Date" },
 ];
 
 export function SalarySlipDocument({ slip, className }: SalarySlipDocumentProps) {
@@ -140,109 +77,128 @@ export function SalarySlipDocument({ slip, className }: SalarySlipDocumentProps)
     <article
       className={cn("salary-slip-pdf", salarySlipFontClassName, className)}
     >
-      <header className="salary-slip-pdf__header">
-        <p className="salary-slip-pdf__eyebrow">Staff Details</p>
-        <h1 className="salary-slip-pdf__title">Salary Slip</h1>
-        <p className="salary-slip-pdf__period">{slip.periodTitle}</p>
+      <header className="salary-slip-pdf__masthead">
+        <div className="salary-slip-pdf__masthead-brand">
+          {/* eslint-disable-next-line @next/next/no-img-element -- static asset inside a printable document */}
+          <img
+            src="/council-logo-white.png"
+            alt=""
+            className="salary-slip-pdf__logo"
+          />
+          <div className="salary-slip-pdf__masthead-main">
+            <p className="salary-slip-pdf__office">{slip.staff.office}</p>
+            <h1 className="salary-slip-pdf__title">Salary Slip</h1>
+          </div>
+        </div>
+        <div className="salary-slip-pdf__period-badge">
+          <span className="salary-slip-pdf__period-label">Pay Period</span>
+          <span className="salary-slip-pdf__period-value">
+            {slip.periodTitle}
+          </span>
+        </div>
       </header>
 
       <section className="salary-slip-pdf__staff" aria-label="Staff details">
-        {STAFF_FIELDS.map(({ key, label }) => (
-          <div key={key} className="salary-slip-pdf__staff-row">
-            <span className="salary-slip-pdf__staff-label">{label}</span>
-            <span className="salary-slip-pdf__staff-value">
-              {slip.staff[key]}
-            </span>
-          </div>
-        ))}
+        <h2 className="salary-slip-pdf__staff-title">Staff Details</h2>
+        <div className="salary-slip-pdf__staff-grid">
+          {STAFF_FIELDS.map((field) => (
+            <div key={field.key} className="salary-slip-pdf__staff-cell">
+              <span className="salary-slip-pdf__staff-label">
+                {"labelKey" in field
+                  ? slip.staff[field.labelKey]
+                  : field.label}
+              </span>
+              <span className="salary-slip-pdf__staff-value">
+                {slip.staff[field.key]}
+              </span>
+            </div>
+          ))}
+        </div>
       </section>
 
       <section className="salary-slip-pdf__body" aria-label="Salary details">
-        <div className="salary-slip-pdf__triple-grid">
-          <div className="salary-slip-pdf__triple-row salary-slip-pdf__tone-primary">
-            <span className="salary-slip-pdf__col-en">{L.salaryDetails.en}</span>
-            <span className="salary-slip-pdf__col-amt" aria-hidden />
-            <span className="salary-slip-pdf__col-dv" lang="dv" dir="rtl">
-              {L.salaryDetails.dv}
-            </span>
-          </div>
+        <div className="salary-slip-pdf__salary-head">
+          <span className="salary-slip-pdf__line-en">{L.salaryDetails.en}</span>
+          <span className="salary-slip-pdf__line-amt" aria-hidden />
+          <span className="salary-slip-pdf__line-dv" lang="dv" dir="rtl">
+            {L.salaryDetails.dv}
+          </span>
+        </div>
 
-          <TripleRow
+        <div className="salary-slip-pdf__basic">
+          <LineRow
             labelEn={L.basicSalary.en}
             labelDv={L.basicSalary.dv}
             amount={slip.basicSalary}
-            tone="primary"
             alwaysShowAmount
+            bold
           />
+        </div>
 
-          <SectionHeadRow
-            labelEn={L.deductionsHead.en}
-            labelDv={L.deductionsHead.dv}
-            variant="deduction"
-          />
-
-          {slip.deductions.map((line) => (
-            <TripleRow
-              key={line.key}
-              labelEn={line.labelEn}
-              labelDv={line.labelDv}
-              amount={line.amount}
-              tone="deduction"
+        <div className="salary-slip-pdf__panel salary-slip-pdf__panel--deduction">
+          <PanelHead labelEn={L.deductionsHead.en} labelDv={L.deductionsHead.dv} />
+          <div className="salary-slip-pdf__panel-rows">
+            {slip.deductions.map((line) => (
+              <LineRow
+                key={line.key}
+                labelEn={line.labelEn}
+                labelDv={line.labelDv}
+                amount={line.amount}
+              />
+            ))}
+          </div>
+          <div className="salary-slip-pdf__panel-total">
+            <LineRow
+              labelEn={L.totalDeductions.en}
+              labelDv={L.totalDeductions.dv}
+              amount={slip.totalDeductions}
+              alwaysShowAmount
+              bold
             />
-          ))}
+          </div>
+        </div>
 
-          <TripleRow
-            labelEn={L.totalDeductions.en}
-            labelDv={L.totalDeductions.dv}
-            amount={slip.totalDeductions}
-            tone="deduction-bold"
-            alwaysShowAmount
-            ruleAbove
-          />
-
-          <TripleRow
+        <div className="salary-slip-pdf__carry">
+          <LineRow
             labelEn={L.basicAfterDeduction.en}
             labelDv={L.basicAfterDeduction.dv}
             amount={slip.basicAfterDeduction}
-            tone="primary"
             alwaysShowAmount
-            ruleAbove
+            bold
           />
+        </div>
 
-          <SectionHeadRow
-            labelEn={L.allowancesHead.en}
-            labelDv={L.allowancesHead.dv}
-            variant="allowance"
-          />
-
-          {slip.allowances.map((line) => (
-            <TripleRow
-              key={line.key}
-              labelEn={line.labelEn}
-              labelDv={line.labelDv}
-              amount={line.amount}
-              tone="allowance"
+        <div className="salary-slip-pdf__panel salary-slip-pdf__panel--allowance">
+          <PanelHead labelEn={L.allowancesHead.en} labelDv={L.allowancesHead.dv} />
+          <div className="salary-slip-pdf__panel-rows">
+            {slip.allowances.map((line) => (
+              <LineRow
+                key={line.key}
+                labelEn={line.labelEn}
+                labelDv={line.labelDv}
+                amount={line.amount}
+              />
+            ))}
+          </div>
+          <div className="salary-slip-pdf__panel-total">
+            <LineRow
+              labelEn={L.totalAllowances.en}
+              labelDv={L.totalAllowances.dv}
+              amount={slip.totalAllowances}
+              alwaysShowAmount
+              bold
             />
-          ))}
+          </div>
+        </div>
 
-          <TripleRow
-            labelEn={L.totalAllowances.en}
-            labelDv={L.totalAllowances.dv}
-            amount={slip.totalAllowances}
-            tone="allowance-bold"
-            alwaysShowAmount
-            ruleAbove
-          />
-
-          <TripleRow
-            labelEn={L.netIncome.en}
-            labelDv={L.netIncome.dv}
-            amount={slip.netIncome}
-            tone="net"
-            alwaysShowAmount
-            ruleAbove
-            netUnderline
-          />
+        <div className="salary-slip-pdf__net">
+          <span className="salary-slip-pdf__net-en">{L.netIncome.en}</span>
+          <span className="salary-slip-pdf__net-amt">
+            {formatMvr(slip.netIncome)}
+          </span>
+          <span className="salary-slip-pdf__net-dv" lang="dv" dir="rtl">
+            {L.netIncome.dv}
+          </span>
         </div>
       </section>
     </article>

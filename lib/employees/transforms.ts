@@ -1,5 +1,9 @@
 import type { EmployeeFormData } from "@/components/EmployeeForm";
 import { parseCreditSchemesFromDoc } from "@/lib/employees/credit-schemes";
+import {
+  computeRetirementPension,
+  retirementPensionAppliesFromDoc,
+} from "@/lib/employees/retirement-pension";
 
 export type EmployeeForDetails = {
   name: string;
@@ -37,23 +41,34 @@ type EmployeeDoc = {
   creditScheme?: number;
   creditSchemes?: unknown;
   retirementPension?: number;
+  retirementPensionApplies?: boolean;
   jobAllowance?: number;
   attendanceBenefit?: number;
   temporaryZvAllowance?: number;
   ramazanAllowance?: number;
   livingAllowance?: number;
+  foodAllowance?: number;
   phoneAllowance?: number;
 };
 
 function salaryFieldsFromDoc(r: EmployeeDoc) {
+  const basicSalary = num(r.basicSalary);
+  const retirementPensionApplies = retirementPensionAppliesFromDoc(
+    r.retirementPensionApplies,
+  );
   return {
-    basicSalary: num(r.basicSalary),
-    retirementPension: num(r.retirementPension),
+    basicSalary,
+    retirementPensionApplies,
+    retirementPension: computeRetirementPension(
+      basicSalary,
+      retirementPensionApplies,
+    ),
     jobAllowance: num(r.jobAllowance),
     attendanceBenefit: num(r.attendanceBenefit),
     temporaryZvAllowance: num(r.temporaryZvAllowance),
     ramazanAllowance: num(r.ramazanAllowance),
     livingAllowance: num(r.livingAllowance),
+    foodAllowance: num(r.foodAllowance),
     phoneAllowance: num(r.phoneAllowance),
   };
 }

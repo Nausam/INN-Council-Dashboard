@@ -1,3 +1,5 @@
+import { reverseLeaveTypeMapping } from "@/constants";
+
 /** Council Dashboard design tokens — single source of truth for brand + semantic accents */
 
 export const councilBrand = {
@@ -234,19 +236,55 @@ export const leaveTypeStyles: Record<
   family: { bg: "#f97316", text: "Family Leave", pill: "bg-orange-100 text-orange-700" },
   certificate: { bg: "#dc2626", text: "Certificate Leave", pill: "bg-red-100 text-red-800" },
   personal: { bg: "#8b5cf6", text: "Personal Leave", pill: "bg-purple-100 text-purple-700" },
-  maternity: { bg: "#ec4899", text: "Pre-Maternity Leave", pill: "bg-pink-100 text-pink-700" },
-  paternity: { bg: "#ec4899", text: "Pre-Maternity Leave", pill: "bg-pink-100 text-pink-700" },
+  maternity: { bg: "#ec4899", text: "Maternity Leave", pill: "bg-pink-100 text-pink-700" },
+  prematernity: {
+    bg: "#f472b6",
+    text: "Pre Maternity Leave",
+    pill: "bg-pink-100 text-pink-700",
+  },
+  paternity: { bg: "#db2777", text: "Paternity Leave", pill: "bg-pink-100 text-pink-800" },
   nopay: { bg: "#64748b", text: "No Pay Leave", pill: "bg-slate-100 text-slate-700" },
   bereavement: { bg: "#475569", text: "Bereavement Leave", pill: "bg-slate-100 text-slate-800" },
   default: { bg: "#f43f5e", text: "On Leave", pill: "bg-rose-100 text-rose-700" },
   late: { bg: "#f59e0b", text: "Late", pill: "bg-amber-100 text-amber-800" },
 };
 
+const LEAVE_FIELD_STYLE_KEYS: Record<string, keyof typeof leaveTypeStyles> = {
+  sickLeave: "sick",
+  certificateSickLeave: "certificate",
+  annualLeave: "annual",
+  familyRelatedLeave: "family",
+  maternityLeave: "maternity",
+  preMaternityLeave: "prematernity",
+  paternityLeave: "paternity",
+  noPayLeave: "nopay",
+  officialLeave: "default",
+};
+
 export function getLeaveTypeStyle(leaveType?: string | null) {
   if (!leaveType) return leaveTypeStyles.default;
+
+  const styleKey = LEAVE_FIELD_STYLE_KEYS[leaveType];
+  if (styleKey) {
+    const style = leaveTypeStyles[styleKey];
+    const label =
+      typeof reverseLeaveTypeMapping[leaveType] === "string"
+        ? reverseLeaveTypeMapping[leaveType]
+        : style.text;
+    return { ...style, text: label };
+  }
+
   const type = leaveType.toLowerCase();
+  if (type.includes("prematernity")) return leaveTypeStyles.prematernity;
   for (const [key, style] of Object.entries(leaveTypeStyles)) {
-    if (key !== "default" && key !== "late" && type.includes(key)) return style;
+    if (
+      key !== "default" &&
+      key !== "late" &&
+      key !== "prematernity" &&
+      type.includes(key)
+    ) {
+      return style;
+    }
   }
   return { ...leaveTypeStyles.default, text: leaveType, pill: "bg-rose-100 text-rose-700" };
 }

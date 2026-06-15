@@ -15,6 +15,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  computeCouncilMinutesLate,
+  resolveSectionForLateness,
+} from "@/lib/attendance/council-lateness";
 import { useDashboardQuery } from "@/hooks/queries";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -30,7 +34,13 @@ import React, { useMemo, useState } from "react";
 
 /* ===================== Minimal types + guards ===================== */
 
-type EmployeeDoc = { $id?: string; id?: string; name?: string };
+type EmployeeDoc = {
+  $id?: string;
+  id?: string;
+  name?: string;
+  section?: string;
+  designation?: string;
+};
 
 type EmployeeRef =
   | string
@@ -44,6 +54,7 @@ type OfficeAttendanceDoc = {
   employeeName?: string;
   leaveType?: string | null;
   minutesLate?: number | null;
+  signInTime?: string | null;
 };
 
 type MosqueAttendanceDoc = {
@@ -111,7 +122,11 @@ const Dashboard: React.FC = () => {
       const empty = {
         dashboardData: emptyDashboard,
         absentEmployees: [] as Array<{ name: string; leaveType?: string | null }>,
-        lateEmployees: [] as Array<{ name: string }>,
+        lateEmployees: [] as Array<{
+          name: string;
+          designation?: string;
+          minutesLate: number;
+        }>,
         hasAttendance: false,
       };
 
@@ -125,24 +140,43 @@ const Dashboard: React.FC = () => {
         : [];
       const totalEmployees = employees.length;
 
-      const idToName = new Map<string, string>();
+      const idToEmployee = new Map<
+        string,
+        { name: string; section?: string; designation?: string }
+      >();
       for (const e of employees) {
         const id = e.$id ?? e.id;
-        if (id) idToName.set(String(id), String(e.name ?? "Unknown"));
+        if (id) {
+          idToEmployee.set(String(id), {
+            name: String(e.name ?? "Unknown"),
+            section: e.section,
+            designation: e.designation,
+          });
+        }
       }
+
+      const resolveEmployeeId = (
+        rec: OfficeAttendanceDoc | MosqueAttendanceDoc,
+      ) => {
+        const ref = rec.employeeId;
+        if (!ref) return "";
+        if (typeof ref === "string") return ref;
+        return typeof ref.$id === "string" ? ref.$id : "";
+      };
 
       const resolveName = (
         rec: OfficeAttendanceDoc | MosqueAttendanceDoc,
       ) => {
         if (typeof rec.employeeName === "string" && rec.employeeName.trim())
           return rec.employeeName;
+        const employeeId = resolveEmployeeId(rec);
+        if (employeeId && idToEmployee.has(employeeId)) {
+          return idToEmployee.get(employeeId)!.name;
+        }
         const ref = rec.employeeId;
-        if (!ref) return "Unknown";
-        if (typeof ref === "string") return idToName.get(ref) ?? ref;
-        const objName = ref.name;
+        if (typeof ref === "string") return ref;
+        const objName = ref?.name;
         if (typeof objName === "string" && objName.trim()) return objName;
-        const objId = ref.$id;
-        if (typeof objId === "string") return idToName.get(objId) ?? objId;
         return "Unknown";
       };
 
@@ -187,13 +221,39 @@ const Dashboard: React.FC = () => {
         }
       }
 
-      const lateSet = new Set<string>();
+      const lateMap = new Map<
+        string,
+        { name: string; designation?: string; minutesLate: number }
+      >();
 
       for (const rec of officeAttendance) {
         const nm = resolveName(rec);
-        const mins =
-          typeof rec.minutesLate === "number" ? rec.minutesLate : 0;
-        if (!absentSet.has(nm) && mins > 0) lateSet.add(nm);
+        const employeeId = resolveEmployeeId(rec);
+        const employee = employeeId
+          ? idToEmployee.get(employeeId)
+          : undefined;
+
+        let mins = 0;
+        if (rec.signInTime && formattedSelectedDate) {
+          mins = computeCouncilMinutesLate(
+            rec.signInTime,
+            formattedSelectedDate,
+            resolveSectionForLateness(
+              employee?.section,
+              employee?.designation,
+            ),
+          );
+        } else if (typeof rec.minutesLate === "number") {
+          mins = rec.minutesLate;
+        }
+
+        if (!absentSet.has(nm) && mins > 0) {
+          lateMap.set(nm, {
+            name: nm,
+            designation: employee?.designation,
+            minutesLate: mins,
+          });
+        }
       }
 
       for (const rec of mosqueAttendance) {
@@ -215,12 +275,20 @@ const Dashboard: React.FC = () => {
         const i =
           typeof rec.ishaMinutesLate === "number" ? rec.ishaMinutesLate : 0;
         const anyLate = f > 0 || m > 0 || a > 0 || q > 0 || i > 0;
-        if (!absentSet.has(nm) && anyLate) lateSet.add(nm);
+        if (!absentSet.has(nm) && anyLate) {
+          lateMap.set(nm, {
+            name: nm,
+            designation: idToEmployee.get(resolveEmployeeId(rec))?.designation,
+            minutesLate: Math.max(f, m, a, q, i),
+          });
+        }
       }
 
-      const lateList = Array.from(lateSet).map((name) => ({ name }));
+      const lateList = Array.from(lateMap.values()).sort((a, b) =>
+        b.minutesLate - a.minutesLate,
+      );
       const absentCount = absentSet.size;
-      const lateCount = lateSet.size;
+      const lateCount = lateList.length;
 
       const onTimeCount = Math.max(
         0,
@@ -238,7 +306,7 @@ const Dashboard: React.FC = () => {
         lateEmployees: lateList,
         hasAttendance: true,
       };
-    }, [data]);
+    }, [data, formattedSelectedDate]);
 
   const handleDateSelect = (date: Date | undefined) => {
     setSelectedDate(date);

@@ -61,6 +61,17 @@ function alternatingSignatureForDay(day: number): string {
   return day % 2 === 1 ? SIG_SRC_ZAHIDH : SIG_SRC_SHAHIDH;
 }
 
+function signatureForImam(imamKey: ImamOptionKey): string | undefined {
+  switch (imamKey) {
+    case "Zahidh":
+      return SIG_SRC_ZAHIDH;
+    case "Shahidh":
+      return SIG_SRC_SHAHIDH;
+    default:
+      return undefined;
+  }
+}
+
 function isOnOrAfterStartDate(iso: string, startFrom?: string): boolean {
   if (!startFrom) return true;
   return iso >= startFrom;
@@ -77,13 +88,23 @@ export function resolveRowSignatureSrc(args: {
   const config = SIGNATURE_CONFIG[imamKey];
   if (!config) return undefined;
 
-  if (config.requiresStartDate && !startFrom) return undefined;
-  if (!isOnOrAfterStartDate(iso, startFrom)) return undefined;
+  if (config.requiresStartDate) {
+    if (!startFrom) return undefined;
+    if (!isOnOrAfterStartDate(iso, startFrom)) return undefined;
+  }
 
-  if (config.alternating) return alternatingSignatureForDay(day);
+  if (config.alternating) {
+    return signatureForImam(imamKey) ?? alternatingSignatureForDay(day);
+  }
   if (config.src) return config.src;
 
   return undefined;
+}
+
+export function imamRequiresSignatureStartDate(
+  imamOptionKey: ImamOptionKey,
+): boolean {
+  return Boolean(SIGNATURE_CONFIG[imamOptionKey]?.requiresStartDate);
 }
 
 export function canConfigureSignatureStart(imamOptionKey: ImamOptionKey): boolean {

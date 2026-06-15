@@ -53,6 +53,10 @@ export function invalidateLeaveRequests(queryClient: QueryClient) {
   void queryClient.invalidateQueries({ queryKey: ["leave-requests"] });
 }
 
+export function invalidateOvertimeRequests(queryClient: QueryClient) {
+  void queryClient.invalidateQueries({ queryKey: ["overtime-requests"] });
+}
+
 export function invalidateCorrespondence(queryClient: QueryClient, id?: string) {
   void queryClient.invalidateQueries({ queryKey: ["correspondence"] });
   if (id) {

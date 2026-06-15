@@ -126,7 +126,12 @@ function asString(v: unknown): string {
 }
 
 const norm = (s: string) => s.trim().toLowerCase();
-const ALLOWED_SECTIONS = new Set(["councillor", "admin", "waste management"]);
+const ALLOWED_SECTIONS = new Set([
+  "councillor",
+  "admin",
+  "wdc",
+  "waste management",
+]);
 
 const nameKey = (s: string) =>
   s
@@ -409,6 +414,8 @@ const CouncilReportsPage: React.FC = () => {
             <option value="All">All Sections</option>
             <option value="Councillor">Councillor</option>
             <option value="Admin">Admin</option>
+            <option value="WDC">WDC</option>
+            <option value="Waste Management">Waste Management</option>
           </select>
         </div>
 

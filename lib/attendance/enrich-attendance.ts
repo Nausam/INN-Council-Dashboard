@@ -10,6 +10,7 @@ export type AttendanceEmployeeRef = {
   $id: string;
   name: string;
   section?: string;
+  designation?: string;
 };
 
 export type MosqueAttendanceEmployeeRef = {
@@ -39,7 +40,12 @@ export async function fetchEnrichedAttendanceForDate(
     return {
       ...row,
       employeeId: emp
-        ? { $id: emp.$id, name: emp.name, section: emp.section }
+        ? {
+            $id: emp.$id,
+            name: emp.name,
+            section: emp.section,
+            designation: emp.designation,
+          }
         : row.employeeId,
     };
   });

@@ -14,11 +14,23 @@ import type {
   EmployeeDoc,
   LeaveRequest,
   MosqueAttendanceDoc,
+  OvertimeRequest,
+  OvertimeRequestEmployee,
   PrayerTimesDoc,
   PunchLogRaw,
+  SalaryPeriodConfigDoc,
   SalarySlipDoc,
 } from "@/lib/firebase/types";
+import {
+  getPayPeriodBounds,
+  sanitizeHolidayDates,
+} from "@/lib/salary-slips/pay-period";
 import type { MosqueAttendanceRecord } from "@/types";
+import {
+  buildCouncilAttendanceEntry,
+  isCouncilAttendanceEmployee,
+  type CouncilAttendanceSyncResult,
+} from "@/lib/attendance/council-attendance";
 import {
   getFirstPunchByDeviceUserId,
   getFirstPunchByEmployeeName,
@@ -36,6 +48,51 @@ const ADDITIVE_LEAVES = new Set([
   "officialLeave",
 ]);
 
+const BALANCE_LEAVES = new Set([
+  "sickLeave",
+  "certificateSickLeave",
+  "annualLeave",
+  "familyRelatedLeave",
+]);
+
+export type CouncilAttendanceSubmitItem = {
+  attendanceId: string;
+  employeeId: string;
+  employeeName: string;
+  signInTime: string | null;
+  leaveType: string | null;
+  minutesLate: number;
+  previousLeaveType: string | null;
+  leaveDeducted: boolean;
+};
+
+function getNumericLeaveBalance(employee: EmployeeDoc, leaveType: string): number {
+  const raw = employee[leaveType as keyof EmployeeDoc];
+  return typeof raw === "number" && Number.isFinite(raw) ? (raw as number) : 0;
+}
+
+function applyLeaveBalanceDelta(
+  employee: EmployeeDoc,
+  leaveType: string,
+  restore: boolean,
+): number {
+  const current = getNumericLeaveBalance(employee, leaveType);
+  const isAdditive = ADDITIVE_LEAVES.has(leaveType);
+  let next: number;
+
+  if (isAdditive) {
+    next = restore ? Math.max(0, current - 1) : current + 1;
+  } else {
+    if (!restore && current <= 0) {
+      throw new Error("Insufficient leave balance");
+    }
+    next = restore ? current + 1 : current - 1;
+  }
+
+  (employee as Record<string, unknown>)[leaveType] = next;
+  return next;
+}
+
 export async function fetchAllEmployees(): Promise<EmployeeDoc[]> {
   return listAllDocs<EmployeeDoc>(COLLECTIONS.employees);
 }
@@ -51,9 +108,6 @@ export async function createEmployeeRecord(
     stripLegacyFields(employeeData as Record<string, unknown>),
     true,
   );
-  if (Object.prototype.hasOwnProperty.call(employeeData, "creditSchemes")) {
-    payload.creditScheme = FieldValue.delete();
-  }
   await db.collection(COLLECTIONS.employees).doc(id).set(payload);
   const snap = await db.collection(COLLECTIONS.employees).doc(id).get();
   return fromFirestoreDoc<EmployeeDoc>(snap)!;
@@ -164,29 +218,12 @@ export async function createAttendanceForEmployees(
   date: string,
   employees: EmployeeDoc[],
 ): Promise<Array<Omit<AttendanceDoc, "$id" | "$createdAt" | "$updatedAt">>> {
-  const filteredEmployees = employees.filter((e) => {
-    const sec =
-      typeof e.section === "string" ? e.section.trim().toLowerCase() : "";
-    return sec !== "mosque";
-  });
+  const filteredEmployees = employees.filter(isCouncilAttendanceEmployee);
 
   const db = getFirestoreDb();
   const entries: Array<Omit<AttendanceDoc, "$id" | "$createdAt" | "$updatedAt">> =
     await Promise.all(
-      filteredEmployees.map(async (employee) => {
-        const firstPunch = employee.deviceUserId?.trim()
-          ? await getFirstPunchByDeviceUserId(date, employee.deviceUserId.trim())
-          : await getFirstPunchByEmployeeName(date, employee.name);
-        return {
-          employeeId: employee.$id,
-          date,
-          signInTime: firstPunch,
-          leaveType: null,
-          minutesLate: 0,
-          previousLeaveType: null,
-          leaveDeducted: false,
-        };
-      }),
+      filteredEmployees.map((employee) => buildCouncilAttendanceEntry(date, employee)),
     );
 
   await Promise.all(
@@ -221,6 +258,103 @@ export async function updateAttendanceRecord(
     .update(withTimestamps(updates as Record<string, unknown>));
 }
 
+export async function submitCouncilAttendanceUpdates(
+  items: CouncilAttendanceSubmitItem[],
+): Promise<void> {
+  if (items.length === 0) return;
+
+  const db = getFirestoreDb();
+  const uniqueEmployeeIds = Array.from(
+    new Set(items.map((item) => item.employeeId)),
+  );
+  const employeeRefs = uniqueEmployeeIds.map((id) =>
+    db.collection(COLLECTIONS.employees).doc(id),
+  );
+  const employeeSnaps = await db.getAll(...employeeRefs);
+
+  const employeeMap = new Map<string, EmployeeDoc>();
+  for (const snap of employeeSnaps) {
+    const employee = fromFirestoreDoc<EmployeeDoc>(snap);
+    if (employee) {
+      employeeMap.set(employee.$id, employee);
+    }
+  }
+
+  const employeePatches: Record<string, Record<string, number>> = {};
+
+  for (const item of items) {
+    const employee = employeeMap.get(item.employeeId);
+    if (!employee) {
+      throw new Error(`Employee not found: ${item.employeeName}`);
+    }
+
+    const leaveType = item.leaveType ?? "";
+    if (leaveType && BALANCE_LEAVES.has(leaveType)) {
+      const available = getNumericLeaveBalance(employee, leaveType);
+      if (available <= 0) {
+        throw new Error(
+          `${item.employeeName} does not have any ${leaveType} left.`,
+        );
+      }
+    }
+
+    if (item.previousLeaveType && item.previousLeaveType !== item.leaveType) {
+      const next = applyLeaveBalanceDelta(
+        employee,
+        item.previousLeaveType,
+        true,
+      );
+      employeePatches[item.employeeId] ??= {};
+      employeePatches[item.employeeId][item.previousLeaveType] = next;
+    }
+
+    if (
+      leaveType &&
+      (!item.leaveDeducted || item.previousLeaveType !== item.leaveType)
+    ) {
+      const next = applyLeaveBalanceDelta(employee, leaveType, false);
+      employeePatches[item.employeeId] ??= {};
+      employeePatches[item.employeeId][leaveType] = next;
+    }
+  }
+
+  let batch = db.batch();
+  let operationCount = 0;
+
+  const commitBatch = async () => {
+    if (operationCount === 0) return;
+    await batch.commit();
+    batch = db.batch();
+    operationCount = 0;
+  };
+
+  for (const [employeeId, fields] of Object.entries(employeePatches)) {
+    if (operationCount >= 500) await commitBatch();
+    batch.update(
+      db.collection(COLLECTIONS.employees).doc(employeeId),
+      withTimestamps(fields),
+    );
+    operationCount += 1;
+  }
+
+  for (const item of items) {
+    if (operationCount >= 500) await commitBatch();
+    batch.update(
+      db.collection(COLLECTIONS.attendance).doc(item.attendanceId),
+      withTimestamps({
+        signInTime: item.signInTime,
+        leaveType: item.leaveType,
+        minutesLate: item.minutesLate,
+        previousLeaveType: item.leaveType,
+        leaveDeducted: Boolean(item.leaveType),
+      }),
+    );
+    operationCount += 1;
+  }
+
+  await commitBatch();
+}
+
 export async function fetchAttendanceForMonth(month: string): Promise<AttendanceDoc[]> {
   const [y, m] = month.split("-").map(Number);
   const next = new Date(Date.UTC(y, m, 1));
@@ -232,6 +366,57 @@ export async function fetchAttendanceForMonth(month: string): Promise<Attendance
   );
 }
 
+/** Attendance for pay period (previous month 16 → period month 15). */
+export async function fetchAttendanceForPayPeriod(
+  periodLabel: string,
+): Promise<AttendanceDoc[]> {
+  const bounds = getPayPeriodBounds(periodLabel);
+  if (!bounds) return [];
+
+  return listAllDocs<AttendanceDoc>(COLLECTIONS.attendance, (q) =>
+    q.where("date", ">=", bounds.startIso).where("date", "<=", bounds.endIso),
+  );
+}
+
+export async function fetchSalaryPeriodConfig(
+  periodLabel: string,
+): Promise<SalaryPeriodConfigDoc | null> {
+  const trimmed = periodLabel.trim();
+  if (!trimmed) return null;
+
+  const snap = await getFirestoreDb()
+    .collection(COLLECTIONS.salaryPeriodConfig)
+    .doc(trimmed)
+    .get();
+
+  if (!snap.exists) return null;
+  return fromFirestoreDoc<SalaryPeriodConfigDoc>(snap);
+}
+
+export async function upsertSalaryPeriodConfig(
+  periodLabel: string,
+  holidayDates: string[],
+): Promise<SalaryPeriodConfigDoc> {
+  const trimmed = periodLabel.trim();
+  if (!trimmed || !/^\d{4}-\d{2}$/.test(trimmed)) {
+    throw new Error("Invalid period label");
+  }
+
+  const sanitized = sanitizeHolidayDates(trimmed, holidayDates);
+  const db = getFirestoreDb();
+  const ref = db.collection(COLLECTIONS.salaryPeriodConfig).doc(trimmed);
+
+  const payload = withTimestamps({
+    periodLabel: trimmed,
+    holidayDates: sanitized,
+  });
+
+  await ref.set(payload, { merge: true });
+
+  const snap = await ref.get();
+  return fromFirestoreDoc<SalaryPeriodConfigDoc>(snap)!;
+}
+
 export async function deleteAttendancesByDate(date: string): Promise<void> {
   const rows = await fetchAttendanceForDate(date);
   const db = getFirestoreDb();
@@ -240,21 +425,47 @@ export async function deleteAttendancesByDate(date: string): Promise<void> {
   );
 }
 
-export async function syncAttendanceForDate(date: string): Promise<number> {
+export async function syncAttendanceForDate(
+  date: string,
+): Promise<CouncilAttendanceSyncResult> {
   const rows = await fetchAttendanceForDate(date);
-  if (rows.length === 0) return 0;
-
   const employees = await fetchAllEmployees();
+  const councilEmployees = employees.filter(isCouncilAttendanceEmployee);
+  const existingIds = new Set(rows.map((row) => row.employeeId));
+  const missingEmployees = councilEmployees.filter(
+    (employee) => !existingIds.has(employee.$id),
+  );
+
+  const db = getFirestoreDb();
+  let added = 0;
+
+  await Promise.all(
+    missingEmployees.map(async (employee) => {
+      const entry = await buildCouncilAttendanceEntry(date, employee);
+      const id = newDocId();
+      await db
+        .collection(COLLECTIONS.attendance)
+        .doc(id)
+        .set(withTimestamps(entry as Record<string, unknown>, true));
+      added += 1;
+    }),
+  );
+
+  const rowsToSync =
+    missingEmployees.length > 0 ? await fetchAttendanceForDate(date) : rows;
+
   const nameById = new Map<string, string>();
   const deviceUserIdById = new Map<string, string>();
-  for (const e of employees) {
-    nameById.set(e.$id, e.name);
-    if (e.deviceUserId?.trim()) deviceUserIdById.set(e.$id, e.deviceUserId.trim());
+  for (const employee of employees) {
+    nameById.set(employee.$id, employee.name);
+    if (employee.deviceUserId?.trim()) {
+      deviceUserIdById.set(employee.$id, employee.deviceUserId.trim());
+    }
   }
 
-  let changed = 0;
+  let synced = 0;
   await Promise.all(
-    rows.map(async (row) => {
+    rowsToSync.map(async (row) => {
       const deviceUserId = deviceUserIdById.get(row.employeeId);
       const empName = nameById.get(row.employeeId);
       const earliest = deviceUserId
@@ -269,11 +480,12 @@ export async function syncAttendanceForDate(date: string): Promise<number> {
       const earliestMs = new Date(earliestByName).getTime();
       if (current === null || earliestMs < current) {
         await updateAttendanceRecord(row.$id, { signInTime: earliestByName });
-        changed += 1;
+        synced += 1;
       }
     }),
   );
-  return changed;
+
+  return { synced, added };
 }
 
 export async function fetchMosqueAttendanceForDate(
@@ -502,6 +714,55 @@ export async function updateLeaveRequest(
     .update(withTimestamps(data as Record<string, unknown>));
 }
 
+export async function createOvertimeRequest(data: {
+  details: string;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  employees: OvertimeRequestEmployee[];
+}): Promise<OvertimeRequest> {
+  const db = getFirestoreDb();
+  const id = newDocId();
+  const payload = withTimestamps(
+    {
+      ...data,
+      createdAt: new Date().toISOString(),
+      approvalStatus: "Pending",
+    },
+    true,
+  );
+  await db.collection(COLLECTIONS.overtimeRequests).doc(id).set(payload);
+  return fromFirestoreDoc<OvertimeRequest>(
+    await db.collection(COLLECTIONS.overtimeRequests).doc(id).get(),
+  )!;
+}
+
+export async function fetchOvertimeRequests(
+  limit = 10,
+  offsetVal = 0,
+): Promise<{ requests: OvertimeRequest[]; totalCount: number }> {
+  const all = await listAllDocs<OvertimeRequest>(COLLECTIONS.overtimeRequests);
+  all.sort((a, b) =>
+    String(b.createdAt ?? b.$createdAt ?? "").localeCompare(
+      String(a.createdAt ?? a.$createdAt ?? ""),
+    ),
+  );
+  return {
+    requests: all.slice(offsetVal, offsetVal + limit),
+    totalCount: all.length,
+  };
+}
+
+export async function updateOvertimeRequest(
+  requestId: string,
+  data: { approvalStatus: string; actionBy?: string },
+): Promise<void> {
+  await getFirestoreDb()
+    .collection(COLLECTIONS.overtimeRequests)
+    .doc(requestId)
+    .update(withTimestamps(data as Record<string, unknown>));
+}
+
 export async function fetchUserLeaveRequests(
   status?: string,
   limit = 10,
@@ -621,6 +882,7 @@ export type {
   EmployeeDoc,
   LeaveRequest,
   MosqueAttendanceDoc,
+  OvertimeRequest,
   PrayerTimesDoc,
   PunchLogRaw,
   SalarySlipDoc,

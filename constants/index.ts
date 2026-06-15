@@ -43,9 +43,24 @@ export const formatTimeForInput = (dateTime: string | null) => {
 };
 // Convert the input time back to ISO for saving
 export const convertTimeToDateTime = (time: string, date: string) => {
-  const [hours, minutes] = time.split(":");
+  const parts = time.split(":");
+  if (parts.length < 2) return null;
+
+  const hours = parseInt(parts[0], 10);
+  const minutes = parseInt(parts[1], 10);
+  if (
+    Number.isNaN(hours) ||
+    Number.isNaN(minutes) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+
   const dateTime = new Date(date);
-  dateTime.setUTCHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+  dateTime.setUTCHours(hours, minutes, 0, 0);
   return dateTime.toISOString();
 };
 

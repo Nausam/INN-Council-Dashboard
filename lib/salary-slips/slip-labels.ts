@@ -74,6 +74,11 @@ export const ALLOWANCE_SLIP_LINES = [
     dv: "ލިވިންގ އެލަވަންސް",
   },
   {
+    key: "food" as const,
+    en: "Food Allowance",
+    dv: "ކެއުން އެލަވަންސް",
+  },
+  {
     key: "holiday" as const,
     en: "Holiday Allowance",
     dv: "ބަންދު ދުވަހުގެ އިނާޔަތް",

@@ -1,6 +1,11 @@
 "use server";
 
-import { fetchAllEmployees } from "@/lib/firebase/hr";
+import { isCouncilAttendanceEmployee } from "@/lib/attendance/council-attendance";
+import {
+  fetchAllEmployees,
+  submitCouncilAttendanceUpdates,
+  type CouncilAttendanceSubmitItem,
+} from "@/lib/firebase/hr";
 import { fetchEnrichedAttendanceForDate, fetchEnrichedMosqueAttendanceForDate } from "@/lib/attendance/enrich-attendance";
 import type { MosquePrayerTimes } from "@/lib/attendance/mosque-prefill";
 import { COLLECTIONS } from "@/lib/firebase/admin";
@@ -86,11 +91,7 @@ export const createAttendanceForEmployeesAction = async (
   employees: EmployeeDoc[],
 ) => {
   try {
-    const filteredEmployees = employees.filter((e) => {
-      const sec =
-        typeof e.section === "string" ? e.section.trim().toLowerCase() : "";
-      return sec !== "mosque";
-    });
+    const filteredEmployees = employees.filter(isCouncilAttendanceEmployee);
 
     const db = getFirestoreDb();
     const attendanceEntries: Array<
@@ -139,11 +140,35 @@ export const createAttendanceForEmployeesActionLegacy = async (
   employees: EmployeeDoc[],
 ) => createAttendanceForEmployeesAction(date, employees);
 
+export const submitCouncilAttendanceAction = async (
+  items: CouncilAttendanceSubmitItem[],
+) => {
+  try {
+    await submitCouncilAttendanceUpdates(items);
+    return { success: true as const };
+  } catch (error: unknown) {
+    console.error("Error submitting council attendance:", error);
+    return {
+      success: false as const,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to update attendance",
+    };
+  }
+};
+
 export const syncAttendanceForDateAction = async (date: string) => {
   try {
     const { syncAttendanceForDate } = await import("@/lib/firebase/hr");
-    const changed = await syncAttendanceForDate(date);
-    return { success: true, updated: changed, changed };
+    const { synced, added } = await syncAttendanceForDate(date);
+    return {
+      success: true,
+      synced,
+      added,
+      updated: synced + added,
+      changed: synced + added,
+    };
   } catch (error: unknown) {
     console.error("Error syncing attendance:", error);
     return {

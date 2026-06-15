@@ -6,6 +6,10 @@ import { EmployeeDetailsModal } from "@/components/Modals/EmployeeDetailsModal";
 import { EmployeeEditModal } from "@/components/Modals/EmployeeEditModal";
 import SkeletonEmployeesPage from "@/components/skeletons/SkeletonEmployeesPage";
 import { useEmployeesQuery } from "@/hooks/queries";
+import {
+  DESIGNATION_OPTIONS,
+  SECTION_OPTIONS,
+} from "@/lib/employees/field-options";
 import React, { useEffect, useMemo, useState } from "react";
 import { Search, Users, Filter } from "lucide-react";
 
@@ -229,19 +233,11 @@ const EmployeesPage: React.FC = () => {
                   className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-3 pl-10 pr-10 text-sm font-medium text-slate-700 shadow-sm transition-all hover:border-slate-300 focus:border-indigo-300 focus:outline-none focus:ring-4 focus:ring-indigo-100"
                 >
                   <option value="All">All Designations</option>
-                  <option value="Council President">Council President</option>
-                  <option value="Council Vice President">
-                    Council Vice President
-                  </option>
-                  <option value="Council Member">Council Member</option>
-                  <option value="Council Executive">Council Executive</option>
-                  <option value="A. Council Executive">
-                    A. Council Executive
-                  </option>
-                  <option value="Finance Officer">Finance Officer</option>
-                  <option value="Council Officer">Council Officer</option>
-                  <option value="A. Council Officer">A. Council Officer</option>
-                  <option value="Council Assistant">Council Assistant</option>
+                  {DESIGNATION_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
                 <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
                   <svg
@@ -269,10 +265,11 @@ const EmployeesPage: React.FC = () => {
                   className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-3 pl-10 pr-10 text-sm font-medium text-slate-700 shadow-sm transition-all hover:border-slate-300 focus:border-indigo-300 focus:outline-none focus:ring-4 focus:ring-indigo-100"
                 >
                   <option value="All">All Sections</option>
-                  <option value="Councillor">Councillor</option>
-                  <option value="Admin">Admin</option>
-                  <option value="Mosque">Mosque</option>
-                  <option value="Waste Management">Waste Management</option>
+                  {SECTION_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
                 <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
                   <svg

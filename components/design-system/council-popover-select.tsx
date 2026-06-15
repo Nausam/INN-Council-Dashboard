@@ -23,6 +23,7 @@ type CouncilPopoverSelectProps = {
   disabled?: boolean;
   className?: string;
   compact?: boolean;
+  excludeFromTabOrder?: boolean;
 };
 
 export function CouncilPopoverSelect({
@@ -34,6 +35,7 @@ export function CouncilPopoverSelect({
   disabled = false,
   className,
   compact = false,
+  excludeFromTabOrder = false,
 }: CouncilPopoverSelectProps) {
   const [open, setOpen] = useState(false);
 
@@ -48,6 +50,7 @@ export function CouncilPopoverSelect({
         <button
           type="button"
           disabled={disabled}
+          tabIndex={excludeFromTabOrder ? -1 : undefined}
           className={cn(
             "council-input group relative flex w-full items-center text-left text-sm font-medium transition-[border-color,box-shadow] duration-150",
             "focus-visible:border-teal-300 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-teal-100",

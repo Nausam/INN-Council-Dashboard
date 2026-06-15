@@ -16,7 +16,7 @@ import {
   type ImamOptionKey,
   SIGNATURE_HEIGHT_CLASSES,
   addPrayerCellRule,
-  canConfigureSignatureStart,
+  imamRequiresSignatureStartDate,
   hasPrayerCellRule,
   loadSignatureStartDates,
   removePrayerCellRule,
@@ -25,6 +25,15 @@ import {
   trimPrayerCellRules,
   type PrayerCellRules,
 } from "@/lib/attendance/mosque-sign-sheet-config";
+import {
+  buildLeaveByDay,
+  imamRecordCard,
+  leaveLabelToDhivehi,
+} from "@/lib/attendance/mosque-sheet-leave";
+import {
+  useEmployeesQuery,
+  useMosqueDailyAttendanceMonthQuery,
+} from "@/hooks/queries";
 
 type HHMM = { h: number | ""; m: number | "" };
 
@@ -175,6 +184,8 @@ const th =
   "border border-neutral-700/70 bg-neutral-200 text-center align-middle whitespace-nowrap px-[2px] py-1 font-semibold text-black";
 const td =
   "border border-neutral-700/70 text-center align-middle whitespace-nowrap px-[2px] py-1";
+const leaveMergedTd =
+  "border border-neutral-700/70 text-center align-middle whitespace-normal px-2 py-3 text-[16px] font-semibold leading-relaxed text-black";
 
 type RangeKey = "A" | "B" | "BOTH";
 
@@ -430,6 +441,166 @@ export default function Page() {
     });
   }
 
+  const monthKey = useMemo(
+    () => `${year}-${pad2(month + 1)}`,
+    [year, month],
+  );
+
+  const { data: employees = [], isPending: employeesPending } =
+    useEmployeesQuery();
+
+  const employeeId = useMemo(() => {
+    const recordCard = imamRecordCard(imamKey).toUpperCase();
+    if (!recordCard) return "";
+    const match = employees.find(
+      (employee) =>
+        employee.recordCardNumber?.trim().toUpperCase() === recordCard,
+    );
+    return match?.$id ?? "";
+  }, [employees, imamKey]);
+
+  const imamRecordCardNumber = imamRecordCard(imamKey);
+
+  const {
+    data: leaveAttendance = [],
+    isFetching: leaveLoading,
+    isPending: leavePending,
+  } = useMosqueDailyAttendanceMonthQuery(monthKey, employeeId);
+
+  const leaveStatusLoading =
+    Boolean(imamRecordCardNumber) &&
+    (employeesPending || (Boolean(employeeId) && (leavePending || leaveLoading)));
+
+  const [leaveStatusReady, setLeaveStatusReady] = useState(false);
+
+  useEffect(() => {
+    setLeaveStatusReady(true);
+  }, []);
+
+  const leaveByDay = useMemo(
+    () => buildLeaveByDay(leaveAttendance, year, month),
+    [leaveAttendance, year, month],
+  );
+
+  const leaveDaysInMonth = useMemo(
+    () => Object.keys(leaveByDay).length,
+    [leaveByDay],
+  );
+
+  function renderDayRow(r: DayRow, interactive: boolean) {
+    const leaveLabel = leaveByDay[r.day];
+
+    if (leaveLabel) {
+      return (
+        <TableRow
+          key={r.day}
+          className="ot-leave-row"
+          onClick={interactive ? () => toggleShade(r.day) : undefined}
+        >
+          <TableCell className={`${td} text-md font-semibold`}>{r.day}</TableCell>
+          <TableCell className={`${td} text-md font-semibold`}>
+            {r.dayName}
+          </TableCell>
+          <TableCell
+            colSpan={15}
+            className={`${leaveMergedTd} ot-leave-merged`}
+          >
+            {leaveLabelToDhivehi(leaveLabel)}
+          </TableCell>
+        </TableRow>
+      );
+    }
+
+    const t = timesByDay[r.day];
+    const rowSig = rowSignatureSrc(r.day);
+
+    const get = (k: GroupKey): HHMM =>
+      k === "fajr"
+        ? (t?.fajr ?? { h: "", m: "" })
+        : k === "dhuhr"
+          ? (t?.dhuhr ?? { h: "", m: "" })
+          : k === "asr"
+            ? (t?.asr ?? { h: "", m: "" })
+            : k === "maghrib"
+              ? (t?.maghrib ?? { h: "", m: "" })
+              : (t?.isha ?? { h: "", m: "" });
+
+    return (
+      <TableRow
+        key={r.day}
+        onClick={interactive ? () => toggleShade(r.day) : undefined}
+        className={[
+          r.shaded ? "bg-neutral-200" : "",
+          interactive ? "cursor-pointer hover:bg-neutral-100" : "",
+        ].join(" ")}
+      >
+        <TableCell className={`${td} text-md font-semibold`}>{r.day}</TableCell>
+        <TableCell className={`${td} text-md font-semibold`}>{r.dayName}</TableCell>
+
+        {GROUPS.flatMap((g) => {
+          const showSig = rowSig && shouldShowPrayerSignature(r.day, g.key);
+
+          if (isEmpty(r.day, g.key)) {
+            return [
+              <TableCell
+                key={`${g.key}-m-${r.day}`}
+                className={`${td} text-[18px] font-medium`}
+              >
+                {""}
+              </TableCell>,
+              <TableCell
+                key={`${g.key}-h-${r.day}`}
+                className={`${td} text-[18px] font-medium`}
+              >
+                {""}
+              </TableCell>,
+              <TableCell
+                key={`${g.key}-sig-${r.day}`}
+                className={`${td} p-0 align-middle`}
+              >
+                {showSig ? (
+                  <img
+                    src={rowSig}
+                    alt=""
+                    className="mx-auto h-7 max-h-[28px] w-auto max-w-[36px] object-contain"
+                  />
+                ) : null}
+              </TableCell>,
+            ];
+          }
+
+          const v = applyMinuteOffset(get(g.key), deductMins);
+          return [
+            <TableCell
+              key={`${g.key}-m-${r.day}`}
+              className={`${td} text-[18px] font-medium`}
+            >
+              {v.m}
+            </TableCell>,
+            <TableCell
+              key={`${g.key}-h-${r.day}`}
+              className={`${td} text-[18px] font-medium`}
+            >
+              {v.h}
+            </TableCell>,
+            <TableCell
+              key={`${g.key}-sig-${r.day}`}
+              className={`${td} relative p-0`}
+            >
+              {showSig ? (
+                <img
+                  src={rowSig}
+                  alt="signature"
+                  className={`pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 ${signatureHeightClass} w-auto max-w-none object-contain`}
+                />
+              ) : null}
+            </TableCell>,
+          ];
+        })}
+      </TableRow>
+    );
+  }
+
   return (
     <div dir="rtl" className="min-h-dvh bg-white p-6 font-dh1">
       {/* ✅ print rules + only print selected range */}
@@ -452,6 +623,17 @@ export default function Page() {
           img {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
+          }
+
+          #print-area td[colspan],
+          #print-area th[colspan] {
+            white-space: normal !important;
+            overflow: visible !important;
+          }
+
+          #print-area .ot-leave-merged {
+            white-space: normal !important;
+            vertical-align: middle !important;
           }
         }
 
@@ -480,7 +662,7 @@ export default function Page() {
           onImamKeyChange={setImamKey}
           signatureStartDate={signatureStartDate}
           onSignatureStartDateChange={setSignatureStartDateForImam}
-          showSignatureStartDate={canConfigureSignatureStart(imamKey)}
+          showSignatureStartDate={imamRequiresSignatureStartDate(imamKey)}
           emptyDay={emptyDay}
           onEmptyDayChange={setEmptyDay}
           emptyPrayer={emptyPrayer}
@@ -574,103 +756,7 @@ export default function Page() {
               </TableRow>
             </TableHeader>
 
-            <TableBody>
-              {viewRows.map((r) => {
-                const t = timesByDay[r.day];
-                const rowSig = rowSignatureSrc(r.day);
-
-                const get = (k: GroupKey): HHMM =>
-                  k === "fajr"
-                    ? (t?.fajr ?? { h: "", m: "" })
-                    : k === "dhuhr"
-                      ? (t?.dhuhr ?? { h: "", m: "" })
-                      : k === "asr"
-                        ? (t?.asr ?? { h: "", m: "" })
-                        : k === "maghrib"
-                          ? (t?.maghrib ?? { h: "", m: "" })
-                          : (t?.isha ?? { h: "", m: "" });
-
-                return (
-                  <TableRow
-                    key={r.day}
-                    onClick={() => toggleShade(r.day)}
-                    className={[
-                      r.shaded ? "bg-neutral-200" : "",
-                      "cursor-pointer hover:bg-neutral-100",
-                    ].join(" ")}
-                  >
-                    <TableCell className={`${td} text-md font-semibold`}>
-                      {r.day}
-                    </TableCell>
-                    <TableCell className={`${td} text-md font-semibold`}>
-                      {r.dayName}
-                    </TableCell>
-
-                    {GROUPS.flatMap((g) => {
-                      const showSig =
-                        rowSig && shouldShowPrayerSignature(r.day, g.key);
-
-                      if (isEmpty(r.day, g.key)) {
-                        return [
-                          <TableCell
-                            key={`${g.key}-m-${r.day}`}
-                            className={`${td} text-[18px] font-medium`}
-                          >
-                            {""}
-                          </TableCell>,
-                          <TableCell
-                            key={`${g.key}-h-${r.day}`}
-                            className={`${td} text-[18px] font-medium`}
-                          >
-                            {""}
-                          </TableCell>,
-                          <TableCell
-                            key={`${g.key}-sig-${r.day}`}
-                            className={`${td} p-0 align-middle`}
-                          >
-                            {showSig ? (
-                              <img
-                                src={rowSig}
-                                alt=""
-                                className="mx-auto h-7 max-h-[28px] w-auto max-w-[36px] object-contain"
-                              />
-                            ) : null}
-                          </TableCell>,
-                        ];
-                      }
-
-                      const v = applyMinuteOffset(get(g.key), deductMins);
-                      return [
-                        <TableCell
-                          key={`${g.key}-m-${r.day}`}
-                          className={`${td} text-[18px] font-medium`}
-                        >
-                          {v.m}
-                        </TableCell>,
-                        <TableCell
-                          key={`${g.key}-h-${r.day}`}
-                          className={`${td} text-[18px] font-medium`}
-                        >
-                          {v.h}
-                        </TableCell>,
-                        <TableCell
-                          key={`${g.key}-sig-${r.day}`}
-                          className={`${td} relative p-0`}
-                        >
-                          {showSig ? (
-                            <img
-                              src={rowSig}
-                              alt="signature"
-                              className={`pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 ${signatureHeightClass} w-auto max-w-none object-contain`}
-                            />
-                          ) : null}
-                        </TableCell>,
-                      ];
-                    })}
-                  </TableRow>
-                );
-              })}
-            </TableBody>
+            <TableBody>{viewRows.map((r) => renderDayRow(r, true))}</TableBody>
 
             <TableFooter>
               <TableRow>
@@ -758,99 +844,7 @@ export default function Page() {
               </TableRow>
             </TableHeader>
 
-            <TableBody>
-              {printRows.map((r) => {
-                const t = timesByDay[r.day];
-                const rowSig = rowSignatureSrc(r.day);
-
-                const get = (k: GroupKey): HHMM =>
-                  k === "fajr"
-                    ? (t?.fajr ?? { h: "", m: "" })
-                    : k === "dhuhr"
-                      ? (t?.dhuhr ?? { h: "", m: "" })
-                      : k === "asr"
-                        ? (t?.asr ?? { h: "", m: "" })
-                        : k === "maghrib"
-                          ? (t?.maghrib ?? { h: "", m: "" })
-                          : (t?.isha ?? { h: "", m: "" });
-
-                return (
-                  <TableRow
-                    key={r.day}
-                    className={[r.shaded ? "bg-neutral-200" : ""].join(" ")}
-                  >
-                    <TableCell className={`${td} text-md font-semibold`}>
-                      {r.day}
-                    </TableCell>
-                    <TableCell className={`${td} text-md font-semibold`}>
-                      {r.dayName}
-                    </TableCell>
-
-                    {GROUPS.flatMap((g) => {
-                      const showSig =
-                        rowSig && shouldShowPrayerSignature(r.day, g.key);
-
-                      if (isEmpty(r.day, g.key)) {
-                        return [
-                          <TableCell
-                            key={`${g.key}-m-${r.day}`}
-                            className={`${td} text-[18px] font-medium`}
-                          >
-                            {""}
-                          </TableCell>,
-                          <TableCell
-                            key={`${g.key}-h-${r.day}`}
-                            className={`${td} text-[18px] font-medium`}
-                          >
-                            {""}
-                          </TableCell>,
-                          <TableCell
-                            key={`${g.key}-sig-${r.day}`}
-                            className={`${td} p-0 align-middle`}
-                          >
-                            {showSig ? (
-                              <img
-                                src={rowSig}
-                                alt=""
-                                className="mx-auto h-7 max-h-[28px] w-auto max-w-[36px] object-contain"
-                              />
-                            ) : null}
-                          </TableCell>,
-                        ];
-                      }
-
-                      const v = applyMinuteOffset(get(g.key), deductMins);
-                      return [
-                        <TableCell
-                          key={`${g.key}-m-${r.day}`}
-                          className={`${td} text-[18px] font-medium`}
-                        >
-                          {v.m}
-                        </TableCell>,
-                        <TableCell
-                          key={`${g.key}-h-${r.day}`}
-                          className={`${td} text-[18px] font-medium`}
-                        >
-                          {v.h}
-                        </TableCell>,
-                        <TableCell
-                          key={`${g.key}-sig-${r.day}`}
-                          className={`${td} relative p-0`}
-                        >
-                          {showSig ? (
-                            <img
-                              src={rowSig}
-                              alt="signature"
-                              className={`pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 ${signatureHeightClass} w-auto max-w-none object-contain`}
-                            />
-                          ) : null}
-                        </TableCell>,
-                      ];
-                    })}
-                  </TableRow>
-                );
-              })}
-            </TableBody>
+            <TableBody>{printRows.map((r) => renderDayRow(r, false))}</TableBody>
 
             <TableFooter>
               <TableRow>
@@ -877,6 +871,23 @@ export default function Page() {
         ) : loadingTimes ? (
           <div className="no-print mt-2 text-right text-sm text-neutral-600">
             Loading...
+          </div>
+        ) : leaveStatusReady && leaveStatusLoading ? (
+          <div className="no-print mt-2 text-right text-sm text-neutral-600">
+            Loading leave records...
+          </div>
+        ) : leaveStatusReady &&
+          !leaveStatusLoading &&
+          !employeeId &&
+          imamRecordCardNumber ? (
+          <div className="no-print mt-2 text-right text-sm text-amber-700">
+            Employee not found for {imamRecordCardNumber} — leave status
+            unavailable.
+          </div>
+        ) : leaveStatusReady && !leaveStatusLoading && leaveDaysInMonth > 0 ? (
+          <div className="no-print mt-2 text-right text-sm text-rose-700">
+            {leaveDaysInMonth} day{leaveDaysInMonth === 1 ? "" : "s"} on leave
+            this month.
           </div>
         ) : null}
       </div>

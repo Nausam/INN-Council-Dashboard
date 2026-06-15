@@ -365,7 +365,9 @@ html.pdf-export .avoid-break {
   }
 
   #print-area,
-  #print-area * {
+  #print-area *,
+  .salary-slip-print-area,
+  .salary-slip-print-area * {
     visibility: visible !important;
   }
 
@@ -923,7 +925,60 @@ html.pdf-export .avoid-break {
     max-width: none !important;
   }
 
+  body:has(.salary-slip-print-mode-single) .salary-slip-print-area,
+  body:has(.salary-slip-print-mode-all) .salary-slip-print-area {
+    position: static !important;
+    inset: auto !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    direction: ltr !important;
+    overflow: visible !important;
+    z-index: auto !important;
+  }
+
+  body:has(.salary-slip-print-mode-single) .council-main-frame > div,
+  body:has(.salary-slip-print-mode-all) .council-main-frame > div,
+  body:has(.salary-slip-print-mode-single) .council-main-frame > div > div,
+  body:has(.salary-slip-print-mode-all) .council-main-frame > div > div {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+  }
+
+  body:has(.salary-slip-print-mode-single) .view-salary-slips-page,
+  body:has(.salary-slip-print-mode-all) .view-salary-slips-page {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body:has(.salary-slip-print-mode-single),
+  body:has(.salary-slip-print-mode-all),
+  body:has(.salary-slip-print-mode-single) .council-main-frame,
+  body:has(.salary-slip-print-mode-all) .council-main-frame,
+  body:has(.salary-slip-print-mode-single) .view-salary-slips-page,
+  body:has(.salary-slip-print-mode-all) .view-salary-slips-page,
+  body:has(.salary-slip-print-mode-single) .view-salary-slips-page main,
+  body:has(.salary-slip-print-mode-all) .view-salary-slips-page main {
+    visibility: visible !important;
+  }
+
+  body:has(.salary-slip-print-mode-single) .salary-slip-print-single,
+  body:has(.salary-slip-print-mode-all) .salary-slip-print-all {
+    background: #fff !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+  }
+
   .salary-slip-print-page {
+    break-inside: avoid;
+    page-break-inside: avoid;
     break-after: page;
     page-break-after: always;
   }
@@ -931,6 +986,11 @@ html.pdf-export .avoid-break {
   .salary-slip-print-page:last-child {
     break-after: auto;
     page-break-after: auto;
+  }
+
+  .salary-slip-print-page .salary-slip-pdf {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 }
 

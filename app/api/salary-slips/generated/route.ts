@@ -4,8 +4,10 @@ import {
 } from "@/lib/salary-slips/compute-slip";
 import {
   fetchAllEmployees,
-  fetchAttendanceForMonth,
+  fetchAttendanceForPayPeriod,
+  fetchSalaryPeriodConfig,
 } from "@/lib/firebase/hr";
+import { formatPayPeriodRange } from "@/lib/salary-slips/pay-period";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -22,15 +24,19 @@ export async function GET(request: NextRequest) {
   const employeeId = request.nextUrl.searchParams.get("employeeId")?.trim();
 
   try {
-    const [employees, attendance] = await Promise.all([
+    const [employees, attendance, periodConfig] = await Promise.all([
       fetchAllEmployees(),
-      fetchAttendanceForMonth(trimmed),
+      fetchAttendanceForPayPeriod(trimmed),
+      fetchSalaryPeriodConfig(trimmed),
     ]);
+
+    const holidayDates = periodConfig?.holidayDates ?? [];
 
     let slips: SalarySlipComputed[] = computeSalarySlipsForPeriod(
       employees,
       trimmed,
       attendance,
+      holidayDates,
     );
 
     if (employeeId) {
@@ -43,7 +49,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ periodLabel: trimmed, slips });
+    return NextResponse.json({
+      periodLabel: trimmed,
+      periodRange: formatPayPeriodRange(trimmed),
+      holidayDates,
+      slips,
+    });
   } catch (error) {
     console.error("GET /api/salary-slips/generated error:", error);
     return NextResponse.json(

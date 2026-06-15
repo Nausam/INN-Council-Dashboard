@@ -22,6 +22,7 @@ export function AttendanceTimeInput({
       onChange={onChange}
       disabled={disabled}
       compact
+      chainTabToNext
       placeholder="--:-- --"
       className={cn(className)}
     />

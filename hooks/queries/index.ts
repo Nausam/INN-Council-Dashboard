@@ -19,6 +19,7 @@ export {
   useAdminLeaveRequestsQuery,
   useUserLeaveRequestsQuery,
 } from "./use-leave";
+export { useAdminOvertimeRequestsQuery } from "./use-overtime";
 export {
   useCorrespondenceListQuery,
   useCorrespondenceStatsQuery,
