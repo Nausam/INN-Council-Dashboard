@@ -1,9 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Ensure allowlist is available in Edge middleware (not only Node server)
-  env: {
-    ALLOWED_LOGIN_EMAILS: process.env.ALLOWED_LOGIN_EMAILS ?? "",
-  },
+  output: "standalone",
   async redirects() {
     return [
       {

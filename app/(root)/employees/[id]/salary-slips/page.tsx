@@ -16,13 +16,12 @@ import {
   Download,
   ExternalLink,
   FileText,
-  Printer,
+  Loader2,
   User,
   Wallet,
 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { flushSync } from "react-dom";
+import { useMemo, useRef, useState } from "react";
 
 type UploadedSlip = {
   periodLabel: string;
@@ -79,8 +78,9 @@ export default function EmployeeSalarySlipsPage() {
     year: "numeric",
   });
 
-  const [printing, setPrinting] = useState(false);
+  const [busy, setBusy] = useState<"view" | "download" | null>(null);
   const [historyPage, setHistoryPage] = useState(0);
+  const slipRef = useRef<HTMLDivElement>(null);
 
   const { data: employee, isPending: employeePending, isError } =
     useEmployeeQuery(id);
@@ -128,17 +128,57 @@ export default function EmployeeSalarySlipsPage() {
     );
   }, [slip]);
 
-  const handlePrint = () => {
-    if (!slip) return;
-    flushSync(() => setPrinting(true));
-    window.print();
+  const loadPdfTooling = async () => {
+    // Make sure the slip's custom (Latin + Dhivehi) fonts are loaded before
+    // html2canvas snapshots the DOM, otherwise it captures fallback fonts.
+    if (typeof document !== "undefined" && document.fonts?.ready) {
+      try {
+        await document.fonts.ready;
+      } catch {
+        /* ignore */
+      }
+    }
+    return (await import("html2pdf.js")).default;
   };
 
-  useEffect(() => {
-    const reset = () => setPrinting(false);
-    window.addEventListener("afterprint", reset);
-    return () => window.removeEventListener("afterprint", reset);
-  }, []);
+  const pdfOptions = () => ({
+    margin: [6, 6, 6, 6],
+    filename: `${slip!.staff.name} - ${slip!.periodTitle}.pdf`,
+    image: { type: "jpeg", quality: 0.98 },
+    html2canvas: {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      windowWidth: 820,
+    },
+    jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+  });
+
+  const handleDownload = async () => {
+    if (!slipRef.current || !slip) return;
+    setBusy("download");
+    try {
+      const html2pdf = await loadPdfTooling();
+      await html2pdf().set(pdfOptions()).from(slipRef.current).save();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleView = async () => {
+    if (!slipRef.current || !slip) return;
+    setBusy("view");
+    try {
+      const html2pdf = await loadPdfTooling();
+      const url: string = await html2pdf()
+        .set(pdfOptions())
+        .from(slipRef.current)
+        .output("bloburl");
+      window.open(url, "_blank", "noopener,noreferrer");
+    } finally {
+      setBusy(null);
+    }
+  };
 
   if (isError || (!employeePending && !employee)) {
     return (
@@ -157,12 +197,7 @@ export default function EmployeeSalarySlipsPage() {
   }
 
   return (
-    <div
-      className={cn(
-        "min-h-screen bg-[#f4f6f4] px-4 pb-12 pt-6",
-        printing && "salary-slip-print-mode-single",
-      )}
-    >
+    <div className="min-h-screen bg-[#f4f6f4] px-4 pb-12 pt-6">
       {/* Hide the app's mobile header on this page only */}
       <style>{`@media (max-width: 767px){[data-council-mobile-header]{display:none !important;}}`}</style>
 
@@ -244,18 +279,43 @@ export default function EmployeeSalarySlipsPage() {
                 />
               </div>
 
-              <button
-                type="button"
-                onClick={handlePrint}
-                className="flex h-11 w-full items-center justify-center gap-1.5 rounded-2xl bg-teal-600 text-sm font-bold text-white shadow-sm shadow-teal-600/25 transition active:scale-[0.98]"
-              >
-                <Printer className="h-4 w-4" />
-                View / Download PDF
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleView}
+                  disabled={busy !== null}
+                  className="flex h-11 items-center justify-center gap-1.5 rounded-2xl bg-slate-50 text-sm font-bold text-slate-700 ring-1 ring-slate-200 transition active:scale-[0.98] disabled:opacity-60"
+                >
+                  {busy === "view" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ExternalLink className="h-4 w-4" />
+                  )}
+                  View
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownload}
+                  disabled={busy !== null}
+                  className="flex h-11 items-center justify-center gap-1.5 rounded-2xl bg-teal-600 text-sm font-bold text-white shadow-sm shadow-teal-600/25 transition active:scale-[0.98] disabled:opacity-60"
+                >
+                  {busy === "download" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                  Download
+                </button>
+              </div>
 
-              {/* Print area — off-screen on screen, fills the A4 page when printing */}
-              <div className="salary-slip-print-area salary-slip-print-single fixed left-[-10000px] top-0">
-                <SalarySlipDocument slip={slip} />
+              {/* Off-screen capture node — full A4 width so the PDF matches print */}
+              <div
+                aria-hidden
+                className="pointer-events-none fixed left-[-10000px] top-0 -z-10"
+              >
+                <div ref={slipRef} className="w-[794px] bg-white">
+                  <SalarySlipDocument slip={slip} />
+                </div>
               </div>
             </>
           ) : uploadedCurrent.length === 0 ? (
