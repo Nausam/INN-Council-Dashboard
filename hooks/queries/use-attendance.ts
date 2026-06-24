@@ -10,6 +10,7 @@ import {
 } from "@/lib/query/config";
 import { queryKeys } from "@/lib/query/keys";
 import {
+  fetchAttendanceAfterDate,
   fetchAttendanceForMonth,
   fetchMosqueAttendanceForMonth,
   fetchMosqueDailyAttendanceForMonth,
@@ -49,6 +50,15 @@ export function useCouncilAttendanceMonthQuery(month: string) {
     queryKey: queryKeys.attendance.councilMonth(month),
     queryFn: () => fetchAttendanceForMonth(month),
     enabled: Boolean(month),
+    staleTime: QUERY_STALE_TIME_ATTENDANCE,
+  });
+}
+
+export function useCouncilAttendanceAfterDateQuery(date: string) {
+  return useQuery({
+    queryKey: queryKeys.attendance.councilAfterDate(date),
+    queryFn: () => fetchAttendanceAfterDate(date),
+    enabled: Boolean(date),
     staleTime: QUERY_STALE_TIME_ATTENDANCE,
   });
 }

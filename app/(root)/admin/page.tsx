@@ -1,6 +1,8 @@
 "use client";
 
 import AdminLeaveRequestCard from "@/components/Leave/AdminLeaveRequestCard";
+import { HolidayCalendarPanel } from "@/components/admin/HolidayCalendarPanel";
+import { ZkDevicePanel } from "@/components/admin/ZkDevicePanel";
 import AdminOvertimeRequestCard from "@/components/overtime/AdminOvertimeRequestCard";
 import Pagination from "@/components/shared/Pagination";
 import ShowDropdown from "@/components/shared/ShowDropdown";
@@ -86,6 +88,14 @@ const AdminLeaveApprovalPage: React.FC = () => {
 
   return (
     <div className="w-full max-w-7xl mx-auto p-6">
+      <section className="mt-10">
+        <HolidayCalendarPanel />
+      </section>
+
+      <section className="mt-10">
+        <ZkDevicePanel />
+      </section>
+
       <section>
         <div className="flex justify-between items-center mb-5 mt-10">
           <h1 className="text-3xl font-bold">Leave Requests</h1>

@@ -2,12 +2,17 @@ import type { QueryClient } from "@tanstack/react-query";
 import { queryKeys } from "./keys";
 
 export function invalidateEmployees(queryClient: QueryClient, id?: string) {
-  void queryClient.invalidateQueries({ queryKey: queryKeys.employees.all });
+  const tasks = [
+    queryClient.invalidateQueries({ queryKey: queryKeys.employees.all }),
+  ];
   if (id) {
-    void queryClient.invalidateQueries({
-      queryKey: queryKeys.employees.detail(id),
-    });
+    tasks.push(
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.employees.detail(id),
+      }),
+    );
   }
+  return Promise.all(tasks);
 }
 
 export function invalidateCouncilAttendance(
@@ -15,17 +20,25 @@ export function invalidateCouncilAttendance(
   date: string,
   month?: string,
 ) {
-  void queryClient.invalidateQueries({
-    queryKey: queryKeys.attendance.council(date),
-  });
-  void queryClient.invalidateQueries({
-    queryKey: queryKeys.dashboard.byDate(date),
-  });
+  const tasks = [
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.attendance.council(date),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.dashboard.byDate(date),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: ["attendance", "council", "after"],
+    }),
+  ];
   if (month) {
-    void queryClient.invalidateQueries({
-      queryKey: queryKeys.attendance.councilMonth(month),
-    });
+    tasks.push(
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.attendance.councilMonth(month),
+      }),
+    );
   }
+  return Promise.all(tasks);
 }
 
 export function invalidateMosqueAttendance(

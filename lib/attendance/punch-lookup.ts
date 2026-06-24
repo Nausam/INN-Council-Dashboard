@@ -8,14 +8,23 @@ const normalizeHumanName = (s: string) =>
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]/g, "");
 
-const localDayRangeToUtc = (yyyyMmDd: string) => {
-  const startLocal = new Date(`${yyyyMmDd}T00:00:00`);
-  const endLocal = new Date(startLocal.getTime() + 24 * 60 * 60 * 1000);
+const MV_OFFSET_MIN = 5 * 60;
+const COUNCIL_PUNCH_START_HOUR = 6;
+const COUNCIL_PUNCH_END_HOUR = 9;
+
+const localTimeRangeToUtc = (
+  yyyyMmDd: string,
+  startHour: number,
+  endHour: number,
+) => {
+  const [year, month, day] = yyyyMmDd.split("-").map(Number);
   const startUtc = new Date(
-    startLocal.getTime() - startLocal.getTimezoneOffset() * 60000,
+    Date.UTC(year, month - 1, day, startHour, 0, 0, 0) -
+      MV_OFFSET_MIN * 60 * 1000,
   ).toISOString();
   const endUtc = new Date(
-    endLocal.getTime() - endLocal.getTimezoneOffset() * 60000,
+    Date.UTC(year, month - 1, day, endHour, 0, 0, 0) -
+      MV_OFFSET_MIN * 60 * 1000,
   ).toISOString();
   return { startUtc, endUtc };
 };
@@ -24,42 +33,47 @@ function punchTimeIso(
   data: DocumentData,
   field: "timestamp" | "createdAt",
 ): string | null {
-  if (field === "timestamp") {
-    const ts = data.timestamp;
-    return ts ? String(ts) : null;
-  }
-  const createdAt = data.createdAt;
-  if (createdAt instanceof Date) return createdAt.toISOString();
+  const value = data[field];
+  if (value instanceof Date) return value.toISOString();
   if (
-    createdAt &&
-    typeof createdAt === "object" &&
-    "toDate" in createdAt &&
-    typeof (createdAt as { toDate: () => Date }).toDate === "function"
+    value &&
+    typeof value === "object" &&
+    "toDate" in value &&
+    typeof (value as { toDate: () => Date }).toDate === "function"
   ) {
-    return (createdAt as { toDate: () => Date }).toDate().toISOString();
+    return (value as { toDate: () => Date }).toDate().toISOString();
   }
-  return createdAt ? String(createdAt) : null;
+  return value ? String(value) : null;
 }
 
-function earliestInDayRange(
+function punchTimestampIso(data: DocumentData): string | null {
+  return punchTimeIso(data, "timestamp") ?? punchTimeIso(data, "createdAt");
+}
+
+function earliestInRange(
   docs: QueryDocumentSnapshot[],
   startUtc: string,
   endUtc: string,
 ): string | null {
   const times: string[] = [];
   for (const doc of docs) {
-    const data = doc.data();
-    for (const field of ["timestamp", "createdAt"] as const) {
-      const iso = punchTimeIso(data, field);
-      if (iso && iso >= startUtc && iso < endUtc) times.push(iso);
-    }
+    const iso = punchTimestampIso(doc.data());
+    if (iso && iso >= startUtc && iso < endUtc) times.push(iso);
   }
   if (times.length === 0) return null;
   times.sort();
   return times[0]!;
 }
 
-/** First punch of the day for a biometric device user id (no composite index required). */
+function councilPunchWindowUtc(localDate: string) {
+  return localTimeRangeToUtc(
+    localDate,
+    COUNCIL_PUNCH_START_HOUR,
+    COUNCIL_PUNCH_END_HOUR,
+  );
+}
+
+/** First council punch between 06:00 and 09:00 Maldives time. */
 export async function getFirstPunchByDeviceUserId(
   localDate: string,
   deviceUserId: string,
@@ -67,21 +81,21 @@ export async function getFirstPunchByDeviceUserId(
   const trimmed = String(deviceUserId).trim();
   if (!trimmed) return null;
 
-  const { startUtc, endUtc } = localDayRangeToUtc(localDate);
+  const { startUtc, endUtc } = councilPunchWindowUtc(localDate);
   const snap = await getFirestoreDb()
     .collection(COLLECTIONS.punchLogs)
     .where("deviceUserId", "==", trimmed)
     .get();
 
-  return earliestInDayRange(snap.docs, startUtc, endUtc);
+  return earliestInRange(snap.docs, startUtc, endUtc);
 }
 
-/** First punch of the day matched by normalized or exact employee name. */
+/** First council punch between 06:00 and 09:00 matched by normalized/exact name. */
 export async function getFirstPunchByEmployeeName(
   localDate: string,
   employeeName: string,
 ): Promise<string | null> {
-  const { startUtc, endUtc } = localDayRangeToUtc(localDate);
+  const { startUtc, endUtc } = councilPunchWindowUtc(localDate);
   const col = getFirestoreDb().collection(COLLECTIONS.punchLogs);
   const nameNorm = normalizeHumanName(employeeName);
 
@@ -90,7 +104,7 @@ export async function getFirstPunchByEmployeeName(
     ["empName", employeeName],
   ] as const) {
     const snap = await col.where(field, "==", value).get();
-    const earliest = earliestInDayRange(snap.docs, startUtc, endUtc);
+    const earliest = earliestInRange(snap.docs, startUtc, endUtc);
     if (earliest) return earliest;
   }
 

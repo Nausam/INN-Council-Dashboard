@@ -149,7 +149,7 @@ export function CouncilMobileHeader() {
   if (!isMobile) return null;
 
   return (
-    <header className={sidebar.mobileHeader}>
+    <header className={sidebar.mobileHeader} data-council-mobile-header>
       <IconButton
         icon={Menu}
         label="Open menu"

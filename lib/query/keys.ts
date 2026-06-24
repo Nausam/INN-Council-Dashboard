@@ -2,6 +2,7 @@ export const queryKeys = {
   employees: {
     all: ["employees"] as const,
     detail: (id: string) => ["employees", id] as const,
+    leaveCalendar: (id: string) => ["employees", id, "leave-calendar"] as const,
     options: ["employees", "options"] as const,
   },
   attendance: {
@@ -9,6 +10,8 @@ export const queryKeys = {
     mosque: (date: string) => ["attendance", "mosque", date] as const,
     councilMonth: (month: string) =>
       ["attendance", "council", "month", month] as const,
+    councilAfterDate: (date: string) =>
+      ["attendance", "council", "after", date] as const,
     mosqueMonth: (month: string) =>
       ["attendance", "mosque", "month", month] as const,
     mosqueDailyMonth: (month: string) =>
@@ -50,6 +53,8 @@ export const queryKeys = {
     uploaded: (period: string) => ["salary-slips", "uploaded", period] as const,
     byRecord: (recordCard: string) =>
       ["salary-slips", recordCard] as const,
+    generatedForEmployee: (period: string, employeeId: string) =>
+      ["salary-slips", "generated", period, employeeId] as const,
   },
   mosque: {
     assistants: ["mosque", "assistants"] as const,

@@ -12,6 +12,7 @@ import { listAllDocs, newDocId } from "@/lib/firebase/query";
 import type {
   AttendanceDoc,
   EmployeeDoc,
+  HolidayCalendarDoc,
   LeaveRequest,
   MosqueAttendanceDoc,
   OvertimeRequest,
@@ -26,6 +27,7 @@ import {
   sanitizeHolidayDates,
 } from "@/lib/salary-slips/pay-period";
 import type { MosqueAttendanceRecord } from "@/types";
+import { LEAVE_TOTAL_ALLOWANCE } from "@/lib/employees/leave-usage";
 import {
   buildCouncilAttendanceEntry,
   isCouncilAttendanceEmployee,
@@ -48,6 +50,12 @@ const ADDITIVE_LEAVES = new Set([
   "officialLeave",
 ]);
 
+const CONTINUOUS_CALENDAR_LEAVES = new Set([
+  "maternityLeave",
+  "preMaternityLeave",
+  "paternityLeave",
+]);
+
 const BALANCE_LEAVES = new Set([
   "sickLeave",
   "certificateSickLeave",
@@ -64,6 +72,42 @@ export type CouncilAttendanceSubmitItem = {
   minutesLate: number;
   previousLeaveType: string | null;
   leaveDeducted: boolean;
+};
+
+export type EmployeeLeaveCalendarEntry = {
+  $id: string;
+  employeeId: string;
+  date: string;
+  leaveType: string;
+  leaveUsedAfter?: number | null;
+  leaveRemainingAfter?: number | null;
+  source: "Council" | "Mosque";
+};
+
+type LeaveUsageRow = {
+  collection: typeof COLLECTIONS.attendance | typeof COLLECTIONS.mosqueAttendance;
+  id: string;
+  date: string;
+  leaveType: string | null;
+  leaveUsedAfter?: number | null;
+  leaveRemainingAfter?: number | null;
+};
+
+type ProposedAttendanceState = {
+  leaveType: string | null;
+  leaveDeducted: boolean;
+};
+
+type LeaveRecalculationResult = {
+  employeePatches: Record<string, Record<string, number>>;
+  rowPatches: Array<{
+    collection: typeof COLLECTIONS.attendance | typeof COLLECTIONS.mosqueAttendance;
+    id: string;
+    fields: {
+      leaveUsedAfter: number;
+      leaveRemainingAfter: number | null;
+    };
+  }>;
 };
 
 function getNumericLeaveBalance(employee: EmployeeDoc, leaveType: string): number {
@@ -91,6 +135,288 @@ function applyLeaveBalanceDelta(
 
   (employee as Record<string, unknown>)[leaveType] = next;
   return next;
+}
+
+function leaveRecalculationKey(employeeId: string, leaveType: string): string {
+  return `${employeeId}\u0000${leaveType}`;
+}
+
+function splitLeaveRecalculationKey(key: string): [string, string] {
+  const [employeeId = "", leaveType = ""] = key.split("\u0000");
+  return [employeeId, leaveType];
+}
+
+function leaveSnapshotValue(
+  row: Pick<LeaveUsageRow, "leaveUsedAfter" | "leaveRemainingAfter">,
+  leaveType: string,
+): number | null {
+  if (ADDITIVE_LEAVES.has(leaveType)) {
+    return typeof row.leaveUsedAfter === "number" ? row.leaveUsedAfter : null;
+  }
+
+  if (BALANCE_LEAVES.has(leaveType)) {
+    return typeof row.leaveRemainingAfter === "number"
+      ? row.leaveRemainingAfter
+      : null;
+  }
+
+  return typeof row.leaveUsedAfter === "number" ? row.leaveUsedAfter : null;
+}
+
+function inferLeaveSnapshotValueFromRows(
+  leaveRows: LeaveUsageRow[],
+  leaveType: string,
+  allRows: LeaveUsageRow[],
+): number | null {
+  if (leaveRows.length === 0) return null;
+
+  if (BALANCE_LEAVES.has(leaveType)) {
+    const total = LEAVE_TOTAL_ALLOWANCE[leaveType];
+    return typeof total === "number"
+      ? Math.max(0, total - leaveRows.length)
+      : null;
+  }
+
+  let runningValue = 0;
+  let runningDate: string | undefined;
+  for (const row of leaveRows) {
+    runningValue = advanceLeaveSnapshotValue(
+      leaveType,
+      runningValue,
+      runningDate,
+      row.date,
+      allRows,
+    );
+    runningDate = row.date;
+  }
+  return runningValue;
+}
+
+function nextLeaveSnapshotValue(leaveType: string, currentValue: number): number {
+  return ADDITIVE_LEAVES.has(leaveType)
+    ? currentValue + 1
+    : Math.max(0, currentValue - 1);
+}
+
+function parseIsoDateOnly(value: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+function calendarDayDifference(from: string, to: string): number {
+  const start = parseIsoDateOnly(from);
+  const end = parseIsoDateOnly(to);
+  if (!start || !end) return 1;
+  const diff = Math.round(
+    (end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000),
+  );
+  return Math.max(1, diff);
+}
+
+function hasAttendanceBreakBetween(
+  rows: LeaveUsageRow[],
+  leaveType: string,
+  fromDate: string,
+  toDate: string,
+): boolean {
+  return rows.some(
+    (row) =>
+      row.date > fromDate &&
+      row.date < toDate &&
+      row.leaveType !== leaveType,
+  );
+}
+
+function advanceLeaveSnapshotValue(
+  leaveType: string,
+  currentValue: number,
+  previousDate: string | undefined,
+  nextDate: string,
+  allRows: LeaveUsageRow[],
+): number {
+  if (!CONTINUOUS_CALENDAR_LEAVES.has(leaveType) || !previousDate) {
+    return nextLeaveSnapshotValue(leaveType, currentValue);
+  }
+
+  if (hasAttendanceBreakBetween(allRows, leaveType, previousDate, nextDate)) {
+    return nextLeaveSnapshotValue(leaveType, currentValue);
+  }
+
+  return currentValue + calendarDayDifference(previousDate, nextDate);
+}
+
+function leaveUsageFieldsFromValue(
+  leaveType: string,
+  valueAfter: number,
+): { leaveUsedAfter: number; leaveRemainingAfter: number | null } {
+  if (BALANCE_LEAVES.has(leaveType)) {
+    const total = LEAVE_TOTAL_ALLOWANCE[leaveType] ?? 0;
+    return {
+      leaveUsedAfter: Math.max(0, total - valueAfter),
+      leaveRemainingAfter: valueAfter,
+    };
+  }
+
+  return {
+    leaveUsedAfter: valueAfter,
+    leaveRemainingAfter: null,
+  };
+}
+
+async function recalculateLeaveUsageSnapshots(
+  db: ReturnType<typeof getFirestoreDb>,
+  affectedStartDates: Map<string, string>,
+  initialLeaveValues: Map<string, number>,
+  anchorValues: Map<string, { attendanceId: string; valueAfter: number }>,
+  proposedAttendance: Map<string, ProposedAttendanceState>,
+): Promise<LeaveRecalculationResult> {
+  const employeeIds = Array.from(
+    new Set(
+      Array.from(affectedStartDates.keys()).map(
+        (key) => splitLeaveRecalculationKey(key)[0],
+      ),
+    ),
+  ).filter(Boolean);
+
+  const result: LeaveRecalculationResult = {
+    employeePatches: {},
+    rowPatches: [],
+  };
+
+  for (const employeeId of employeeIds) {
+    const [attendanceSnap, mosqueSnap] = await Promise.all([
+      db
+        .collection(COLLECTIONS.attendance)
+        .where("employeeId", "==", employeeId)
+        .get(),
+      db
+        .collection(COLLECTIONS.mosqueAttendance)
+        .where("employeeId", "==", employeeId)
+        .get(),
+    ]);
+
+    const rows: LeaveUsageRow[] = [
+      ...attendanceSnap.docs
+        .map((doc) => fromFirestoreDoc<AttendanceDoc>(doc))
+        .filter((row): row is AttendanceDoc => Boolean(row))
+        .map((row) => {
+          const proposed = proposedAttendance.get(row.$id);
+          return {
+            collection: COLLECTIONS.attendance,
+            id: row.$id,
+            date: row.date,
+            leaveType: proposed ? proposed.leaveType : row.leaveType,
+            leaveUsedAfter: row.leaveUsedAfter,
+            leaveRemainingAfter: row.leaveRemainingAfter,
+          };
+        }),
+      ...mosqueSnap.docs
+        .map((doc) => fromFirestoreDoc<MosqueAttendanceDoc>(doc))
+        .filter((row): row is MosqueAttendanceDoc => Boolean(row))
+        .map((row) => ({
+          collection: COLLECTIONS.mosqueAttendance,
+          id: row.$id,
+          date: row.date,
+          leaveType: row.leaveType,
+          leaveUsedAfter: row.leaveUsedAfter,
+          leaveRemainingAfter: row.leaveRemainingAfter,
+        })),
+    ];
+
+    const affectedTypes = Array.from(affectedStartDates.keys())
+      .filter((key) => splitLeaveRecalculationKey(key)[0] === employeeId)
+      .map((key) => splitLeaveRecalculationKey(key)[1]);
+
+    for (const leaveType of affectedTypes) {
+      const key = leaveRecalculationKey(employeeId, leaveType);
+      const startDate = affectedStartDates.get(key);
+      if (!startDate) continue;
+
+      const leaveRows = rows
+        .filter((row) => row.leaveType === leaveType)
+        .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+
+      const anchor = anchorValues.get(key);
+      let startIndex = anchor
+        ? leaveRows.findIndex(
+            (row) =>
+              row.collection === COLLECTIONS.attendance &&
+              row.id === anchor.attendanceId,
+          )
+        : -1;
+      const hasAnchor = startIndex >= 0 && Boolean(anchor);
+
+      if (startIndex < 0) {
+        startIndex = leaveRows.findIndex((row) => row.date >= startDate);
+      }
+
+      const effectiveStartIndex =
+        startIndex < 0 ? leaveRows.length : startIndex;
+
+      const priorRows = leaveRows.slice(0, effectiveStartIndex).reverse();
+      const priorSnapshotRow = priorRows.find(
+        (row) => leaveSnapshotValue(row, leaveType) !== null,
+      );
+      const priorValue = priorSnapshotRow
+        ? leaveSnapshotValue(priorSnapshotRow, leaveType)
+        : inferLeaveSnapshotValueFromRows(
+            leaveRows.slice(0, effectiveStartIndex),
+            leaveType,
+            rows,
+          );
+
+      const defaultStartValue = BALANCE_LEAVES.has(leaveType)
+        ? (LEAVE_TOTAL_ALLOWANCE[leaveType] ?? 0)
+        : 0;
+
+      const baseValue = priorValue
+        ?? defaultStartValue
+        ?? initialLeaveValues.get(key)
+        ?? 0;
+
+      const currentStartDate =
+        priorSnapshotRow?.date ?? leaveRows[effectiveStartIndex - 1]?.date;
+
+      let runningValue =
+        hasAnchor && anchor
+          ? anchor.valueAfter
+          : baseValue;
+      let runningDate = currentStartDate;
+
+      if (startIndex < 0 || leaveRows.length === 0) {
+        result.employeePatches[employeeId] ??= {};
+        result.employeePatches[employeeId][leaveType] = runningValue;
+        continue;
+      }
+
+      for (let index = startIndex; index < leaveRows.length; index += 1) {
+        const row = leaveRows[index]!;
+
+        if (!(hasAnchor && index === startIndex)) {
+          runningValue = advanceLeaveSnapshotValue(
+            leaveType,
+            runningValue,
+            runningDate,
+            row.date,
+            rows,
+          );
+        }
+        runningDate = row.date;
+
+        result.rowPatches.push({
+          collection: row.collection,
+          id: row.id,
+          fields: leaveUsageFieldsFromValue(leaveType, runningValue),
+        });
+      }
+
+      result.employeePatches[employeeId] ??= {};
+      result.employeePatches[employeeId][leaveType] = runningValue;
+    }
+  }
+
+  return result;
 }
 
 export async function fetchAllEmployees(): Promise<EmployeeDoc[]> {
@@ -214,6 +540,54 @@ export async function fetchAttendanceForDate(date: string): Promise<AttendanceDo
   return fromFirestoreDocs<AttendanceDoc>(snap.docs);
 }
 
+export async function fetchAttendanceAfterDate(
+  date: string,
+): Promise<AttendanceDoc[]> {
+  return listAllDocs<AttendanceDoc>(COLLECTIONS.attendance, (q) =>
+    q.where("date", ">", date),
+  );
+}
+
+export async function fetchEmployeeLeaveCalendar(
+  employeeId: string,
+): Promise<EmployeeLeaveCalendarEntry[]> {
+  if (!employeeId.trim()) return [];
+
+  const [councilRows, mosqueRows] = await Promise.all([
+    listAllDocs<AttendanceDoc>(COLLECTIONS.attendance, (q) =>
+      q.where("employeeId", "==", employeeId),
+    ),
+    listAllDocs<MosqueAttendanceDoc>(COLLECTIONS.mosqueAttendance, (q) =>
+      q.where("employeeId", "==", employeeId),
+    ),
+  ]);
+
+  return [
+    ...councilRows
+      .filter((row) => row.leaveType)
+      .map((row) => ({
+        $id: row.$id,
+        employeeId: row.employeeId,
+        date: row.date,
+        leaveType: row.leaveType!,
+        leaveUsedAfter: row.leaveUsedAfter ?? null,
+        leaveRemainingAfter: row.leaveRemainingAfter ?? null,
+        source: "Council" as const,
+      })),
+    ...mosqueRows
+      .filter((row) => row.leaveType)
+      .map((row) => ({
+        $id: row.$id,
+        employeeId: row.employeeId,
+        date: row.date,
+        leaveType: row.leaveType!,
+        leaveUsedAfter: row.leaveUsedAfter ?? null,
+        leaveRemainingAfter: row.leaveRemainingAfter ?? null,
+        source: "Mosque" as const,
+      })),
+  ].sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export async function createAttendanceForEmployees(
   date: string,
   employees: EmployeeDoc[],
@@ -267,10 +641,16 @@ export async function submitCouncilAttendanceUpdates(
   const uniqueEmployeeIds = Array.from(
     new Set(items.map((item) => item.employeeId)),
   );
+  const attendanceRefs = items.map((item) =>
+    db.collection(COLLECTIONS.attendance).doc(item.attendanceId),
+  );
   const employeeRefs = uniqueEmployeeIds.map((id) =>
     db.collection(COLLECTIONS.employees).doc(id),
   );
-  const employeeSnaps = await db.getAll(...employeeRefs);
+  const [employeeSnaps, attendanceSnaps] = await Promise.all([
+    db.getAll(...employeeRefs),
+    db.getAll(...attendanceRefs),
+  ]);
 
   const employeeMap = new Map<string, EmployeeDoc>();
   for (const snap of employeeSnaps) {
@@ -280,7 +660,46 @@ export async function submitCouncilAttendanceUpdates(
     }
   }
 
+  const attendanceMap = new Map<string, AttendanceDoc>();
+  for (const snap of attendanceSnaps) {
+    const attendance = fromFirestoreDoc<AttendanceDoc>(snap);
+    if (attendance) {
+      attendanceMap.set(attendance.$id, attendance);
+    }
+  }
+
   const employeePatches: Record<string, Record<string, number>> = {};
+  const initialLeaveValues = new Map<string, number>();
+  const affectedStartDates = new Map<string, string>();
+  const anchorValues = new Map<
+    string,
+    { attendanceId: string; valueAfter: number }
+  >();
+  const proposedAttendance = new Map<string, ProposedAttendanceState>();
+
+  const rememberInitialLeaveValue = (
+    employee: EmployeeDoc,
+    leaveType: string,
+  ) => {
+    const key = leaveRecalculationKey(employee.$id, leaveType);
+    if (!initialLeaveValues.has(key)) {
+      initialLeaveValues.set(key, getNumericLeaveBalance(employee, leaveType));
+    }
+    return key;
+  };
+
+  const markAffectedLeave = (
+    employeeId: string,
+    leaveType: string,
+    date: string | undefined,
+  ) => {
+    if (!date) return;
+    const key = leaveRecalculationKey(employeeId, leaveType);
+    const existing = affectedStartDates.get(key);
+    if (!existing || date < existing) {
+      affectedStartDates.set(key, date);
+    }
+  };
 
   for (const item of items) {
     const employee = employeeMap.get(item.employeeId);
@@ -288,34 +707,112 @@ export async function submitCouncilAttendanceUpdates(
       throw new Error(`Employee not found: ${item.employeeName}`);
     }
 
-    const leaveType = item.leaveType ?? "";
-    if (leaveType && BALANCE_LEAVES.has(leaveType)) {
-      const available = getNumericLeaveBalance(employee, leaveType);
+    const currentAttendance = attendanceMap.get(item.attendanceId);
+    const persistedLeaveType =
+      currentAttendance?.leaveType ?? item.previousLeaveType ?? null;
+    const persistedLeaveDeducted =
+      currentAttendance?.leaveDeducted ?? Boolean(persistedLeaveType);
+    const nextLeaveType = item.leaveType ?? null;
+    const shouldRestorePrevious =
+      Boolean(persistedLeaveType) &&
+      persistedLeaveDeducted &&
+      persistedLeaveType !== nextLeaveType;
+    const shouldApplyNext =
+      Boolean(nextLeaveType) &&
+      (persistedLeaveType !== nextLeaveType || !persistedLeaveDeducted);
+
+    proposedAttendance.set(item.attendanceId, {
+      leaveType: nextLeaveType,
+      leaveDeducted: Boolean(nextLeaveType),
+    });
+
+    if (shouldApplyNext && nextLeaveType && BALANCE_LEAVES.has(nextLeaveType)) {
+      const available = getNumericLeaveBalance(employee, nextLeaveType);
       if (available <= 0) {
         throw new Error(
-          `${item.employeeName} does not have any ${leaveType} left.`,
+          `${item.employeeName} does not have any ${nextLeaveType} left.`,
         );
       }
     }
 
-    if (item.previousLeaveType && item.previousLeaveType !== item.leaveType) {
+    if (shouldRestorePrevious && persistedLeaveType) {
+      rememberInitialLeaveValue(employee, persistedLeaveType);
       const next = applyLeaveBalanceDelta(
         employee,
-        item.previousLeaveType,
+        persistedLeaveType,
         true,
       );
       employeePatches[item.employeeId] ??= {};
-      employeePatches[item.employeeId][item.previousLeaveType] = next;
+      employeePatches[item.employeeId][persistedLeaveType] = next;
+      markAffectedLeave(
+        item.employeeId,
+        persistedLeaveType,
+        currentAttendance?.date,
+      );
     }
 
-    if (
-      leaveType &&
-      (!item.leaveDeducted || item.previousLeaveType !== item.leaveType)
-    ) {
-      const next = applyLeaveBalanceDelta(employee, leaveType, false);
+    if (shouldApplyNext && nextLeaveType) {
+      rememberInitialLeaveValue(employee, nextLeaveType);
+      const next = applyLeaveBalanceDelta(employee, nextLeaveType, false);
       employeePatches[item.employeeId] ??= {};
-      employeePatches[item.employeeId][leaveType] = next;
+      employeePatches[item.employeeId][nextLeaveType] = next;
+      markAffectedLeave(item.employeeId, nextLeaveType, currentAttendance?.date);
+    } else if (
+      nextLeaveType &&
+      currentAttendance?.leaveType === nextLeaveType &&
+      currentAttendance.leaveDeducted
+    ) {
+      rememberInitialLeaveValue(employee, nextLeaveType);
+      markAffectedLeave(item.employeeId, nextLeaveType, currentAttendance.date);
     }
+  }
+
+  const recalculation = await recalculateLeaveUsageSnapshots(
+    db,
+    affectedStartDates,
+    initialLeaveValues,
+    anchorValues,
+    proposedAttendance,
+  );
+
+  for (const [employeeId, fields] of Object.entries(
+    recalculation.employeePatches,
+  )) {
+    employeePatches[employeeId] = {
+      ...(employeePatches[employeeId] ?? {}),
+      ...fields,
+    };
+  }
+
+  const attendancePatches = new Map<string, Record<string, unknown>>();
+  const mosquePatches = new Map<string, Record<string, unknown>>();
+
+  for (const item of items) {
+    const currentAttendance = attendanceMap.get(item.attendanceId);
+    attendancePatches.set(item.attendanceId, {
+      signInTime: item.signInTime,
+      leaveType: item.leaveType,
+      minutesLate: item.minutesLate,
+      previousLeaveType: item.leaveType,
+      leaveDeducted: Boolean(item.leaveType),
+      leaveUsedAfter: item.leaveType
+        ? currentAttendance?.leaveUsedAfter ?? null
+        : null,
+      leaveRemainingAfter: item.leaveType
+        ? currentAttendance?.leaveRemainingAfter ?? null
+        : null,
+    });
+  }
+
+  for (const rowPatch of recalculation.rowPatches) {
+    const target =
+      rowPatch.collection === COLLECTIONS.attendance
+        ? attendancePatches
+        : mosquePatches;
+    target.set(rowPatch.id, {
+      ...(target.get(rowPatch.id) ?? {}),
+      ...rowPatch.fields,
+    });
   }
 
   let batch = db.batch();
@@ -337,17 +834,20 @@ export async function submitCouncilAttendanceUpdates(
     operationCount += 1;
   }
 
-  for (const item of items) {
+  for (const [attendanceId, fields] of Array.from(attendancePatches.entries())) {
     if (operationCount >= 500) await commitBatch();
     batch.update(
-      db.collection(COLLECTIONS.attendance).doc(item.attendanceId),
-      withTimestamps({
-        signInTime: item.signInTime,
-        leaveType: item.leaveType,
-        minutesLate: item.minutesLate,
-        previousLeaveType: item.leaveType,
-        leaveDeducted: Boolean(item.leaveType),
-      }),
+      db.collection(COLLECTIONS.attendance).doc(attendanceId),
+      withTimestamps(fields),
+    );
+    operationCount += 1;
+  }
+
+  for (const [attendanceId, fields] of Array.from(mosquePatches.entries())) {
+    if (operationCount >= 500) await commitBatch();
+    batch.update(
+      db.collection(COLLECTIONS.mosqueAttendance).doc(attendanceId),
+      withTimestamps(fields),
     );
     operationCount += 1;
   }
@@ -415,6 +915,65 @@ export async function upsertSalaryPeriodConfig(
 
   const snap = await ref.get();
   return fromFirestoreDoc<SalaryPeriodConfigDoc>(snap)!;
+}
+
+function sanitizeHolidayMonth(month: string): string {
+  const trimmed = month.trim();
+  if (!/^\d{4}-\d{2}$/.test(trimmed)) {
+    throw new Error("Invalid holiday month");
+  }
+  return trimmed;
+}
+
+function sanitizeCalendarHolidayDates(month: string, dates: string[]): string[] {
+  const prefix = `${month}-`;
+  return Array.from(
+    new Set(
+      dates
+        .map((date) => date.trim())
+        .filter(
+          (date) =>
+            /^\d{4}-\d{2}-\d{2}$/.test(date) && date.startsWith(prefix),
+        ),
+    ),
+  ).sort();
+}
+
+export async function fetchHolidayCalendar(
+  month: string,
+): Promise<HolidayCalendarDoc | null> {
+  const sanitizedMonth = sanitizeHolidayMonth(month);
+  const snap = await getFirestoreDb()
+    .collection(COLLECTIONS.holidayCalendar)
+    .doc(sanitizedMonth)
+    .get();
+
+  if (!snap.exists) return null;
+  return fromFirestoreDoc<HolidayCalendarDoc>(snap);
+}
+
+export async function upsertHolidayCalendar(
+  month: string,
+  holidayDates: string[],
+): Promise<HolidayCalendarDoc> {
+  const sanitizedMonth = sanitizeHolidayMonth(month);
+  const sanitizedDates = sanitizeCalendarHolidayDates(
+    sanitizedMonth,
+    holidayDates,
+  );
+  const db = getFirestoreDb();
+  const ref = db.collection(COLLECTIONS.holidayCalendar).doc(sanitizedMonth);
+
+  await ref.set(
+    withTimestamps({
+      month: sanitizedMonth,
+      holidayDates: sanitizedDates,
+    }),
+    { merge: true },
+  );
+
+  const snap = await ref.get();
+  return fromFirestoreDoc<HolidayCalendarDoc>(snap)!;
 }
 
 export async function deleteAttendancesByDate(date: string): Promise<void> {

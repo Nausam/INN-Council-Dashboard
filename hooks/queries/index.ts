@@ -1,6 +1,7 @@
 export {
   useEmployeesQuery,
   useEmployeeQuery,
+  useEmployeeLeaveCalendarQuery,
   useEmployeeOptionsQuery,
   useMosqueAssistantsQuery,
 } from "./use-employees";
@@ -8,6 +9,7 @@ export {
   useCouncilAttendanceQuery,
   useMosqueAttendanceQuery,
   useCouncilAttendanceMonthQuery,
+  useCouncilAttendanceAfterDateQuery,
   useMosqueAttendanceMonthQuery,
   useMosqueDailyAttendanceMonthQuery,
   usePrayerTimesMonthQuery,
@@ -34,5 +36,6 @@ export {
 export {
   useUploadedSlipsQuery,
   useSalarySlipsByRecordQuery,
+  useGeneratedSlipForEmployeeQuery,
 } from "./use-salary-slips";
 export { useQueryInvalidation } from "./use-query-invalidation";

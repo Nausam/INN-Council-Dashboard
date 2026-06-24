@@ -57,6 +57,9 @@ export type SalarySlipComputed = {
 };
 
 const COUNCIL_OFFICE = "INNAMADHOO COUNCIL";
+const COUNCIL_EXECUTIVE_DESIGNATION = "council executive";
+const ASSISTANT_COUNCIL_EXECUTIVE_DESIGNATION = "a. council executive";
+const ANNUAL_LEAVE = "annualLeave";
 /** Working days used for absent-day deduction from basic salary. */
 const WORKING_DAYS_PER_MONTH = 26;
 /** Calendar days used to derive per-minute late deduction from basic salary. */
@@ -81,12 +84,85 @@ function parseDateOnly(iso: string): Date | null {
   return new Date(y, m - 1, d);
 }
 
-function monthsBetweenInclusive(start: Date, end: Date): number {
-  return (
-    (end.getFullYear() - start.getFullYear()) * 12 +
-    (end.getMonth() - start.getMonth()) +
-    1
+function dateFallsWithinBounds(date: Date, bounds: { start: Date; end: Date }): boolean {
+  return date >= bounds.start && date <= bounds.end;
+}
+
+function normalizeDesignation(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function isPresentAttendanceRow(row: AttendanceDoc | undefined): boolean {
+  return Boolean(row?.signInTime) && !isOnAttendanceLeave(row?.leaveType);
+}
+
+function isAnnualLeaveRow(row: AttendanceDoc | undefined): boolean {
+  return (row?.leaveType ?? "").trim() === ANNUAL_LEAVE;
+}
+
+function attendanceRowsByDate(
+  employeeId: string,
+  rows: AttendanceDoc[],
+): Map<string, AttendanceDoc> {
+  const byDate = new Map<string, AttendanceDoc>();
+  for (const row of rows) {
+    if (row.employeeId !== employeeId) continue;
+    const rowDate = resolveAttendanceRowDate(row);
+    if (!rowDate) continue;
+    byDate.set(rowDate, pickAttendanceRowForDate(byDate.get(rowDate), row));
+  }
+  return byDate;
+}
+
+function computeTemporaryZvAllowances(
+  employees: EmployeeDoc[],
+  attendanceRows: AttendanceDoc[],
+): Map<string, number> {
+  const executive = employees.find(
+    (employee) =>
+      normalizeDesignation(employee.designation) ===
+      COUNCIL_EXECUTIVE_DESIGNATION,
   );
+  const assistant = employees.find(
+    (employee) =>
+      normalizeDesignation(employee.designation) ===
+      ASSISTANT_COUNCIL_EXECUTIVE_DESIGNATION,
+  );
+
+  const amounts = new Map<string, number>();
+  if (!executive) return amounts;
+
+  const executiveRate = round2(num(executive.temporaryZvAllowance));
+  const assistantRate = assistant
+    ? round2(num(assistant.temporaryZvAllowance, executiveRate))
+    : 0;
+  const executiveRows = attendanceRowsByDate(executive.$id, attendanceRows);
+  const assistantRows = assistant
+    ? attendanceRowsByDate(assistant.$id, attendanceRows)
+    : new Map<string, AttendanceDoc>();
+
+  let executiveDays = 0;
+  let assistantDays = 0;
+
+  for (const [date, executiveRow] of Array.from(executiveRows.entries())) {
+    if (isAnnualLeaveRow(executiveRow)) {
+      if (assistant && isPresentAttendanceRow(assistantRows.get(date))) {
+        assistantDays += 1;
+      }
+      continue;
+    }
+
+    if (isPresentAttendanceRow(executiveRow)) {
+      executiveDays += 1;
+    }
+  }
+
+  amounts.set(executive.$id, round2(executiveRate * executiveDays));
+  if (assistant) {
+    amounts.set(assistant.$id, round2(assistantRate * assistantDays));
+  }
+
+  return amounts;
 }
 
 function creditSchemeDeductionForPeriod(
@@ -108,19 +184,11 @@ function creditSchemeDeductionForPeriod(
       continue;
     }
 
-    const totalMonths = Math.max(1, monthsBetweenInclusive(start, end));
-    const elapsed = Math.max(
-      0,
-      Math.min(
-        totalMonths - 1,
-        monthsBetweenInclusive(start, bounds.start) - 1,
-      ),
+    total += round2(
+      dateFallsWithinBounds(end, bounds)
+        ? scheme.endMonthAmount
+        : scheme.startMonthAmount,
     );
-    const t = totalMonths <= 1 ? 1 : elapsed / (totalMonths - 1);
-    const amount =
-      scheme.startMonthAmount +
-      t * (scheme.endMonthAmount - scheme.startMonthAmount);
-    total += round2(amount);
   }
   return round2(total);
 }
@@ -239,12 +307,9 @@ export function computeSalarySlip(
   periodLabel: string,
   attendanceRows: AttendanceDoc[],
   holidayDates: ReadonlySet<string> = new Set(),
+  temporaryZvAllowanceOverride?: number,
 ): SalarySlipComputed {
   const basicSalary = round2(num(employee.basicSalary));
-  const pension = computeRetirementPension(
-    basicSalary,
-    retirementPensionAppliesFromDoc(employee.retirementPensionApplies),
-  );
   const livingAllowance = round2(num(employee.livingAllowance));
   const foodAllowance = round2(num(employee.foodAllowance));
   const ramazanAllowance = round2(num(employee.ramazanAllowance));
@@ -266,16 +331,36 @@ export function computeSalarySlip(
     periodLabel,
     holidayDates,
   );
-  const lateFine = round2(
+  const basicLateFine = round2(
     summary.totalMinutesLate * lateMinuteRate(basicSalary),
   );
-  const absentDaysFine = round2(summary.absentDays * dailyRate(basicSalary));
+  const jobAllowanceLateFine = round2(
+    summary.totalMinutesLate * lateMinuteRate(jobAllowance),
+  );
+  const lateFine = basicLateFine;
+  const basicAbsentDaysFine = round2(summary.absentDays * dailyRate(basicSalary));
+  const jobAllowanceAbsentDaysFine = round2(
+    summary.absentDays * dailyRate(jobAllowance),
+  );
+  const absentDaysFine = round2(
+    basicAbsentDaysFine + jobAllowanceAbsentDaysFine,
+  );
   const absentHoursFine = 0;
+  const pensionableBasicSalary = round2(
+    Math.max(0, basicSalary - basicLateFine - basicAbsentDaysFine - absentHoursFine),
+  );
+  const pension = computeRetirementPension(
+    pensionableBasicSalary,
+    retirementPensionAppliesFromDoc(employee.retirementPensionApplies),
+  );
 
   const attendanceBenefit = round2(
     attendanceBenefitRate * summary.benefitPresentDays,
   );
-  const zvAllowance = round2(zvAllowanceRate * summary.presentDays);
+  const zvAllowance =
+    typeof temporaryZvAllowanceOverride === "number"
+      ? round2(temporaryZvAllowanceOverride)
+      : round2(zvAllowanceRate * summary.presentDays);
 
   const deductionAmounts = {
     lateMinutes: lateFine,
@@ -309,7 +394,7 @@ export function computeSalarySlip(
     ramazan: ramazanAllowance,
     zv: zvAllowance,
     phone: phoneAllowance,
-    job: jobAllowance,
+    job: round2(Math.max(0, jobAllowance - jobAllowanceLateFine)),
     attendanceBenefit,
   };
 
@@ -360,10 +445,20 @@ export function computeSalarySlipsForPeriod(
   holidayDates: string[] = [],
 ): SalarySlipComputed[] {
   const holidaySet = new Set(holidayDates);
+  const temporaryZvAllowances = computeTemporaryZvAllowances(
+    employees,
+    attendanceRows,
+  );
   return employees
     .filter((e) => e.name?.trim())
     .map((employee) =>
-      computeSalarySlip(employee, periodLabel, attendanceRows, holidaySet),
+      computeSalarySlip(
+        employee,
+        periodLabel,
+        attendanceRows,
+        holidaySet,
+        temporaryZvAllowances.get(employee.$id) ?? 0,
+      ),
     )
     .sort((a, b) => a.staff.name.localeCompare(b.staff.name));
 }

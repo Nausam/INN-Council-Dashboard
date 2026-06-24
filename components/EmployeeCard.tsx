@@ -3,14 +3,15 @@
 import {
   AvatarGlow,
   CouncilCard,
-  CouncilCardFooter,
   IconButton,
   SectionBadge,
 } from "@/components/design-system";
 import { useUser } from "@/Providers/UserProvider";
 import { typography } from "@/lib/design-tokens";
 import { cn } from "@/lib/utils";
-import { Edit3, Trash2 } from "lucide-react";
+import { CalendarDays, Edit3, Trash2, UserRound } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import React from "react";
 
 interface EmployeeCardProps {
@@ -33,6 +34,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   onDeleteClick,
 }) => {
   const { isAdmin } = useUser();
+  const router = useRouter();
 
   const handleEditClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
@@ -44,21 +46,33 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
     onDeleteClick?.();
   };
 
+  const handleCardClick = () => {
+    if (onClick) {
+      onClick();
+      return;
+    }
+    router.push(`/employees/details/${employeeId}`);
+  };
+
   return (
-    <CouncilCard onClick={onClick} interactive="hover">
+    <CouncilCard
+      onClick={handleCardClick}
+      interactive="hover"
+      className="rounded-lg border-slate-200 bg-white p-4 shadow-sm hover:border-teal-200"
+    >
       <div className="relative mb-5 flex items-start justify-between">
         <div className="flex min-w-0 flex-1 items-center gap-4">
-          <AvatarGlow name={name} size="md" />
+          <AvatarGlow name={name} size="md" className="rounded-lg" />
           <div className="min-w-0 flex-1">
             <h3
               className={cn(
                 typography.heading,
-                "mb-1 truncate transition-colors duration-200 group-hover:text-teal-600",
+                "mb-1 truncate text-slate-950 transition-colors duration-200 group-hover:text-teal-700",
               )}
             >
               {name}
             </h3>
-            <p className={cn(typography.body, "truncate")}>{designation}</p>
+            <p className={cn(typography.body, "truncate font-bold")}>{designation}</p>
           </div>
         </div>
 
@@ -81,11 +95,32 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
 
       {section && (
         <div className="mb-4">
-          <SectionBadge section={section} />
+          <SectionBadge section={section} className="rounded-lg" />
         </div>
       )}
 
-      <CouncilCardFooter label="View Profile" />
+      <div className="space-y-2">
+        <Link
+          href={`/employees/details/${employeeId}`}
+          onClick={(event) => event.stopPropagation()}
+          className="flex items-center justify-between rounded-lg bg-teal-50 px-3 py-2.5 text-teal-800 ring-1 ring-teal-100 transition hover:bg-teal-100"
+        >
+          <span className={cn(typography.caption, "text-teal-800")}>
+            View Profile
+          </span>
+          <UserRound className="h-4 w-4 text-teal-700" />
+        </Link>
+        <Link
+          href={`/employees/${employeeId}/leaves`}
+          onClick={(event) => event.stopPropagation()}
+          className="flex items-center justify-between rounded-lg bg-orange-50 px-3 py-2.5 text-orange-800 ring-1 ring-orange-100 transition hover:bg-orange-100"
+        >
+          <span className={cn(typography.caption, "text-orange-800")}>
+            Leave Calendar
+          </span>
+          <CalendarDays className="h-4 w-4 text-orange-600" />
+        </Link>
+      </div>
     </CouncilCard>
   );
 };

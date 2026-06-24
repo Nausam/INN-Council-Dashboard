@@ -46,6 +46,7 @@ export const councilSidebarNav: SidebarNavItem[] = [
     icon: Users,
     items: [
       { title: "All Employees", url: "/employees" },
+      { title: "Employee Details", url: "/employees/details" },
       { title: "Add Employee", url: "/employees/add" },
     ],
   },

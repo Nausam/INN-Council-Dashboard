@@ -17,7 +17,7 @@ import {
   createAttendanceForEmployeesAction,
   syncAttendanceForDateAction,
 } from "@/lib/attendance/attendance.actions";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ClipboardList, Plus } from "lucide-react";
 
 type EmployeeRef =
@@ -36,6 +36,8 @@ type Row = {
   minutesLate: number | null;
   previousLeaveType: string | null;
   leaveDeducted: boolean;
+  leaveUsedAfter?: number | null;
+  leaveRemainingAfter?: number | null;
   changed: boolean;
 };
 
@@ -49,6 +51,7 @@ const AdminAttendancePage = () => {
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
   const [syncing, setSyncing] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [autoSyncedDate, setAutoSyncedDate] = useState<string | null>(null);
 
   const { invalidateCouncilAttendance } = useQueryInvalidation();
 
@@ -103,7 +106,7 @@ const AdminAttendancePage = () => {
     });
   }, [error]);
 
-  const handleSync = async (silent = false) => {
+  const handleSync = useCallback(async (silent = false) => {
     if (!formattedSelectedDate) return;
     try {
       setSyncing(true);
@@ -153,7 +156,33 @@ const AdminAttendancePage = () => {
     } finally {
       setSyncing(false);
     }
-  };
+  }, [formattedSelectedDate, invalidateCouncilAttendance, monthKey]);
+
+  useEffect(() => {
+    if (
+      !formattedSelectedDate ||
+      autoSyncedDate === formattedSelectedDate ||
+      isPending ||
+      isFetching ||
+      syncing ||
+      generating ||
+      attendanceData.length === 0
+    ) {
+      return;
+    }
+
+    setAutoSyncedDate(formattedSelectedDate);
+    void handleSync(true);
+  }, [
+    attendanceData.length,
+    autoSyncedDate,
+    formattedSelectedDate,
+    generating,
+    isFetching,
+    isPending,
+    syncing,
+    handleSync,
+  ]);
 
   const handleSearchAndSync = async () => {
     const { data } = await refetch();

@@ -12,7 +12,9 @@
     "migrate:files": "tsx scripts/migrate-appwrite-storage-to-r2.ts",
     "migrate:clerk": "tsx scripts/migrate-appwrite-users-to-clerk.ts",
     "verify:queries": "tsx scripts/verify-firestore-queries.ts",
-    "grant:admin": "tsx scripts/grant-clerk-admin.ts"
+    "grant:admin": "tsx scripts/grant-clerk-admin.ts",
+    "zk:worker": "tsx scripts/zk-worker.ts",
+    "zk:sync": "tsx scripts/zk-sync.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.998.0",
@@ -55,6 +57,7 @@
     "lucide-react": "^0.451.0",
     "next": "14.2.14",
     "next-themes": "^0.3.0",
+    "node-zklib": "^1.3.0",
     "react": "^18",
     "react-chartjs-2": "^5.2.0",
     "react-day-picker": "^8.10.1",

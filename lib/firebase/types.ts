@@ -90,6 +90,8 @@ export type AttendanceDoc = LegacyDocument & {
   minutesLate: number;
   previousLeaveType?: string | null;
   leaveDeducted?: boolean;
+  leaveUsedAfter?: number | null;
+  leaveRemainingAfter?: number | null;
 };
 
 export type MosqueAttendanceDoc = LegacyDocument & {
@@ -107,6 +109,8 @@ export type MosqueAttendanceDoc = LegacyDocument & {
   ishaMinutesLate: number | null;
   previousLeaveType?: string | null;
   leaveDeducted?: boolean;
+  leaveUsedAfter?: number | null;
+  leaveRemainingAfter?: number | null;
   leaveType: string | null;
   changed?: boolean;
   [key: string]: unknown;
@@ -133,6 +137,11 @@ export type SalarySlipDoc = LegacyDocument & {
 export type SalaryPeriodConfigDoc = LegacyDocument & {
   periodLabel: string;
   /** ISO dates within the pay period; Fri/Sat are excluded when saving. */
+  holidayDates: string[];
+};
+
+export type HolidayCalendarDoc = LegacyDocument & {
+  month: string;
   holidayDates: string[];
 };
 

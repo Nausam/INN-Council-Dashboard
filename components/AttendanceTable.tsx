@@ -30,10 +30,22 @@ import { useEmployeesQuery, useQueryInvalidation } from "@/hooks/queries";
 import { useToast } from "@/hooks/use-toast";
 import { computeCouncilMinutesLate } from "@/lib/attendance/council-lateness";
 import { submitCouncilAttendanceAction } from "@/lib/attendance/attendance.actions";
-import { getLeaveUsageSummary } from "@/lib/employees/leave-usage";
-import { deleteAttendancesByDate, type EmployeeDoc } from "@/lib/firebase/hr";
+import {
+  ADDITIVE_LEAVE_KEYS,
+  LEAVE_TOTAL_ALLOWANCE,
+  getLeaveUsageSummary,
+} from "@/lib/employees/leave-usage";
+import {
+  deleteAttendancesByDate,
+  fetchEmployeeLeaveCalendar,
+  type EmployeeDoc,
+  type EmployeeLeaveCalendarEntry,
+} from "@/lib/firebase/hr";
+import { QUERY_STALE_TIME_ATTENDANCE } from "@/lib/query/config";
+import { queryKeys } from "@/lib/query/keys";
 import { cn } from "@/lib/utils";
 import { useUser } from "@/Providers/UserProvider";
+import { useQueries } from "@tanstack/react-query";
 import {
   AlertCircle,
   Briefcase,
@@ -63,6 +75,8 @@ interface AttendanceRecord {
   minutesLate: number | null;
   previousLeaveType: string | null;
   leaveDeducted: boolean;
+  leaveUsedAfter?: number | null;
+  leaveRemainingAfter?: number | null;
   changed: boolean;
 }
 
@@ -140,6 +154,44 @@ const convertTimeToDateTime = (time: string, date: string) => {
   const utcMinutes = mvMinutes - MV_OFFSET_MIN;
   utc.setUTCMinutes(utcMinutes);
   return utc.toISOString();
+};
+
+const shouldPreviewLeaveDeduction = (record: AttendanceRecord) =>
+  Boolean(record.leaveType) &&
+  record.changed &&
+  (record.leaveDeducted !== true ||
+    record.previousLeaveType !== record.leaveType);
+
+const CONTINUOUS_CALENDAR_LEAVES = new Set([
+  "maternityLeave",
+  "preMaternityLeave",
+  "paternityLeave",
+]);
+
+const calendarDayDifference = (from: string, to: string) => {
+  const fromDate = new Date(`${from}T00:00:00Z`);
+  const toDate = new Date(`${to}T00:00:00Z`);
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+    return 1;
+  }
+  const diff = Math.round(
+    (toDate.getTime() - fromDate.getTime()) / (24 * 60 * 60 * 1000),
+  );
+  return Math.max(1, diff);
+};
+
+const leaveSnapshotBalance = (
+  entry: EmployeeLeaveCalendarEntry,
+): number | null => {
+  if (ADDITIVE_LEAVE_KEYS.has(entry.leaveType)) {
+    return typeof entry.leaveUsedAfter === "number"
+      ? entry.leaveUsedAfter
+      : null;
+  }
+
+  return typeof entry.leaveRemainingAfter === "number"
+    ? entry.leaveRemainingAfter
+    : null;
 };
 
 const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
@@ -247,15 +299,98 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     [allEmployees],
   );
 
+  const previewEmployeeIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          attendanceUpdates
+            .filter((record) => shouldPreviewLeaveDeduction(record))
+            .map((record) => idFromRef(record.employeeId))
+            .filter(Boolean),
+        ),
+      ),
+    [attendanceUpdates],
+  );
+
+  const previewLeaveQueries = useQueries({
+    queries: previewEmployeeIds.map((employeeId) => ({
+      queryKey: queryKeys.employees.leaveCalendar(employeeId),
+      queryFn: () => fetchEmployeeLeaveCalendar(employeeId),
+      enabled: Boolean(employeeId),
+      staleTime: QUERY_STALE_TIME_ATTENDANCE,
+    })),
+  });
+
+  const leaveHistoryByEmployee = useMemo(() => {
+    const map = new Map<string, EmployeeLeaveCalendarEntry[]>();
+    previewEmployeeIds.forEach((employeeId, index) => {
+      map.set(employeeId, previewLeaveQueries[index]?.data ?? []);
+    });
+    return map;
+  }, [previewEmployeeIds, previewLeaveQueries]);
+
   const leaveUsageFromRecord = (r: AttendanceRecord) => {
     if (!r.leaveType) return null;
 
-    const employee = employeeById.get(idFromRef(r.employeeId));
+    if (!shouldPreviewLeaveDeduction(r)) {
+      if (
+        ADDITIVE_LEAVE_KEYS.has(r.leaveType) &&
+        typeof r.leaveUsedAfter === "number"
+      ) {
+        return { used: r.leaveUsedAfter, remaining: null };
+      }
+
+      if (typeof r.leaveRemainingAfter === "number") {
+        return getLeaveUsageSummary(r.leaveType, r.leaveRemainingAfter);
+      }
+    }
+
+    const employeeId = idFromRef(r.employeeId);
+    const employee = employeeById.get(employeeId);
     if (!employee) return null;
 
     const value = employee[r.leaveType as keyof EmployeeDoc];
-    const balance =
+    let balance =
       typeof value === "number" && Number.isFinite(value) ? value : 0;
+
+    if (shouldPreviewLeaveDeduction(r)) {
+      const priorEntries = leaveHistoryByEmployee
+        .get(employeeId)
+        ?.filter(
+          (entry) => entry.leaveType === r.leaveType && entry.date < date,
+        )
+        .sort((a, b) => a.date.localeCompare(b.date) || a.$id.localeCompare(b.$id))
+        ?? [];
+
+      const previousSnapshot = [...priorEntries]
+        .sort(
+          (a, b) =>
+            b.date.localeCompare(a.date) || b.$id.localeCompare(a.$id),
+        )
+        .map((entry) => ({
+          date: entry.date,
+          balance: leaveSnapshotBalance(entry),
+        }))
+        .find(
+          (entry): entry is { date: string; balance: number } =>
+            typeof entry.balance === "number",
+        );
+
+      const totalAllowance = LEAVE_TOTAL_ALLOWANCE[r.leaveType];
+      const inferredBase =
+        typeof totalAllowance === "number"
+          ? Math.max(0, totalAllowance - priorEntries.length)
+          : ADDITIVE_LEAVE_KEYS.has(r.leaveType)
+            ? priorEntries.length
+            : balance;
+      const base = previousSnapshot?.balance ?? inferredBase;
+      balance = ADDITIVE_LEAVE_KEYS.has(r.leaveType)
+        ? base +
+          (previousSnapshot && CONTINUOUS_CALENDAR_LEAVES.has(r.leaveType)
+            ? calendarDayDifference(previousSnapshot.date, date)
+            : 1)
+        : Math.max(0, base - 1);
+    }
 
     return getLeaveUsageSummary(r.leaveType, balance);
   };

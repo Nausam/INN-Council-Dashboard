@@ -8,6 +8,7 @@ import { queryKeys } from "@/lib/query/keys";
 import {
   fetchAllEmployees,
   fetchEmployeeById,
+  fetchEmployeeLeaveCalendar,
   fetchMosqueAssistants,
 } from "@/lib/firebase/hr";
 import { useQuery } from "@tanstack/react-query";
@@ -17,6 +18,8 @@ export function useEmployeesQuery() {
     queryKey: queryKeys.employees.all,
     queryFn: () => fetchAllEmployees(),
     staleTime: QUERY_STALE_TIME,
+    refetchOnMount: "always",
+    refetchOnReconnect: "always",
   });
 }
 
@@ -25,6 +28,16 @@ export function useEmployeeQuery(id: string | undefined) {
     queryKey: queryKeys.employees.detail(id ?? ""),
     queryFn: () => fetchEmployeeById(id!),
     enabled: Boolean(id),
+    staleTime: QUERY_STALE_TIME,
+  });
+}
+
+export function useEmployeeLeaveCalendarQuery(id: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.employees.leaveCalendar(id ?? ""),
+    queryFn: () => fetchEmployeeLeaveCalendar(id!),
+    enabled: Boolean(id),
+    staleTime: QUERY_STALE_TIME_ATTENDANCE,
   });
 }
 

@@ -14,6 +14,38 @@ pnpm dev
 bun dev
 ```
 
+## ZKTeco fingerprint connector
+
+The HR dashboard can run the fingerprint-machine connector as an app-owned
+Node worker. Configure the local server that can reach the device with:
+
+```env
+ZK_ENABLED=1
+ZK_IP=10.14.166.20
+ZK_PORT=4370
+ZK_TIMEOUT_MS=60000
+ZK_POLL_MS=2000
+ZK_RECONNECT_MS=5000
+ZK_TIMEZONE=Indian/Maldives
+FIRESTORE_DATABASE_ID=council-hr-dashboard
+```
+
+Start the web app and worker on the same local network machine:
+
+```bash
+npm run dev
+npm run zk:worker
+```
+
+Manual backfill is available from the admin page, or by CLI:
+
+```bash
+npm run zk:sync -- --from=2026-06-22 --to=2026-06-22
+```
+
+Punches are written to Firestore `punch_logs`; council attendance generation
+and Search & sync continue to create attendance rows from that collection.
+
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.

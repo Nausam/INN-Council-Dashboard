@@ -36,6 +36,7 @@ import {
   CreditCard,
   DollarSign,
   FileText,
+  Fingerprint,
   Heart,
   Clock,
   Home,
@@ -61,6 +62,7 @@ export type EmployeeFormData = {
   address: string;
   section: string;
   recordCardNumber: string;
+  deviceUserId: string;
   sickLeave: number;
   certificateSickLeave: number;
   annualLeave: number;
@@ -139,6 +141,7 @@ function buildInitialFormData(
     address: initialData?.address ?? "",
     section: initialData?.section ?? "",
     recordCardNumber: initialData?.recordCardNumber ?? "",
+    deviceUserId: initialData?.deviceUserId ?? "",
     sickLeave: initialData?.sickLeave ?? 0,
     certificateSickLeave: initialData?.certificateSickLeave ?? 0,
     annualLeave: initialData?.annualLeave ?? 0,
@@ -379,6 +382,14 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                 onChange={handleInputChange}
                 icon={<CreditCard className="h-4 w-4" />}
                 required
+              />
+
+              <InputField
+                id="deviceUserId"
+                label="Machine ID"
+                value={formData.deviceUserId}
+                onChange={handleInputChange}
+                icon={<Fingerprint className="h-4 w-4" />}
               />
 
               <DateField
