@@ -158,8 +158,16 @@ export const submitCouncilAttendanceAction = async (
   }
 };
 
-export const syncAttendanceForDateAction = async (date: string) => {
+export const syncAttendanceForDateAction = async (
+  date: string,
+  options: { syncDevice?: boolean } = {},
+) => {
   try {
+    if (options.syncDevice) {
+      const { syncZkDateRange } = await import("@/lib/zk/sync-service");
+      await syncZkDateRange(date, date);
+    }
+
     const { syncAttendanceForDate } = await import("@/lib/firebase/hr");
     const { synced, added } = await syncAttendanceForDate(date);
     return {

@@ -358,25 +358,31 @@ async function recalculateLeaveUsageSnapshots(
       const priorSnapshotRow = priorRows.find(
         (row) => leaveSnapshotValue(row, leaveType) !== null,
       );
-      const priorValue = priorSnapshotRow
+      const priorSnapshotValue = priorSnapshotRow
         ? leaveSnapshotValue(priorSnapshotRow, leaveType)
-        : inferLeaveSnapshotValueFromRows(
-            leaveRows.slice(0, effectiveStartIndex),
-            leaveType,
-            rows,
-          );
-
+        : null;
+      const initialValue = initialLeaveValues.get(key);
+      const inferredValue =
+        priorSnapshotValue === null && initialValue === undefined
+          ? inferLeaveSnapshotValueFromRows(
+              leaveRows.slice(0, effectiveStartIndex),
+              leaveType,
+              rows,
+            )
+          : null;
       const defaultStartValue = BALANCE_LEAVES.has(leaveType)
         ? (LEAVE_TOTAL_ALLOWANCE[leaveType] ?? 0)
         : 0;
 
-      const baseValue = priorValue
-        ?? defaultStartValue
-        ?? initialLeaveValues.get(key)
-        ?? 0;
+      const baseValue =
+        priorSnapshotValue ?? initialValue ?? inferredValue ?? defaultStartValue;
 
       const currentStartDate =
-        priorSnapshotRow?.date ?? leaveRows[effectiveStartIndex - 1]?.date;
+        priorSnapshotValue !== null
+          ? priorSnapshotRow?.date
+          : inferredValue !== null
+            ? leaveRows[effectiveStartIndex - 1]?.date
+            : undefined;
 
       let runningValue =
         hasAnchor && anchor

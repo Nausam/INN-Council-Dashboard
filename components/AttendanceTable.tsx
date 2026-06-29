@@ -32,7 +32,6 @@ import { computeCouncilMinutesLate } from "@/lib/attendance/council-lateness";
 import { submitCouncilAttendanceAction } from "@/lib/attendance/attendance.actions";
 import {
   ADDITIVE_LEAVE_KEYS,
-  LEAVE_TOTAL_ALLOWANCE,
   getLeaveUsageSummary,
 } from "@/lib/employees/leave-usage";
 import {
@@ -292,7 +291,8 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     setAttendanceUpdates(data);
   }, [data]);
 
-  const { data: allEmployees } = useEmployeesQuery();
+  const { data: allEmployees, refetch: refetchEmployees } =
+    useEmployeesQuery();
 
   const employeeById = useMemo(
     () => new Map(allEmployees?.map((emp) => [emp.$id, emp]) ?? []),
@@ -376,13 +376,9 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
             typeof entry.balance === "number",
         );
 
-      const totalAllowance = LEAVE_TOTAL_ALLOWANCE[r.leaveType];
-      const inferredBase =
-        typeof totalAllowance === "number"
-          ? Math.max(0, totalAllowance - priorEntries.length)
-          : ADDITIVE_LEAVE_KEYS.has(r.leaveType)
-            ? priorEntries.length
-            : balance;
+      const inferredBase = ADDITIVE_LEAVE_KEYS.has(r.leaveType)
+        ? priorEntries.length
+        : balance;
       const base = previousSnapshot?.balance ?? inferredBase;
       balance = ADDITIVE_LEAVE_KEYS.has(r.leaveType)
         ? base +
@@ -570,6 +566,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
   };
 
   const handleLeaveChange = (attendanceId: string, leaveTypeLabel: string) => {
+    void refetchEmployees();
     const leaveTypeValue =
       leaveTypeMapping[leaveTypeLabel as LeaveLabel] ?? null;
     setAttendanceUpdates((prev) =>

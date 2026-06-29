@@ -142,14 +142,15 @@ export default function EmployeeSalarySlipsPage() {
   };
 
   const pdfOptions = () => ({
-    margin: [6, 6, 6, 6],
+    margin: 0,
     filename: `${slip!.staff.name} - ${slip!.periodTitle}.pdf`,
     image: { type: "jpeg", quality: 0.98 },
     html2canvas: {
       scale: 2,
       useCORS: true,
       backgroundColor: "#ffffff",
-      windowWidth: 820,
+      windowWidth: 794,
+      windowHeight: 1123,
     },
     jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
   });
@@ -308,12 +309,12 @@ export default function EmployeeSalarySlipsPage() {
                 </button>
               </div>
 
-              {/* Off-screen capture node — full A4 width so the PDF matches print */}
+              {/* Off-screen capture node — A4-sized so the PDF fills one page like print */}
               <div
                 aria-hidden
                 className="pointer-events-none fixed left-[-10000px] top-0 -z-10"
               >
-                <div ref={slipRef} className="w-[794px] bg-white">
+                <div ref={slipRef} className="slip-pdf-export">
                   <SalarySlipDocument slip={slip} />
                 </div>
               </div>

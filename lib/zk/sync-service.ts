@@ -224,8 +224,7 @@ export async function syncLatestZkRecords(
 ): Promise<ZkSyncResult> {
   const info = await client.getInfo();
   const records = await client.getRecentAttendances(Math.max(delta + 25, 50));
-  const fresh = records.slice(-Math.max(delta, 1));
-  return writeZkAttendanceRecords(fresh, {
+  return writeZkAttendanceRecords(records, {
     deviceSerial: typeof info.serialnumber === "string" ? info.serialnumber : "unknown",
   });
 }

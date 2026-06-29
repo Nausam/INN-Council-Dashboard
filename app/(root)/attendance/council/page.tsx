@@ -106,11 +106,13 @@ const AdminAttendancePage = () => {
     });
   }, [error]);
 
-  const handleSync = useCallback(async (silent = false) => {
+  const handleSync = useCallback(async (silent = false, syncDevice = false) => {
     if (!formattedSelectedDate) return;
     try {
       setSyncing(true);
-      const result = await syncAttendanceForDateAction(formattedSelectedDate);
+      const result = await syncAttendanceForDateAction(formattedSelectedDate, {
+        syncDevice,
+      });
 
       if (!result.success) {
         throw new Error(result.error || "Failed to sync");
@@ -185,10 +187,8 @@ const AdminAttendancePage = () => {
   ]);
 
   const handleSearchAndSync = async () => {
-    const { data } = await refetch();
-    if (data && data.length > 0) {
-      await handleSync(true);
-    }
+    await refetch();
+    await handleSync(false, true);
   };
 
   const handleGenerateAttendance = async () => {

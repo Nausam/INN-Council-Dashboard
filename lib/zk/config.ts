@@ -5,6 +5,7 @@ export type ZkConfig = {
   timeoutMs: number;
   pollMs: number;
   reconnectMs: number;
+  startupCatchupRecords: number;
   timezone: string;
   inport: number;
   errors: string[];
@@ -33,6 +34,7 @@ export function getZkConfig(): ZkConfig {
     timeoutMs: intFromEnv("ZK_TIMEOUT_MS", 60000),
     pollMs: intFromEnv("ZK_POLL_MS", 2000),
     reconnectMs: intFromEnv("ZK_RECONNECT_MS", 5000),
+    startupCatchupRecords: intFromEnv("ZK_STARTUP_CATCHUP_RECORDS", 2000),
     timezone: process.env.ZK_TIMEZONE?.trim() || "Indian/Maldives",
     inport: intFromEnv("ZK_INPORT", 4000),
     errors,
@@ -57,6 +59,7 @@ export function publicZkConfig(config = getZkConfig()) {
     ip: config.ip,
     port: config.port,
     pollMs: config.pollMs,
+    startupCatchupRecords: config.startupCatchupRecords,
     timezone: config.timezone,
     errors: config.errors,
   };

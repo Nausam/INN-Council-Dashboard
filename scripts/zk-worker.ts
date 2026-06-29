@@ -4,7 +4,6 @@ dotenv.config();
 dotenv.config({ path: ".env.local", override: true });
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-const STARTUP_CATCHUP_RECORDS = 500;
 
 async function main() {
   const { getRequiredZkConfig } = await import("../lib/zk/config");
@@ -56,7 +55,7 @@ async function main() {
 
       console.log(`Connected. Serial=${serial}, baseline logs=${lastLogCount}`);
 
-      const catchupCount = Math.min(lastLogCount, STARTUP_CATCHUP_RECORDS);
+      const catchupCount = Math.min(lastLogCount, config.startupCatchupRecords);
       if (catchupCount > 0) {
         const catchup = await syncLatestZkRecords(client, catchupCount);
         console.log(
