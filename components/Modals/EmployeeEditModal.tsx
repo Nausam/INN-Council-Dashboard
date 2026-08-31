@@ -5,7 +5,7 @@ import { EmployeeModalShell } from "@/components/Modals/EmployeeModalShell";
 import { AvatarGlow } from "@/components/design-system";
 import { useEmployeeQuery, useQueryInvalidation } from "@/hooks/queries";
 import { toast } from "@/hooks/use-toast";
-import { updateEmployeeRecord } from "@/lib/firebase/hr";
+import { updateEmployeeRecord } from "@/lib/actions/hr.actions";
 import { employeeFormDataForFirestore } from "@/lib/employees/form-payload";
 import { toEmployeeFormValues } from "@/lib/employees/transforms";
 import { Edit3, Loader2 } from "lucide-react";

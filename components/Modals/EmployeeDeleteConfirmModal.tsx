@@ -5,7 +5,7 @@ import { AvatarGlow } from "@/components/design-system";
 import { Button } from "@/components/ui/button";
 import { useQueryInvalidation } from "@/hooks/queries";
 import { toast } from "@/hooks/use-toast";
-import { deleteEmployeeRecord } from "@/lib/firebase/hr";
+import { deleteEmployeeRecord } from "@/lib/actions/hr.actions";
 import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
 import { useState } from "react";
 

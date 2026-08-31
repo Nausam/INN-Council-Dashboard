@@ -5,7 +5,7 @@ import SkeletonEmployeeForm from "@/components/skeletons/SkeletonEmployeeForm";
 import { PageShell } from "@/components/design-system";
 import { useEmployeeQuery } from "@/hooks/queries";
 import { toast } from "@/hooks/use-toast";
-import { updateEmployeeRecord } from "@/lib/firebase/hr";
+import { updateEmployeeRecord } from "@/lib/actions/hr.actions";
 import { employeeFormDataForFirestore } from "@/lib/employees/form-payload";
 import { toEmployeeFormValues } from "@/lib/employees/transforms";
 import { useRouter } from "next/navigation";

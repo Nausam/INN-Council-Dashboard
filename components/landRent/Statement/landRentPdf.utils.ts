@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import html2pdf from "html2pdf.js";
 
 function sleep(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms));
@@ -22,6 +21,7 @@ export async function downloadElementAsPdf(el: HTMLElement, filename: string) {
   }
 
   try {
+    const html2pdf = (await import("html2pdf.js")).default;
     const worker = (html2pdf() as any).from(el).set({
       margin: 0,
       pagebreak: {

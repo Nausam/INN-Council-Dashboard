@@ -1,0 +1,554 @@
+"use client";
+
+import SkeletonReportsTable from "@/components/skeletons/SkeletonReportsTable";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { EMPLOYEE_NAMES } from "@/constants";
+import {
+  useCouncilAttendanceMonthQuery,
+  useEmployeesQuery,
+} from "@/hooks/queries";
+import {
+  fetchAllEmployees,
+  fetchAttendanceForMonth,
+} from "@/lib/actions/hr.actions";
+import type { EmployeeDoc } from "@/lib/firebase/types";
+import React, { useMemo, useState } from "react";
+
+/* ======================= Types ======================= */
+
+interface LeaveReport {
+  sickLeave: number;
+  annualLeave: number;
+  certificateSickLeave: number;
+  familyRelatedLeave: number;
+  maternityLeave: number;
+  paternityLeave: number;
+  noPayLeave: number;
+  officialLeave: number;
+  minutesLate: number;
+  totalAbsent: number;
+}
+
+interface EmployeeDetails {
+  name: string;
+  address: string;
+  designation: string;
+  recordCardNumber: string;
+  joinedDate: string;
+  section: string;
+}
+
+type ReportEntry = LeaveReport & EmployeeDetails;
+
+type ReportTuple = [employeeKey: string, entry: ReportEntry];
+
+/** Minimal shape of an employee reference on the attendance document */
+type EmployeeRef =
+  | string
+  | {
+      name: string;
+      address?: string;
+      designation?: string;
+      recordCardNumber?: string;
+      joinedDate?: string;
+      section?: string;
+    };
+
+/** Minimal shape of an attendance document we need here */
+interface AttendanceDoc {
+  date: string;
+  employeeId: EmployeeRef;
+  minutesLate?: number | null;
+  leaveType?: string | null;
+}
+
+/* ======================= Type guards ======================= */
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+function isEmployeeRef(v: unknown): v is EmployeeRef {
+  if (typeof v === "string") return true;
+  return (
+    isObject(v) &&
+    typeof v.name === "string" &&
+    (typeof v.address === "string" || typeof v.address === "undefined") &&
+    (typeof v.designation === "string" ||
+      typeof v.designation === "undefined") &&
+    (typeof v.recordCardNumber === "string" ||
+      typeof v.recordCardNumber === "undefined") &&
+    (typeof v.joinedDate === "string" || typeof v.joinedDate === "undefined") &&
+    (typeof v.section === "string" || typeof v.section === "undefined")
+  );
+}
+
+function isAttendanceDoc(v: unknown): v is AttendanceDoc {
+  return (
+    isObject(v) &&
+    typeof v.date === "string" &&
+    "employeeId" in v &&
+    isEmployeeRef((v as Record<string, unknown>).employeeId) &&
+    (typeof (v as Record<string, unknown>).minutesLate === "number" ||
+      typeof (v as Record<string, unknown>).minutesLate === "undefined" ||
+      (v as Record<string, unknown>).minutesLate === null) &&
+    (typeof (v as Record<string, unknown>).leaveType === "string" ||
+      typeof (v as Record<string, unknown>).leaveType === "undefined" ||
+      (v as Record<string, unknown>).leaveType === null)
+  );
+}
+
+/* ======================= Utilities ======================= */
+
+function normalizeEmployee(
+  ref: EmployeeRef,
+  map?: Map<string, EmployeeDetails>,
+): EmployeeDetails | null {
+  if (typeof ref === "string") {
+    const found = map?.get(ref);
+    return found ? found : null;
+  }
+  return {
+    name: ref.name,
+    address: ref.address ?? "",
+    designation: ref.designation ?? "",
+    recordCardNumber: ref.recordCardNumber ?? "",
+    joinedDate: ref.joinedDate ?? "",
+    section: (ref.section ?? "").trim(),
+  };
+}
+
+function asString(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+const norm = (s: string) => s.trim().toLowerCase();
+const ALLOWED_SECTIONS = new Set([
+  "councillor",
+  "admin",
+  "wdc",
+  "waste management",
+]);
+
+const nameKey = (s: string) =>
+  s
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z]/g, "")
+    .replace(/(.)\1+/g, "$1");
+
+const ORDER_INDEX = new Map(EMPLOYEE_NAMES.map((n, i) => [nameKey(n), i]));
+
+const cmpByEmployeeOrder = (a: ReportTuple, b: ReportTuple) => {
+  const an = a[1].name ?? "";
+  const bn = b[1].name ?? "";
+  const ai = ORDER_INDEX.get(nameKey(an)) ?? Number.MAX_SAFE_INTEGER;
+  const bi = ORDER_INDEX.get(nameKey(bn)) ?? Number.MAX_SAFE_INTEGER;
+  if (ai !== bi) return ai - bi;
+  return an.localeCompare(bn);
+}
+
+function buildFullReport(
+  month: string,
+  raw: unknown,
+  employees: EmployeeDoc[],
+  selectedSection: string,
+  selectedEmployee: string,
+): ReportTuple[] {
+  const employeeMap = new Map<string, EmployeeDetails>(
+    employees.map((e) => [
+      e.$id,
+      {
+        name: e.name,
+        address: asString(e["address"]),
+        designation: asString(e.designation),
+        recordCardNumber: asString(e["recordCardNumber"]),
+        joinedDate: asString(e["joinedDate"]),
+        section: asString(e.section),
+      },
+    ]),
+  );
+
+  const docs: AttendanceDoc[] = Array.isArray(raw)
+    ? raw.filter(isAttendanceDoc)
+    : [];
+
+  const monthRecords = docs.filter((record) => {
+    const recordMonth = new Date(record.date).toISOString().slice(0, 7);
+    if (recordMonth !== month) return false;
+
+    const emp = normalizeEmployee(record.employeeId, employeeMap);
+    if (!emp) return false;
+
+    if (!ALLOWED_SECTIONS.has(norm(emp.section))) return false;
+
+    const sectionMatches =
+      selectedSection === "All" ||
+      norm(emp.section) === norm(selectedSection);
+
+    const employeeMatches =
+      selectedEmployee === "All" || emp.name === selectedEmployee;
+
+    return sectionMatches && employeeMatches;
+  });
+
+  const reportMap = new Map<string, ReportEntry>();
+
+  monthRecords.forEach((record) => {
+    const emp = normalizeEmployee(record.employeeId, employeeMap);
+    if (!emp) return;
+
+    if (!reportMap.has(emp.name)) {
+      reportMap.set(emp.name, {
+        sickLeave: 0,
+        annualLeave: 0,
+        certificateSickLeave: 0,
+        familyRelatedLeave: 0,
+        maternityLeave: 0,
+        paternityLeave: 0,
+        noPayLeave: 0,
+        officialLeave: 0,
+        minutesLate: 0,
+        totalAbsent: 0,
+        ...emp,
+      });
+    }
+
+    const entry = reportMap.get(emp.name)!;
+
+    const leave = (record.leaveType ?? "") as keyof LeaveReport;
+    if (leave && leave in entry) {
+      (entry[leave] as number) += 1;
+      entry.totalAbsent += 1;
+    }
+
+    if (typeof record.minutesLate === "number") {
+      entry.minutesLate += record.minutesLate;
+    }
+  });
+
+  return Array.from(reportMap.entries()).sort(cmpByEmployeeOrder);
+}
+
+/* ======================= Component ======================= */
+
+export function CouncilReportsView({
+  initialEmployees,
+  initialAttendance,
+  month,
+}: {
+  initialEmployees?: Awaited<ReturnType<typeof fetchAllEmployees>>;
+  initialAttendance?: Awaited<ReturnType<typeof fetchAttendanceForMonth>>;
+  month: string;
+}) {
+  const [selectedMonth, setSelectedMonth] = useState<string>(month);
+  const [totalDays, setTotalDays] = useState<number>(0);
+  const [queryMonth, setQueryMonth] = useState<string>(month);
+
+  const [selectedSection, setSelectedSection] = useState<string>("All");
+  const [selectedEmployee, setSelectedEmployee] = useState<string>("All");
+
+  const { data: employees = [] } = useEmployeesQuery({
+    initialData: initialEmployees,
+  });
+  const {
+    data: rawAttendance,
+    isLoading,
+    isFetching,
+    isError,
+    isSuccess,
+    refetch,
+  } = useCouncilAttendanceMonthQuery(queryMonth, {
+    initialData: initialAttendance,
+  });
+
+  const fullReportData = useMemo(() => {
+    if (!queryMonth || rawAttendance === undefined) return [];
+    return buildFullReport(
+      queryMonth,
+      rawAttendance,
+      employees,
+      selectedSection,
+      selectedEmployee,
+    );
+  }, [
+    queryMonth,
+    rawAttendance,
+    employees,
+    selectedSection,
+    selectedEmployee,
+  ]);
+
+  const reportData = useMemo(() => {
+    if (fullReportData.length === 0) return [];
+    return fullReportData
+      .filter(([, stats]) => {
+        const sectionMatches =
+          selectedSection === "All" || stats.section === selectedSection;
+        const employeeMatches =
+          selectedEmployee === "All" || stats.name === selectedEmployee;
+        return sectionMatches && employeeMatches;
+      })
+      .sort(cmpByEmployeeOrder);
+  }, [fullReportData, selectedSection, selectedEmployee]);
+
+  const reportAvailable =
+    Boolean(queryMonth) && isSuccess && !isError && fullReportData.length > 0;
+  const loading = Boolean(queryMonth) && (isLoading || isFetching);
+
+  const handleGenerateReport = () => {
+    if (queryMonth === selectedMonth) {
+      void refetch();
+    } else {
+      setQueryMonth(selectedMonth);
+    }
+  };
+
+  const downloadCSV = () => {
+    if (reportData.length === 0) return;
+
+    const headers = [
+      "Name",
+      "Address",
+      "Designation",
+      "Record Card Number",
+      "Joined Date",
+      "Sick Leave",
+      "Certificate Leave",
+      "Annual Leave",
+      "Official Leave",
+      "Family Related Leave",
+      "Maternity & Paternity Leave",
+      "Late Minutes",
+      "Total Absent Days",
+      "Total Days Attended",
+      "Total Working Days",
+    ];
+
+    const rows = reportData.map(([, stats]) => {
+      const joined = stats.joinedDate
+        ? new Date(stats.joinedDate).toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          })
+        : "";
+
+      return [
+        stats.name,
+        stats.address,
+        stats.designation,
+        stats.recordCardNumber,
+        `"${joined}"`,
+        `'${stats.sickLeave || 0}`,
+        `'${stats.certificateSickLeave || 0}`,
+        `'${stats.annualLeave || 0}`,
+        `'${stats.officialLeave || 0}`,
+        `'${stats.familyRelatedLeave || 0}`,
+        `'${stats.maternityLeave || 0}`,
+        `'${stats.minutesLate || 0}`,
+        `'${stats.totalAbsent || 0}`,
+        `'${Math.max(0, totalDays - (stats.totalAbsent || 0))}`,
+        `'${totalDays}`,
+      ];
+    });
+
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `Attendance_Report_${selectedMonth}.csv`;
+    a.click();
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto p-8">
+      <h1 className="text-3xl font-bold mb-5 mt-10">
+        Monthly Attendance Report
+      </h1>
+
+      <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div>
+          <p className="text-sm font-medium text-gray-600 mb-2">Select Month</p>
+          <input
+            type="month"
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="border p-2 rounded-md w-full h-12"
+          />
+        </div>
+
+        <div>
+          <p className="text-sm font-medium text-gray-600 mb-2">
+            Enter Total Working Days
+          </p>
+          <input
+            type="number"
+            value={totalDays}
+            onChange={(e) => setTotalDays(Number(e.target.value) || 0)}
+            className="border p-2 rounded-md w-full h-12"
+            placeholder="Total Days"
+          />
+        </div>
+
+        <div>
+          <p className="text-sm font-medium text-gray-600 mb-2">
+            Select Employee
+          </p>
+          <select
+            value={selectedEmployee}
+            onChange={(e) => setSelectedEmployee(e.target.value)}
+            className="border p-2 rounded-md w-full h-12"
+          >
+            <option value="All">All Employees</option>
+            {EMPLOYEE_NAMES.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <p className="text-sm font-medium text-gray-600 mb-2">
+            Select Section
+          </p>
+          <select
+            value={selectedSection}
+            onChange={(e) => setSelectedSection(e.target.value)}
+            className="border p-2 rounded-md w-full h-12"
+          >
+            <option value="All">All Sections</option>
+            <option value="Councillor">Councillor</option>
+            <option value="Admin">Admin</option>
+            <option value="WDC">WDC</option>
+            <option value="Waste Management">Waste Management</option>
+          </select>
+        </div>
+
+        <div className="flex lg:col-span-2 xl:col-span-4 gap-4">
+          <button
+            onClick={handleGenerateReport}
+            className="custom-button h-12 w-full lg:w-auto"
+          >
+            Generate Report
+          </button>
+
+          <button
+            onClick={downloadCSV}
+            disabled={!reportAvailable}
+            className={`custom-button h-12 w-full lg:w-auto ${
+              !reportAvailable ? "bg-gray-300 cursor-not-allowed" : ""
+            }`}
+          >
+            Download CSV
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <SkeletonReportsTable />
+      ) : !reportAvailable ? (
+        <p>No attendance records found for the selected month.</p>
+      ) : (
+        <div id="report" className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow className="border border-gray-400 bg-slate-100/50">
+                <TableHead className="table-head">#</TableHead>
+                <TableHead className="table-head">Name</TableHead>
+                <TableHead className="table-head">Address</TableHead>
+                <TableHead className="table-head">Designation</TableHead>
+                <TableHead className="table-head">Record Card Number</TableHead>
+                <TableHead className="table-head">Joined Date</TableHead>
+                <TableHead className="table-head">Sick Leave</TableHead>
+                <TableHead className="table-head">Certificate Leave</TableHead>
+                <TableHead className="table-head">Annual Leave</TableHead>
+                <TableHead className="table-head">Official Leave</TableHead>
+                <TableHead className="table-head">
+                  Family Related Leave
+                </TableHead>
+                <TableHead className="table-head">
+                  Maternity & Paternity
+                </TableHead>
+                <TableHead className="table-head">Late Minutes</TableHead>
+                <TableHead className="table-head">Total Absent Days</TableHead>
+                <TableHead className="table-head">
+                  Total Days Attended
+                </TableHead>
+                <TableHead className="table-head">Total Working Days</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="border border-gray-400">
+              {reportData.map(([_, stats], index) => (
+                <TableRow key={stats.name} className="border-r border-gray-300">
+                  <TableCell className="text-center border-r">
+                    {index + 1}
+                  </TableCell>
+                  <TableCell className="table-cell-rotate">
+                    {stats.name}
+                  </TableCell>
+                  <TableCell className="table-cell-rotate">
+                    {stats.address}
+                  </TableCell>
+                  <TableCell className="table-cell-rotate">
+                    {stats.designation}
+                  </TableCell>
+                  <TableCell className="table-cell-rotate">
+                    {stats.recordCardNumber}
+                  </TableCell>
+                  <TableCell className="table-cell-rotate">
+                    {stats.joinedDate
+                      ? new Date(stats.joinedDate).toLocaleDateString("en-US", {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                        })
+                      : ""}
+                  </TableCell>
+                  <TableCell className="table-cell">
+                    {stats.sickLeave}
+                  </TableCell>
+                  <TableCell className="table-cell">
+                    {stats.certificateSickLeave}
+                  </TableCell>
+                  <TableCell className="table-cell">
+                    {stats.annualLeave}
+                  </TableCell>
+                  <TableCell className="table-cell">
+                    {stats.officialLeave}
+                  </TableCell>
+                  <TableCell className="table-cell">
+                    {stats.familyRelatedLeave}
+                  </TableCell>
+                  <TableCell className="table-cell">
+                    {stats.maternityLeave}
+                  </TableCell>
+                  <TableCell className="table-cell">
+                    {stats.minutesLate}
+                  </TableCell>
+                  <TableCell className="table-cell">
+                    {stats.totalAbsent}
+                  </TableCell>
+                  <TableCell className="table-cell">
+                    {Math.max(0, totalDays - stats.totalAbsent)}
+                  </TableCell>
+                  <TableCell className="text-center border-r border-gray-400">
+                    {totalDays}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,5 +1,5 @@
 import type { AttendanceDoc, EmployeeDoc, MosqueAttendanceDoc } from "@/lib/firebase/types";
-import type { EmployeeLeaveCalendarEntry } from "@/lib/firebase/hr";
+import type { EmployeeLeaveCalendarEntry } from "@/lib/firebase/types";
 import {
   ADDITIVE_LEAVE_KEYS,
   LEAVE_TOTAL_ALLOWANCE,

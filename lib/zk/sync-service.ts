@@ -1,14 +1,13 @@
 import { getRequiredZkConfig, getZkConfig, publicZkConfig } from "@/lib/zk/config";
 import { withZkClient, ZkDeviceClient } from "@/lib/zk/client";
+import { importZktecoPunches } from "@/lib/attendance-sync/import-zkteco";
 import {
   getLatestPunch,
   getZkStatus,
   listRecentPunches,
   loadEmployeePunchMap,
   updateZkStatus,
-  writePunchIfNew,
 } from "@/lib/zk/punch-repository";
-import { normalizePunch, pickPunchTimestampIso } from "@/lib/zk/normalize";
 import type { ZkAttendanceRecord, ZkInfo } from "node-zklib";
 
 export type ZkSyncResult = {
@@ -32,13 +31,6 @@ export type ZkConnectionTestResult = {
 
 function isIsoDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
-}
-
-function inDateRange(timestamp: string, from?: string, to?: string): boolean {
-  const day = timestamp.slice(0, 10);
-  if (from && day < from) return false;
-  if (to && day > to) return false;
-  return true;
 }
 
 export function assertSyncDateRange(from?: string, to?: string): void {
@@ -125,58 +117,22 @@ export async function writeZkAttendanceRecords(
   const config = getRequiredZkConfig();
   assertSyncDateRange(options.from, options.to);
 
-  const employees = await loadEmployeePunchMap();
-  const deviceSn = options.deviceSerial || "unknown";
-  let valid = 0;
-  let written = 0;
-  let skipped = 0;
-  let unmatched = 0;
-
-  for (const record of records) {
-    const timestamp = pickPunchTimestampIso(record, config.timezone);
-    if (!timestamp || !inDateRange(timestamp, options.from, options.to)) {
-      continue;
-    }
-
-    const deviceUserId = String(
-      record.deviceUserId ??
-        record.userId ??
-        record.empId ??
-        record.enrollNumber ??
-        record.uid ??
-        record.id ??
-        record.userSn ??
-        "",
-    ).trim();
-    const employee = deviceUserId ? employees.get(deviceUserId) : null;
-    const punch = normalizePunch(record, {
-      deviceSn,
-      employee,
-      timezone: config.timezone,
-    });
-
-    if (!punch) continue;
-
-    valid += 1;
-    if (!employee) unmatched += 1;
-
-    const result = await writePunchIfNew(punch);
-    if (result.written) written += 1;
-    else skipped += 1;
-  }
-
-  if (written > 0) {
-    await updateZkStatus({ lastWriteAt: new Date().toISOString() });
-  }
-
-  return {
-    scanned: records.length,
-    valid,
-    written,
-    skipped,
-    unmatched,
+  const result = await importZktecoPunches({
+    records,
+    deviceSerial: options.deviceSerial,
     from: options.from,
     to: options.to,
+    timezone: config.timezone,
+  });
+
+  return {
+    scanned: result.scanned,
+    valid: result.valid,
+    written: result.written,
+    skipped: result.skipped,
+    unmatched: result.unmatched,
+    from: result.from,
+    to: result.to,
   };
 }
 

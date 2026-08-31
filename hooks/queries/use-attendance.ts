@@ -13,11 +13,12 @@ import {
   fetchAttendanceAfterDate,
   fetchAttendanceForMonth,
   fetchMosqueAttendanceForMonth,
+  fetchMosqueAttendanceForPeriod,
   fetchMosqueDailyAttendanceForMonth,
   fetchPrayerTimesForMonth,
   fetchPrayerTimesByDate,
-} from "@/lib/firebase/hr";
-import { useQuery } from "@tanstack/react-query";
+} from "@/lib/actions/hr.actions";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 export function useCouncilAttendanceQuery(date: string) {
   return useQuery({
@@ -29,6 +30,7 @@ export function useCouncilAttendanceQuery(date: string) {
     },
     enabled: Boolean(date),
     staleTime: QUERY_STALE_TIME_ATTENDANCE,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -42,15 +44,21 @@ export function useMosqueAttendanceQuery(date: string) {
     },
     enabled: Boolean(date),
     staleTime: QUERY_STALE_TIME_ATTENDANCE,
+    placeholderData: keepPreviousData,
   });
 }
 
-export function useCouncilAttendanceMonthQuery(month: string) {
+export function useCouncilAttendanceMonthQuery(
+  month: string,
+  options?: { initialData?: Awaited<ReturnType<typeof fetchAttendanceForMonth>> },
+) {
   return useQuery({
     queryKey: queryKeys.attendance.councilMonth(month),
     queryFn: () => fetchAttendanceForMonth(month),
     enabled: Boolean(month),
     staleTime: QUERY_STALE_TIME_ATTENDANCE,
+    placeholderData: keepPreviousData,
+    initialData: options?.initialData,
   });
 }
 
@@ -60,6 +68,7 @@ export function useCouncilAttendanceAfterDateQuery(date: string) {
     queryFn: () => fetchAttendanceAfterDate(date),
     enabled: Boolean(date),
     staleTime: QUERY_STALE_TIME_ATTENDANCE,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -69,6 +78,24 @@ export function useMosqueAttendanceMonthQuery(month: string) {
     queryFn: () => fetchMosqueAttendanceForMonth(month),
     enabled: Boolean(month),
     staleTime: QUERY_STALE_TIME_ATTENDANCE,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useMosqueAttendancePeriodQuery(
+  startDate: string,
+  endDate: string,
+  options?: {
+    initialData?: Awaited<ReturnType<typeof fetchMosqueAttendanceForPeriod>>;
+  },
+) {
+  return useQuery({
+    queryKey: queryKeys.attendance.mosquePeriod(startDate, endDate),
+    queryFn: () => fetchMosqueAttendanceForPeriod(startDate, endDate),
+    enabled: Boolean(startDate) && Boolean(endDate),
+    staleTime: QUERY_STALE_TIME_ATTENDANCE,
+    placeholderData: keepPreviousData,
+    initialData: options?.initialData,
   });
 }
 
@@ -81,6 +108,7 @@ export function useMosqueDailyAttendanceMonthQuery(
     queryFn: () => fetchMosqueDailyAttendanceForMonth(month, employeeId),
     enabled: Boolean(month) && Boolean(employeeId),
     staleTime: QUERY_STALE_TIME_ATTENDANCE,
+    placeholderData: keepPreviousData,
   });
 }
 

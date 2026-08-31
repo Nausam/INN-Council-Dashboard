@@ -3,7 +3,7 @@
 import EmployeeForm, { EmployeeFormData } from "@/components/EmployeeForm";
 import { EmptyState, PageShell } from "@/components/design-system";
 import { employeeFormDataForFirestore } from "@/lib/employees/form-payload";
-import { createEmployeeRecord } from "@/lib/firebase/hr";
+import { createEmployeeRecord } from "@/lib/actions/hr.actions";
 import { useUser } from "@/Providers/UserProvider";
 import { ShieldAlert } from "lucide-react";
 import React, { useState } from "react";

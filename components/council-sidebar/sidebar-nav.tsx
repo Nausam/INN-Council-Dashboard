@@ -4,10 +4,8 @@ import {
   councilSidebarNav,
   type SidebarNavItem,
 } from "@/lib/navigation/sidebar-config";
-import { prefetchRouteQueries } from "@/lib/query/prefetch";
 import { sidebar } from "@/lib/design-tokens";
 import { cn } from "@/lib/utils";
-import { useQueryClient } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -62,7 +60,6 @@ type NavSectionProps = {
   isOpen: boolean;
   onToggle: () => void;
   onNavigate: () => void;
-  onPrefetch: (url: string) => void;
 };
 
 const NavSection = React.memo(function NavSection({
@@ -72,7 +69,6 @@ const NavSection = React.memo(function NavSection({
   isOpen,
   onToggle,
   onNavigate,
-  onPrefetch,
 }: NavSectionProps) {
   const Icon = item.icon;
   const active = isSectionActive(pathname, item);
@@ -130,8 +126,6 @@ const NavSection = React.memo(function NavSection({
             href={item.items![0]!.url}
             className={rowClass}
             title={item.title}
-            onMouseEnter={() => onPrefetch(item.items![0]!.url)}
-            onFocus={() => onPrefetch(item.items![0]!.url)}
             onClick={onNavigate}
           >
             {content}
@@ -146,8 +140,6 @@ const NavSection = React.memo(function NavSection({
           href={item.url}
           className={rowClass}
           title={iconOnly ? item.title : undefined}
-          onMouseEnter={() => onPrefetch(item.url)}
-          onFocus={() => onPrefetch(item.url)}
           onClick={onNavigate}
         >
           {content}
@@ -167,8 +159,6 @@ const NavSection = React.memo(function NavSection({
                   <li key={sub.title} className="council-subnav-item">
                     <Link
                       href={sub.url}
-                      onMouseEnter={() => onPrefetch(sub.url)}
-                      onFocus={() => onPrefetch(sub.url)}
                       onClick={onNavigate}
                       className={cn(
                         sidebar.subnavItem,
@@ -198,24 +188,9 @@ const NavSection = React.memo(function NavSection({
 
 export function CouncilSidebarNav() {
   const pathname = usePathname();
-  const queryClient = useQueryClient();
   const { collapsed, isMobile, setMobileOpen } = useCouncilSidebar();
   const [open, setOpen] = React.useState<Record<string, boolean>>({});
-  const [enterPhase, setEnterPhase] = React.useState<"idle" | "active" | "done">(
-    "idle",
-  );
   const iconOnly = collapsed && !isMobile;
-
-  React.useEffect(() => {
-    const frame = requestAnimationFrame(() => setEnterPhase("active"));
-    return () => cancelAnimationFrame(frame);
-  }, []);
-
-  React.useEffect(() => {
-    if (enterPhase !== "active") return;
-    const timer = window.setTimeout(() => setEnterPhase("done"), 720);
-    return () => window.clearTimeout(timer);
-  }, [enterPhase]);
 
   React.useEffect(() => {
     setOpen((prev) => {
@@ -241,22 +216,8 @@ export function CouncilSidebarNav() {
     if (isMobile) setMobileOpen(false);
   }, [isMobile, setMobileOpen]);
 
-  const prefetchRoute = React.useCallback(
-    (url: string) => {
-      if (!url || url === "#") return;
-      void prefetchRouteQueries(queryClient, url);
-    },
-    [queryClient],
-  );
-
   return (
-    <nav
-      className={cn(
-        "council-nav-enter space-y-0.5 px-2 py-3",
-        enterPhase === "active" && "council-nav-enter-active",
-        enterPhase === "done" && "council-nav-enter-done",
-      )}
-    >
+    <nav className="space-y-0.5 px-2 py-3">
       {councilSidebarNav.map((item) => (
         <NavSection
           key={item.title}
@@ -268,7 +229,6 @@ export function CouncilSidebarNav() {
             setOpen((prev) => ({ ...prev, [item.title]: !prev[item.title] }))
           }
           onNavigate={closeMobile}
-          onPrefetch={prefetchRoute}
         />
       ))}
     </nav>

@@ -8,9 +8,14 @@ export type LandRentOverviewUIRow = LandRentOverviewRow & {
   agreementNumber?: string | null;
 
   monthlyRent?: number | null;
+  sizeSqft?: number | null;
+  rateLariPerSqft?: number | null;
+  paymentDueDay?: number | null;
+  fineLariPerDay?: number | null;
 
   startDate?: string | null;
   endDate?: string | null;
+  releasedDate?: string | null;
   lastPaymentDate?: string | null;
 
   outstandingNow?: number | null;

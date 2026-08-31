@@ -1,9 +1,10 @@
 "use client";
 
-import { useUser as useClerkUser } from "@clerk/nextjs";
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { useAuth, useUser as useClerkUser } from "@clerk/nextjs";
+import { createContext, useContext, useMemo } from "react";
 
-import { getAuthProfile, type AuthProfile } from "@/lib/actions/user.actions";
+import type { AuthProfile } from "@/lib/auth/session-claims";
+import { isAdminFromSessionClaims } from "@/lib/auth/session-claims";
 
 const UserContext = createContext({
   currentUser: null as AuthProfile | null,
@@ -13,38 +14,36 @@ const UserContext = createContext({
 
 export const useUser = () => useContext(UserContext);
 
+function readAdminFromUser(user: {
+  publicMetadata?: unknown;
+  privateMetadata?: unknown;
+  unsafeMetadata?: unknown;
+} | null): boolean | null {
+  if (!user) return null;
+
+  for (const value of [
+    user.publicMetadata,
+    user.privateMetadata,
+    user.unsafeMetadata,
+  ]) {
+    if (!value || typeof value !== "object") continue;
+    const role = (value as Record<string, unknown>).role;
+    if (role === "admin") return true;
+    if (typeof role === "string") return false;
+  }
+
+  return null;
+}
+
 export const UserProvider = ({ children }: { children: React.ReactNode }) => {
   const { user: clerkUser, isLoaded, isSignedIn } = useClerkUser();
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [adminChecked, setAdminChecked] = useState(false);
+  const auth = useAuth() as { sessionClaims?: Record<string, unknown> | null };
 
-  useEffect(() => {
-    if (!isLoaded) return;
-
-    if (!isSignedIn || !clerkUser) {
-      setIsAdmin(false);
-      setAdminChecked(true);
-      return;
-    }
-
-    let cancelled = false;
-    setAdminChecked(false);
-
-    getAuthProfile()
-      .then((profile) => {
-        if (!cancelled) setIsAdmin(Boolean(profile?.isAdmin));
-      })
-      .catch(() => {
-        if (!cancelled) setIsAdmin(false);
-      })
-      .finally(() => {
-        if (!cancelled) setAdminChecked(true);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isLoaded, isSignedIn, clerkUser?.id]);
+  const isAdmin = useMemo(() => {
+    const fromClaims = isAdminFromSessionClaims(auth.sessionClaims ?? null);
+    if (fromClaims) return true;
+    return readAdminFromUser(clerkUser ?? null) === true;
+  }, [auth.sessionClaims, clerkUser]);
 
   const currentUser = useMemo((): AuthProfile | null => {
     if (!clerkUser) return null;
@@ -68,7 +67,7 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, [clerkUser, isAdmin]);
 
-  const loading = !isLoaded || (Boolean(clerkUser) && !adminChecked);
+  const loading = !isLoaded || (Boolean(isSignedIn) && !clerkUser);
 
   return (
     <UserContext.Provider value={{ currentUser, isAdmin, loading }}>

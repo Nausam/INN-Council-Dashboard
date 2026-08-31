@@ -11,6 +11,7 @@ export {
   useCouncilAttendanceMonthQuery,
   useCouncilAttendanceAfterDateQuery,
   useMosqueAttendanceMonthQuery,
+  useMosqueAttendancePeriodQuery,
   useMosqueDailyAttendanceMonthQuery,
   usePrayerTimesMonthQuery,
   usePrayerTimesByDateQuery,

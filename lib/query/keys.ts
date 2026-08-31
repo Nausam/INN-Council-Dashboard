@@ -14,6 +14,8 @@ export const queryKeys = {
       ["attendance", "council", "after", date] as const,
     mosqueMonth: (month: string) =>
       ["attendance", "mosque", "month", month] as const,
+    mosquePeriod: (startDate: string, endDate: string) =>
+      ["attendance", "mosque", "period", startDate, endDate] as const,
     mosqueDailyMonth: (month: string) =>
       ["attendance", "mosque", "daily", month] as const,
   },

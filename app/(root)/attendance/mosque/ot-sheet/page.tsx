@@ -17,6 +17,7 @@ import {
   useEmployeesQuery,
   useMosqueDailyAttendanceMonthQuery,
 } from "@/hooks/queries";
+import type { MosqueAttendanceDoc } from "@/lib/firebase/types";
 
 type HHMM = { h: number | ""; m: number | "" };
 
@@ -29,6 +30,24 @@ type DayTimes = {
 };
 
 type GroupKey = "fajr" | "dhuhr" | "asr" | "maghrib" | "isha";
+
+const ATTENDANCE_FIELDS = {
+  fajr: { time: "fathisSignInTime", late: "fathisMinutesLate" },
+  dhuhr: { time: "mendhuruSignInTime", late: "mendhuruMinutesLate" },
+  asr: { time: "asuruSignInTime", late: "asuruMinutesLate" },
+  maghrib: { time: "maqribSignInTime", late: "maqribMinutesLate" },
+  isha: { time: "ishaSignInTime", late: "ishaMinutesLate" },
+} as const;
+
+type RecordedPrayerTiming = {
+  time: HHMM;
+  isLate: boolean;
+};
+
+type RecordedAttendanceByIso = Record<
+  string,
+  Partial<Record<GroupKey, RecordedPrayerTiming>>
+>;
 
 const GROUPS: { key: GroupKey; label: string }[] = [
   { key: "fajr", label: "ފަތިސް ނަމާދު" },
@@ -104,14 +123,6 @@ function formatHHMM(v: HHMM): string {
   return `${v.h}:${pad2(Number(v.m))}`;
 }
 
-function applyMinuteOffset(v: HHMM, deductMinutes: number): HHMM {
-  if (v.h === "" || v.m === "") return v;
-  const total = Number(v.h) * 60 + Number(v.m);
-  let next = total - deductMinutes;
-  next = ((next % 1440) + 1440) % 1440;
-  return { h: Math.floor(next / 60), m: next % 60 };
-}
-
 function isoForDay(year: number, month0: number, day: number) {
   return `${year}-${pad2(month0 + 1)}-${pad2(day)}`;
 }
@@ -123,6 +134,46 @@ function parseHHMM(s: string | null | undefined): HHMM {
   const m = Number(mm);
   if (!Number.isFinite(h) || !Number.isFinite(m)) return { h: "", m: "" };
   return { h, m };
+}
+
+function parseAttendanceTime(value: string | null | undefined): HHMM {
+  if (!value) return { h: "", m: "" };
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return { h: "", m: "" };
+
+  return {
+    h: date.getUTCHours(),
+    m: date.getUTCMinutes(),
+  };
+}
+
+function buildRecordedAttendanceByIso(
+  records: MosqueAttendanceDoc[],
+): RecordedAttendanceByIso {
+  const map: RecordedAttendanceByIso = {};
+
+  for (const record of records) {
+    const iso = String(record.date ?? "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) continue;
+
+    const prayerTimings: Partial<Record<GroupKey, RecordedPrayerTiming>> = {};
+
+    for (const group of GROUPS) {
+      const fields = ATTENDANCE_FIELDS[group.key];
+      const rawTime = record[fields.time];
+      if (!rawTime) continue;
+
+      prayerTimings[group.key] = {
+        time: parseAttendanceTime(rawTime),
+        isLate: Number(record[fields.late] ?? 0) > 0,
+      };
+    }
+
+    map[iso] = prayerTimings;
+  }
+
+  return map;
 }
 
 function englishDateLabel(year: number, month0: number, day: number) {
@@ -359,28 +410,37 @@ export default function Page() {
         setTimesError(null);
         setTimesByDate({});
 
-        const results = await mapWithConcurrency(rangeDates, 6, async (d) => {
-          const res = await fetch(
-            `/api/innamaadhoo?date=${encodeURIComponent(d.iso)}`,
-            { cache: "no-store", signal: controller.signal },
-          );
-          if (!res.ok) return { iso: d.iso, data: null as ApiPayload | null };
-          const json = (await res.json()) as ApiPayload;
-          return { iso: d.iso, data: json };
-        });
+        const months = Array.from(
+          new Set(rangeDates.map((d) => d.iso.slice(0, 7))),
+        );
+        const payloads = await Promise.all(
+          months.map(async (monthKey) => {
+            const res = await fetch(
+              `/api/innamaadhoo?month=${encodeURIComponent(monthKey)}`,
+              { cache: "no-store", signal: controller.signal },
+            );
+            if (!res.ok) return {} as Record<string, ApiPayload | null>;
+            const json = (await res.json()) as {
+              days?: Record<string, ApiPayload | null>;
+            };
+            return json.days ?? {};
+          }),
+        );
 
         if (!alive) return;
 
         const map: Record<string, DayTimes> = {};
-        for (const r of results) {
-          if (!r.data) continue;
-          map[r.iso] = {
-            fajr: parseHHMM(r.data.times.fathisTime),
-            dhuhr: parseHHMM(r.data.times.mendhuruTime),
-            asr: parseHHMM(r.data.times.asuruTime),
-            maghrib: parseHHMM(r.data.times.maqribTime),
-            isha: parseHHMM(r.data.times.ishaTime),
-          };
+        for (const days of payloads) {
+          for (const [iso, data] of Object.entries(days)) {
+            if (!data) continue;
+            map[iso] = {
+              fajr: parseHHMM(data.times.fathisTime),
+              dhuhr: parseHHMM(data.times.mendhuruTime),
+              asr: parseHHMM(data.times.asuruTime),
+              maghrib: parseHHMM(data.times.maqribTime),
+              isha: parseHHMM(data.times.ishaTime),
+            };
+          }
         }
         setTimesByDate(map);
       } catch (e: any) {
@@ -413,6 +473,7 @@ export default function Page() {
     isFirstOfDay: boolean;
     daySpan: number;
     startTime: HHMM;
+    startTimeIsLate: boolean;
     endTime: HHMM;
     totalH: number;
     totalM: number;
@@ -460,6 +521,15 @@ export default function Page() {
     [leaveAttendanceA, leaveAttendanceB],
   );
 
+  const recordedAttendanceByIso = useMemo(
+    () =>
+      buildRecordedAttendanceByIso([
+        ...leaveAttendanceA,
+        ...leaveAttendanceB,
+      ]),
+    [leaveAttendanceA, leaveAttendanceB],
+  );
+
   const leaveDaysInRange = useMemo(
     () => sortedHolidayDates.filter((d) => leaveByDate[d.iso]).length,
     [sortedHolidayDates, leaveByDate],
@@ -500,6 +570,7 @@ export default function Page() {
           isFirstOfDay: true,
           daySpan: 1,
           startTime: { h: "", m: "" },
+          startTimeIsLate: false,
           endTime: { h: "", m: "" },
           totalH: 0,
           totalM: 0,
@@ -521,7 +592,8 @@ export default function Page() {
       includedPrayers.forEach((g, idx) => {
         counter += 1;
         const endTime: HHMM = t ? t[g.key] : { h: "", m: "" };
-        const startTime = applyMinuteOffset(endTime, otMinutes);
+        const recordedTiming = recordedAttendanceByIso[d.iso]?.[g.key];
+        const startTime = recordedTiming?.time ?? { h: "", m: "" };
         rows.push({
           runningNo: counter,
           iso: d.iso,
@@ -534,6 +606,7 @@ export default function Page() {
           isFirstOfDay: idx === 0,
           daySpan: includedPrayers.length,
           startTime,
+          startTimeIsLate: recordedTiming?.isLate ?? false,
           endTime,
           totalH: Math.floor(otMinutes / 60),
           totalM: otMinutes % 60,
@@ -544,7 +617,14 @@ export default function Page() {
       });
     }
     return rows;
-  }, [sortedHolidayDates, timesByDate, otMinutes, emptyRules, leaveByDate]);
+  }, [
+    sortedHolidayDates,
+    timesByDate,
+    otMinutes,
+    emptyRules,
+    leaveByDate,
+    recordedAttendanceByIso,
+  ]);
 
   // ===== Range filtering for View / Print =====
   // Range A = 11th of prev month → end of prev month
@@ -738,7 +818,9 @@ export default function Page() {
                   {r.prayerLabel}
                 </TableCell>
 
-                <TableCell className={`${td} text-[16px] font-medium`}>
+                <TableCell
+                  className={`${td} ${r.startTimeIsLate ? "attendance-late text-red-600" : ""} text-[16px] font-medium`}
+                >
                   {formatHHMM(r.startTime)}
                 </TableCell>
                 <TableCell className={`${td} relative p-0`}>
@@ -938,6 +1020,12 @@ export default function Page() {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
+
+          .attendance-late {
+            color: #dc2626 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
         }
 
         #print-area {
@@ -1008,11 +1096,11 @@ export default function Page() {
           </div>
         ) : leaveStatusReady && leaveLookupLoading ? (
           <div className="mt-2 text-right text-sm text-neutral-600">
-            Loading leave records...
+            Loading attendance and leave records...
           </div>
         ) : leaveStatusReady && !leaveLookupLoading && !employeeId && empId.trim() ? (
           <div className="mt-2 text-right text-sm text-amber-700">
-            Employee not found for ID {empId.trim()} — leave status unavailable.
+            Employee not found for ID {empId.trim()} — attendance and leave status unavailable.
           </div>
         ) : leaveStatusReady && !leaveLookupLoading && leaveDaysInRange > 0 ? (
           <div className="mt-2 text-right text-sm text-rose-700">

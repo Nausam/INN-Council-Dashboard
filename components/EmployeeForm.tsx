@@ -15,7 +15,7 @@ import { typography } from "@/lib/design-tokens";
 import {
   createEmployeeRecord,
   updateEmployeeRecord,
-} from "@/lib/firebase/hr";
+} from "@/lib/actions/hr.actions";
 import { CreditSchemesFormSection } from "@/components/employees/CreditSchemesFormSection";
 import type { CreditSchemeEntry } from "@/lib/employees/credit-schemes";
 import {

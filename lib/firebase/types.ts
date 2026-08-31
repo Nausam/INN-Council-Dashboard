@@ -40,12 +40,69 @@ export type OvertimeRequest = LegacyDocument & {
   actionBy?: string;
 };
 
+export type EmployeeAttendanceSyncConfig = {
+  enabled: boolean;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  zkteco?: {
+    enabled: boolean;
+    userId: string;
+  };
+  etime?: {
+    enabled: boolean;
+    employeeCode: string;
+    departmentId: string;
+  };
+};
+
+export type MosquePrayerField =
+  | "fathisSignInTime"
+  | "mendhuruSignInTime"
+  | "asuruSignInTime"
+  | "maqribSignInTime"
+  | "ishaSignInTime";
+
+export type MosqueAttendanceAutomation = {
+  version: 1;
+  lastReconciledAt: string | null;
+  manualOverridePrayers: MosquePrayerField[];
+  prayerPunchRefs: Partial<
+    Record<
+      MosquePrayerField,
+      {
+        punchLogId: string;
+        source: "zkteco" | "etime";
+        timestampUtc: string;
+      }
+    >
+  >;
+};
+
+export type EmployeeLeaveCalendarEntry = {
+  $id: string;
+  employeeId: string;
+  date: string;
+  leaveType: string;
+  leaveUsedAfter?: number | null;
+  leaveRemainingAfter?: number | null;
+  source: "Council" | "Mosque";
+};
+
+export type SlimEmployee = {
+  $id: string;
+  name: string;
+  designation?: string;
+  section?: string;
+  recordCardNumber?: string;
+};
+
 export type EmployeeDoc = LegacyDocument & {
   name: string;
   designation?: string;
   section?: string;
   deviceUserId?: string;
   recordCardNumber?: string;
+  attendanceSync?: EmployeeAttendanceSyncConfig;
   joinedDate?: string;
   address?: string;
   sickLeave?: number;
@@ -113,7 +170,26 @@ export type MosqueAttendanceDoc = LegacyDocument & {
   leaveRemainingAfter?: number | null;
   leaveType: string | null;
   changed?: boolean;
+  automation?: MosqueAttendanceAutomation;
   [key: string]: unknown;
+};
+
+export type AttendancePunchDoc = {
+  source: "zkteco" | "etime";
+  sourceRecordId: string;
+  sourceDeviceId: string | null;
+  sourceEmployeeId: string;
+  employeeId: string | null;
+  timestampUtc: string;
+  localDate: string;
+  localTime: string;
+  timezone: "Asia/Maldives";
+  eligible: boolean;
+  ignoredReason: string | null;
+  lastSeenAt: string;
+  voidedAt: string | null;
+  importedAt: string;
+  dedupeKey: string;
 };
 
 export type PrayerTimesDoc = LegacyDocument & {
@@ -178,11 +254,13 @@ export type LandLeaseDoc = LegacyDocument & {
   endDate: string;
   agreementNumber: string;
   releasedDate?: string | null;
+  lastPaymentDate?: string | null;
   rateLariPerSqft: number;
   paymentDueDay?: number;
   fineLariPerDay?: number;
   agreementPdfFileId?: string | null;
   agreementPdfFilename?: string | null;
+  fixedAdjustmentRowsJson?: string | null;
   status?: string | null;
 };
 
@@ -224,7 +302,7 @@ export type LandPaymentDoc = LegacyDocument & {
   method?: string;
   note?: string;
   receivedBy?: string;
-  slipFileId: string;
-  slipFileName: string;
+  slipFileId?: string | null;
+  slipFileName?: string | null;
   slipMime?: string | null;
 };

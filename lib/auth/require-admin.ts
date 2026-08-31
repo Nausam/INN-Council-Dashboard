@@ -1,24 +1,14 @@
-import { auth, currentUser } from "@clerk/nextjs/server";
-
-import { isAnyEmailAllowed } from "@/lib/auth/allowed-emails";
+import { getSessionAuthProfile } from "@/lib/auth/session-profile";
 
 export async function requireAdmin() {
-  const { userId } = await auth();
-  if (!userId) {
+  const profile = await getSessionAuthProfile();
+  if (!profile) {
     throw new Error("Unauthorized");
   }
-
-  const user = await currentUser();
-  if (!user) {
-    throw new Error("Unauthorized");
-  }
-
-  const emails = user.emailAddresses.map((email) => email.emailAddress);
-  if (!isAnyEmailAllowed(emails) || user.privateMetadata?.role !== "admin") {
+  if (!profile.isAdmin) {
     throw new Error("Forbidden");
   }
-
-  return user;
+  return profile;
 }
 
 export function adminErrorStatus(error: unknown): number {

@@ -3,7 +3,7 @@
 import { CouncilDatePicker, CouncilTimePicker } from "@/components/design-system";
 import { Button } from "@/components/ui/button";
 import { useQueryInvalidation } from "@/hooks/queries";
-import { savePrayerTimes } from "@/lib/firebase/hr";
+import { savePrayerTimes } from "@/lib/actions/hr.actions";
 import { cn } from "@/lib/utils";
 import { Clock, Moon } from "lucide-react";
 import React, { useState } from "react";

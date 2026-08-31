@@ -14,7 +14,9 @@ import {
   fetchLandStatementsWithDetails,
   previewLandRentStatement,
   recalculateLandStatementFines,
+  updateLandRentFixedAdjustmentRows,
   type LandLeaseOption,
+  type LandRentFixedAdjustmentRow,
 } from "@/lib/landrent/landRent.actions";
 import { useQueryInvalidation } from "@/hooks/queries";
 import { useSearchParams } from "next/navigation";
@@ -28,16 +30,22 @@ export type PreviewDetails = Awaited<
   ReturnType<typeof previewLandRentStatement>
 >;
 
-export function useLandRentStatementPage() {
+export function useLandRentStatementPage(initial?: {
+  leaseId?: string;
+  options?: LandLeaseOption[];
+  statements?: StatementDetails[];
+}) {
   const searchParams = useSearchParams();
   const latestInvoiceRef = useRef<HTMLDivElement>(null);
   const { invalidateLandRent } = useQueryInvalidation();
 
-  const [options, setOptions] = useState<LandLeaseOption[]>([]);
-  const [loadingOptions, setLoadingOptions] = useState(false);
+  const [options, setOptions] = useState<LandLeaseOption[]>(
+    initial?.options ?? [],
+  );
+  const [loadingOptions, setLoadingOptions] = useState(!initial?.options);
 
   const [leaseId, setLeaseId] = useState<string>(
-    searchParams.get("leaseId") ?? ""
+    initial?.leaseId || searchParams.get("leaseId") || ""
   );
   const [monthKey, setMonthKey] = useState<string>(
     searchParams.get("monthKey") ?? getThisMonthKey()
@@ -48,7 +56,10 @@ export function useLandRentStatementPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [preview, setPreview] = useState<PreviewDetails | null>(null);
-  const [statements, setStatements] = useState<StatementDetails[]>([]);
+  const [statements, setStatements] = useState<StatementDetails[]>(
+    initial?.statements ?? [],
+  );
+  const skipFirstRefresh = useRef(Boolean(initial?.statements));
 
   const [creatingStatement, setCreatingStatement] = useState(false);
 
@@ -67,6 +78,8 @@ export function useLandRentStatementPage() {
   const [paymentOk, setPaymentOk] = useState<string | null>(null);
 
   const [recalculatingFines, setRecalculatingFines] = useState(false);
+  const [savingFixedAdjustmentRows, setSavingFixedAdjustmentRows] =
+    useState(false);
 
   function fileToDataUrl(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -79,6 +92,7 @@ export function useLandRentStatementPage() {
 
   // Load lease options
   useEffect(() => {
+    if (initial?.options?.length) return;
     let alive = true;
     setLoadingOptions(true);
     setError(null);
@@ -211,8 +225,32 @@ export function useLandRentStatementPage() {
     }
   }
 
+  async function saveFixedAdjustmentRows(rows: LandRentFixedAdjustmentRow[]) {
+    if (!leaseId) return;
+
+    setSavingFixedAdjustmentRows(true);
+    setError(null);
+    setPaymentOk(null);
+    setPaymentError(null);
+
+    try {
+      await updateLandRentFixedAdjustmentRows({ leaseId, rows });
+      await refreshAll();
+      invalidateLandRent(leaseId);
+      setPaymentOk("Extra invoice rows saved.");
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to save extra invoice rows.");
+    } finally {
+      setSavingFixedAdjustmentRows(false);
+    }
+  }
+
   // refresh on lease or cap changes
   useEffect(() => {
+    if (skipFirstRefresh.current) {
+      skipFirstRefresh.current = false;
+      return;
+    }
     refreshAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leaseId, capToEndDate]);
@@ -383,10 +421,12 @@ export function useLandRentStatementPage() {
 
     creatingStatement,
     recalculatingFines,
+    savingFixedAdjustmentRows,
 
     // actions
     refreshAll,
     recalculateAll,
+    saveFixedAdjustmentRows,
     createStatement,
     submitPayment,
 

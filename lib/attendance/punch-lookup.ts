@@ -1,4 +1,4 @@
-import type { DocumentData, QueryDocumentSnapshot } from "firebase-admin/firestore";
+import type { DocumentData } from "firebase-admin/firestore";
 import { COLLECTIONS, getFirestoreDb } from "@/lib/firebase/admin";
 
 const normalizeHumanName = (s: string) =>
@@ -50,19 +50,27 @@ function punchTimestampIso(data: DocumentData): string | null {
   return punchTimeIso(data, "timestamp") ?? punchTimeIso(data, "createdAt");
 }
 
-function earliestInRange(
-  docs: QueryDocumentSnapshot[],
+async function firstPunchByIndexedField(
+  field: "deviceUserId" | "empNameNorm" | "empName",
+  value: string,
   startUtc: string,
   endUtc: string,
-): string | null {
-  const times: string[] = [];
-  for (const doc of docs) {
+): Promise<string | null> {
+  const snap = await getFirestoreDb()
+    .collection(COLLECTIONS.punchLogs)
+    .where(field, "==", value)
+    .where("timestamp", ">=", startUtc)
+    .where("timestamp", "<", endUtc)
+    .orderBy("timestamp", "asc")
+    .limit(1)
+    .get();
+
+  for (const doc of snap.docs) {
     const iso = punchTimestampIso(doc.data());
-    if (iso && iso >= startUtc && iso < endUtc) times.push(iso);
+    if (iso) return iso;
   }
-  if (times.length === 0) return null;
-  times.sort();
-  return times[0]!;
+
+  return null;
 }
 
 function councilPunchWindowUtc(localDate: string) {
@@ -82,12 +90,7 @@ export async function getFirstPunchByDeviceUserId(
   if (!trimmed) return null;
 
   const { startUtc, endUtc } = councilPunchWindowUtc(localDate);
-  const snap = await getFirestoreDb()
-    .collection(COLLECTIONS.punchLogs)
-    .where("deviceUserId", "==", trimmed)
-    .get();
-
-  return earliestInRange(snap.docs, startUtc, endUtc);
+  return firstPunchByIndexedField("deviceUserId", trimmed, startUtc, endUtc);
 }
 
 /** First council punch between 06:00 and 09:00 matched by normalized/exact name. */
@@ -96,15 +99,18 @@ export async function getFirstPunchByEmployeeName(
   employeeName: string,
 ): Promise<string | null> {
   const { startUtc, endUtc } = councilPunchWindowUtc(localDate);
-  const col = getFirestoreDb().collection(COLLECTIONS.punchLogs);
   const nameNorm = normalizeHumanName(employeeName);
 
   for (const [field, value] of [
     ["empNameNorm", nameNorm],
     ["empName", employeeName],
   ] as const) {
-    const snap = await col.where(field, "==", value).get();
-    const earliest = earliestInRange(snap.docs, startUtc, endUtc);
+    const earliest = await firstPunchByIndexedField(
+      field,
+      value,
+      startUtc,
+      endUtc,
+    );
     if (earliest) return earliest;
   }
 

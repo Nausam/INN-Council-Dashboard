@@ -1,13 +1,15 @@
 "use server";
 
-import { getAuthProfile } from "@/lib/actions/user.actions";
+import { getSessionAuthProfile } from "@/lib/auth/session-profile";
 import { COLLECTIONS } from "@/lib/firebase/admin";
 import {
   createDocument,
   deleteDocument,
   getDocument,
+  countDocuments,
   listAllDocuments,
   listDocuments,
+  listDocumentsPage,
   newDocId,
   updateDocument,
   type WhereClause,
@@ -45,7 +47,7 @@ const STATUS_SET = new Set<string>(CORRESPONDENCE_STATUSES);
 type CorrespondenceRow = Record<string, unknown> & { $id: string };
 
 async function requireStaffUser() {
-  const profile = await getAuthProfile();
+  const profile = await getSessionAuthProfile();
   if (!profile) {
     throw new Error("Unauthorized");
   }
@@ -153,6 +155,33 @@ function filterBySearch(
       d.subject.toLowerCase().includes(q) ||
       d.senderName.toLowerCase().includes(q) ||
       d.referenceNumber.toLowerCase().includes(q),
+  );
+}
+
+function correspondenceSearchTokens(input: {
+  referenceNumber?: string | null;
+  subject?: string | null;
+  senderName?: string | null;
+  senderOrganization?: string | null;
+}): string[] {
+  const text = [
+    input.referenceNumber,
+    input.subject,
+    input.senderName,
+    input.senderOrganization,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return Array.from(
+    new Set(
+      text
+        .split(/[^a-z0-9]+/i)
+        .map((token) => token.trim())
+        .filter((token) => token.length >= 2)
+        .slice(0, 80),
+    ),
   );
 }
 
@@ -342,6 +371,12 @@ export async function createCorrespondence(formData: FormData) {
       subject,
       senderName,
       senderOrganization: senderOrganization || null,
+      searchTokens: correspondenceSearchTokens({
+        referenceNumber,
+        subject,
+        senderName,
+        senderOrganization,
+      }),
       receivedAt,
       dueAt,
       status,
@@ -379,15 +414,27 @@ export async function listCorrespondence(params: ListCorrespondenceParams = {}) 
   const offset = Math.max(params.offset ?? 0, 0);
 
   const { where } = buildCorrespondenceFilters(params);
-  const rows = await listAllDocuments<CorrespondenceRow>(COLLECTION, {
-    where,
-    orderBy: [{ field: "receivedAt", direction: "desc" }],
+  const searchTokens = correspondenceSearchTokens({
+    referenceNumber: params.search,
+    subject: params.search,
+    senderName: params.search,
   });
+  if (searchTokens[0]) {
+    where.push(["searchTokens", "array-contains", searchTokens[0]]);
+  }
 
-  const filtered = filterBySearch(rows.map((d) => mapRow(d)), params.search);
-  const documents = filtered.slice(offset, offset + limit);
+  const { documents, total } = await listDocumentsPage<CorrespondenceRow>(
+    COLLECTION,
+    {
+      where,
+      orderBy: [{ field: "receivedAt", direction: "desc" }],
+      limit,
+      offset,
+    },
+  );
 
-  return parseStringify({ documents, total: filtered.length });
+  const mapped = filterBySearch(documents.map((d) => mapRow(d)), params.search);
+  return parseStringify({ documents: mapped, total });
 }
 
 export async function getCorrespondenceById(id: string) {
@@ -472,6 +519,12 @@ export async function updateCorrespondence(id: string, formData: FormData) {
       subject,
       senderName,
       senderOrganization: senderOrganization || null,
+      searchTokens: correspondenceSearchTokens({
+        referenceNumber,
+        subject,
+        senderName,
+        senderOrganization,
+      }),
       receivedAt,
       dueAt,
       status,
@@ -538,6 +591,15 @@ export async function exportCorrespondenceCsv(
   await requireStaffUser();
 
   const { where } = buildCorrespondenceFilters(params);
+  const searchTokens = correspondenceSearchTokens({
+    referenceNumber: params.search,
+    subject: params.search,
+    senderName: params.search,
+  });
+  if (searchTokens[0]) {
+    where.push(["searchTokens", "array-contains", searchTokens[0]]);
+  }
+
   const rows = await listAllDocuments<CorrespondenceRow>(COLLECTION, {
     where,
     orderBy: [{ field: "receivedAt", direction: "desc" }],
@@ -591,36 +653,35 @@ export async function exportCorrespondenceCsv(
 }
 
 export async function getCorrespondenceDashboardStats() {
-  const profile = await getAuthProfile();
+  const profile = await getSessionAuthProfile();
   if (!profile) return null;
 
   const now = new Date().toISOString();
-
-  const pendingDocs = await listAllDocuments<CorrespondenceRow>(COLLECTION, {
-    where: [["status", "==", "pending"]],
-  });
-
-  const overdueDocs = await listAllDocuments<CorrespondenceRow>(COLLECTION, {
-    where: [
-      ["status", "==", "pending"],
-      ["dueAt", "<", now],
-    ],
-  });
-
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 }).toISOString();
   const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 }).toISOString();
 
-  const answeredWeekDocs = await listAllDocuments<CorrespondenceRow>(COLLECTION, {
-    where: [
-      ["status", "==", "answered"],
-      ["answeredAt", ">=", weekStart],
-      ["answeredAt", "<=", weekEnd],
-    ],
-  });
+  const [pending, overdue, answeredThisWeek] = await Promise.all([
+    countDocuments(COLLECTION, {
+      where: [["status", "==", "pending"]],
+    }),
+    countDocuments(COLLECTION, {
+      where: [
+        ["status", "==", "pending"],
+        ["dueAt", "<", now],
+      ],
+    }),
+    countDocuments(COLLECTION, {
+      where: [
+        ["status", "==", "answered"],
+        ["answeredAt", ">=", weekStart],
+        ["answeredAt", "<=", weekEnd],
+      ],
+    }),
+  ]);
 
   return parseStringify({
-    pending: pendingDocs.length,
-    overdue: overdueDocs.length,
-    answeredThisWeek: answeredWeekDocs.length,
+    pending,
+    overdue,
+    answeredThisWeek,
   });
 }

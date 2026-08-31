@@ -30,6 +30,7 @@ import {
   imamRecordCard,
   leaveLabelToDhivehi,
 } from "@/lib/attendance/mosque-sheet-leave";
+import type { MosqueAttendanceDoc } from "@/lib/firebase/types";
 import {
   useEmployeesQuery,
   useMosqueDailyAttendanceMonthQuery,
@@ -61,6 +62,24 @@ const GROUPS = [
 ] as const;
 
 type GroupKey = (typeof GROUPS)[number]["key"];
+
+const ATTENDANCE_FIELDS = {
+  fajr: { time: "fathisSignInTime", late: "fathisMinutesLate" },
+  dhuhr: { time: "mendhuruSignInTime", late: "mendhuruMinutesLate" },
+  asr: { time: "asuruSignInTime", late: "asuruMinutesLate" },
+  maghrib: { time: "maqribSignInTime", late: "maqribMinutesLate" },
+  isha: { time: "ishaSignInTime", late: "ishaMinutesLate" },
+} as const;
+
+type RecordedPrayerTiming = {
+  time: HHMM;
+  isLate: boolean;
+};
+
+type RecordedAttendanceByDay = Record<
+  number,
+  Partial<Record<GroupKey, RecordedPrayerTiming>>
+>;
 
 const DHIVEHI_WEEKDAYS: Record<number, string> = {
   0: "އާދިއްތަ",
@@ -138,6 +157,52 @@ function parseHHMM(s: string | null | undefined): HHMM {
   const m = Number(mm);
   if (!Number.isFinite(h) || !Number.isFinite(m)) return { h: "", m: "" };
   return { h, m };
+}
+
+function parseAttendanceTime(value: string | null | undefined): HHMM {
+  if (!value) return { h: "", m: "" };
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return { h: "", m: "" };
+
+  return {
+    h: date.getUTCHours(),
+    m: date.getUTCMinutes(),
+  };
+}
+
+function buildRecordedAttendanceByDay(
+  records: MosqueAttendanceDoc[],
+  year: number,
+  month0: number,
+): RecordedAttendanceByDay {
+  const monthPrefix = `${year}-${pad2(month0 + 1)}`;
+  const map: RecordedAttendanceByDay = {};
+
+  for (const record of records) {
+    const iso = String(record.date ?? "").slice(0, 10);
+    if (!iso.startsWith(monthPrefix)) continue;
+
+    const day = Number(iso.slice(8, 10));
+    if (!Number.isFinite(day)) continue;
+
+    const prayerTimings: Partial<Record<GroupKey, RecordedPrayerTiming>> = {};
+
+    for (const group of GROUPS) {
+      const fields = ATTENDANCE_FIELDS[group.key];
+      const rawTime = record[fields.time];
+      if (!rawTime) continue;
+
+      prayerTimings[group.key] = {
+        time: parseAttendanceTime(rawTime),
+        isLate: Number(record[fields.late] ?? 0) > 0,
+      };
+    }
+
+    map[day] = prayerTimings;
+  }
+
+  return map;
 }
 
 function buildRowsForMonth(year: number, monthIndex0: number): DayRow[] {
@@ -303,36 +368,28 @@ export default function Page() {
         setTimesError(null);
         setTimesByDay({});
 
-        const days = Array.from({ length: dim }, (_, i) => i + 1);
-
-        const results = await mapWithConcurrency(days, 6, async (day) => {
-          const iso = isoForDay(year, month, day);
-          const res = await fetch(
-            `/api/innamaadhoo?date=${encodeURIComponent(iso)}`,
-            {
-              cache: "no-store",
-              signal: controller.signal,
-            },
-          );
-
-          if (!res.ok) return { day, data: null as ApiPayload | null };
-
-          const json = (await res.json()) as ApiPayload;
-          return { day, data: json };
-        });
+        const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
+        const res = await fetch(
+          `/api/innamaadhoo?month=${encodeURIComponent(monthKey)}`,
+          { cache: "no-store", signal: controller.signal },
+        );
+        if (!res.ok) throw new Error("Failed to load month times");
+        const json = (await res.json()) as {
+          days?: Record<string, ApiPayload | null>;
+        };
 
         if (!alive) return;
 
         const map: Record<number, DayTimes> = {};
-        for (const r of results) {
-          if (!r.data) continue;
-
-          map[r.day] = {
-            fajr: parseHHMM(r.data.times.fathisTime),
-            dhuhr: parseHHMM(r.data.times.mendhuruTime),
-            asr: parseHHMM(r.data.times.asuruTime),
-            maghrib: parseHHMM(r.data.times.maqribTime),
-            isha: parseHHMM(r.data.times.ishaTime),
+        for (const [iso, data] of Object.entries(json.days ?? {})) {
+          if (!data) continue;
+          const day = Number(iso.slice(-2));
+          map[day] = {
+            fajr: parseHHMM(data.times.fathisTime),
+            dhuhr: parseHHMM(data.times.mendhuruTime),
+            asr: parseHHMM(data.times.asuruTime),
+            maghrib: parseHHMM(data.times.maqribTime),
+            isha: parseHHMM(data.times.ishaTime),
           };
         }
 
@@ -462,9 +519,10 @@ export default function Page() {
   const imamRecordCardNumber = imamRecordCard(imamKey);
 
   const {
-    data: leaveAttendance = [],
+    data: imamAttendance = [],
     isFetching: leaveLoading,
     isPending: leavePending,
+    isPlaceholderData: attendanceIsPlaceholder,
   } = useMosqueDailyAttendanceMonthQuery(monthKey, employeeId);
 
   const leaveStatusLoading =
@@ -477,10 +535,22 @@ export default function Page() {
     setLeaveStatusReady(true);
   }, []);
 
-  const leaveByDay = useMemo(
-    () => buildLeaveByDay(leaveAttendance, year, month),
-    [leaveAttendance, year, month],
+  const resolvedImamAttendance = useMemo(
+    () => (attendanceIsPlaceholder ? [] : imamAttendance),
+    [attendanceIsPlaceholder, imamAttendance],
   );
+
+  const leaveByDay = useMemo(
+    () => buildLeaveByDay(resolvedImamAttendance, year, month),
+    [resolvedImamAttendance, year, month],
+  );
+
+  const recordedAttendanceByDay = useMemo(
+    () => buildRecordedAttendanceByDay(resolvedImamAttendance, year, month),
+    [resolvedImamAttendance, year, month],
+  );
+
+  const showRecordedAttendance = imamKey === "Shahidh" || imamKey === "Zahidh";
 
   const leaveDaysInMonth = useMemo(
     () => Object.keys(leaveByDay).length,
@@ -569,17 +639,23 @@ export default function Page() {
             ];
           }
 
-          const v = applyMinuteOffset(get(g.key), deductMins);
+          const recordedTiming = recordedAttendanceByDay[r.day]?.[g.key];
+          const v = showRecordedAttendance
+            ? (recordedTiming?.time ?? { h: "", m: "" })
+            : applyMinuteOffset(get(g.key), deductMins);
+          const timeClass = showRecordedAttendance && recordedTiming?.isLate
+            ? "attendance-late text-red-600"
+            : "";
           return [
             <TableCell
               key={`${g.key}-m-${r.day}`}
-              className={`${td} text-[18px] font-medium`}
+              className={`${td} ${timeClass} text-[18px] font-medium`}
             >
               {v.m}
             </TableCell>,
             <TableCell
               key={`${g.key}-h-${r.day}`}
-              className={`${td} text-[18px] font-medium`}
+              className={`${td} ${timeClass} text-[18px] font-medium`}
             >
               {v.h}
             </TableCell>,
@@ -634,6 +710,12 @@ export default function Page() {
           #print-area .ot-leave-merged {
             white-space: normal !important;
             vertical-align: middle !important;
+          }
+
+          .attendance-late {
+            color: #dc2626 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
         }
 
@@ -874,14 +956,14 @@ export default function Page() {
           </div>
         ) : leaveStatusReady && leaveStatusLoading ? (
           <div className="no-print mt-2 text-right text-sm text-neutral-600">
-            Loading leave records...
+            Loading attendance records...
           </div>
         ) : leaveStatusReady &&
           !leaveStatusLoading &&
           !employeeId &&
           imamRecordCardNumber ? (
           <div className="no-print mt-2 text-right text-sm text-amber-700">
-            Employee not found for {imamRecordCardNumber} — leave status
+            Employee not found for {imamRecordCardNumber} — attendance data
             unavailable.
           </div>
         ) : leaveStatusReady && !leaveStatusLoading && leaveDaysInMonth > 0 ? (

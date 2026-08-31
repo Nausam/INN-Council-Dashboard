@@ -21,6 +21,28 @@ const nextConfig = {
     ];
   },
   experimental: {
+    optimizePackageImports: [
+      "lucide-react",
+      "date-fns",
+      "recharts",
+      "@heroicons/react",
+      "react-icons",
+      "@radix-ui/react-alert-dialog",
+      "@radix-ui/react-avatar",
+      "@radix-ui/react-collapsible",
+      "@radix-ui/react-dialog",
+      "@radix-ui/react-dropdown-menu",
+      "@radix-ui/react-popover",
+      "@radix-ui/react-select",
+      "@radix-ui/react-separator",
+      "@radix-ui/react-slot",
+      "@radix-ui/react-switch",
+      "@radix-ui/react-toast",
+      "@radix-ui/react-tooltip",
+    ],
+    serverActions: {
+      bodySizeLimit: "16mb",
+    },
     serverComponentsExternalPackages: ["better-sqlite3", "node-zklib"],
     outputFileTracingIncludes: {
       // match your API route file path precisely

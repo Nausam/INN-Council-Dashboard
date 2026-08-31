@@ -104,6 +104,20 @@ export function getInnamaadhooFor(dateISO: string) {
   };
 }
 
+export function getInnamaadhooForMonth(month: string) {
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    throw new Error("Invalid month format. Use YYYY-MM");
+  }
+  const [year, monthNum] = month.split("-").map(Number);
+  const dim = new Date(Date.UTC(year, monthNum, 0)).getUTCDate();
+  const days: Record<string, ReturnType<typeof getInnamaadhooFor>> = {};
+  for (let day = 1; day <= dim; day += 1) {
+    const iso = `${month}-${String(day).padStart(2, "0")}`;
+    days[iso] = getInnamaadhooFor(iso);
+  }
+  return days;
+}
+
 export type InnamaadhooTimes = {
   island: { atoll: string; island: string; tz: string; offsetMinutes: number };
   date: string; // YYYY-MM-DD

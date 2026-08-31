@@ -12,9 +12,19 @@
     "migrate:files": "tsx scripts/migrate-appwrite-storage-to-r2.ts",
     "migrate:clerk": "tsx scripts/migrate-appwrite-users-to-clerk.ts",
     "verify:queries": "tsx scripts/verify-firestore-queries.ts",
+    "verify:perf-queries": "tsx scripts/verify-firestore-performance-queries.ts",
     "grant:admin": "tsx scripts/grant-clerk-admin.ts",
     "zk:worker": "tsx scripts/zk-worker.ts",
-    "zk:sync": "tsx scripts/zk-sync.ts"
+    "zk:sync": "tsx scripts/zk-sync.ts",
+    "attendance-sync:worker": "tsx scripts/attendance-sync-worker.ts",
+    "attendance-sync:test": "tsx scripts/test-attendance-sync.ts",
+    "attendance-sync:bootstrap": "tsx scripts/bootstrap-attendance-sync-config.ts",
+    "attendance-sync:setup": "tsx scripts/setup-attendance-sync-now.ts",
+    "firestore:indexes": "tsx scripts/deploy-firestore-indexes.ts",
+    "firebase:login": "npx -y firebase-tools@latest login",
+    "firebase:login:reauth": "npx -y firebase-tools@latest login --reauth",
+    "attendance-sync:zk-pull": "tsx scripts/sync-zk-now.ts",
+    "attendance-sync:backfill": "tsx scripts/backfill-mosque-attendance.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.998.0",

@@ -1,6 +1,6 @@
 import {
-  fetchAllEmployees,
   fetchAttendanceForDate as fetchAttendanceForDateHr,
+  fetchEmployeesByIds,
   fetchMosqueAttendanceForDate as fetchMosqueAttendanceForDateHr,
 } from "@/lib/firebase/hr";
 import type { AttendanceDoc, EmployeeDoc } from "@/lib/firebase/types";
@@ -28,10 +28,8 @@ export type EnrichedAttendanceRow = Omit<AttendanceDoc, "employeeId"> & {
 export async function fetchEnrichedAttendanceForDate(
   date: string,
 ): Promise<EnrichedAttendanceRow[]> {
-  const [rows, employees] = await Promise.all([
-    fetchAttendanceForDateHr(date),
-    fetchAllEmployees(),
-  ]);
+  const rows = await fetchAttendanceForDateHr(date);
+  const employees = await fetchEmployeesByIds(rows.map((row) => row.employeeId));
 
   const byId = new Map(employees.map((e) => [e.$id, e]));
 
@@ -55,10 +53,8 @@ export type EnrichedMosqueAttendanceRow = MosqueAttendanceRecord;
 export async function fetchEnrichedMosqueAttendanceForDate(
   date: string,
 ): Promise<MosqueAttendanceRecord[]> {
-  const [rows, employees] = await Promise.all([
-    fetchMosqueAttendanceForDateHr(date),
-    fetchAllEmployees(),
-  ]);
+  const rows = await fetchMosqueAttendanceForDateHr(date);
+  const employees = await fetchEmployeesByIds(rows.map((row) => row.employeeId));
 
   const byId = new Map(employees.map((e) => [e.$id, e]));
 

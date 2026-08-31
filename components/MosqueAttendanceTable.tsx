@@ -31,13 +31,14 @@ import {
 } from "@/constants";
 import { useAllEmployeesActionQuery, useQueryInvalidation } from "@/hooks/queries";
 import { useToast } from "@/hooks/use-toast";
+import { markMosquePrayerOverridesAction } from "@/lib/attendance/attendance.actions";
 import {
   deductLeave,
   deleteMosqueAttendancesByDate,
   fetchEmployeeById,
   fetchPrayerTimesByDate,
   updateMosqueAttendanceRecord,
-} from "@/lib/firebase/hr";
+} from "@/lib/actions/hr.actions";
 import { fetchInnamaadhooTimes, InnamaadhooTimes } from "@/lib/salat-client";
 import { cn } from "@/lib/utils";
 import { useUser } from "@/Providers/UserProvider";
@@ -46,6 +47,7 @@ import {
   MosqueAttendanceRecord,
   MosqueAttendanceTableProps,
   PrayerKey,
+  prayers,
 } from "@/types";
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Save, Trash2 } from "lucide-react";
@@ -359,7 +361,16 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
             maqribMinutesLate: r.maqribMinutesLate ?? 0,
             ishaMinutesLate: r.ishaMinutesLate ?? 0,
             leaveType: r.leaveType,
+            changed: true,
           });
+
+          const original = data.find((row) => row.$id === r.$id);
+          const changedPrayers = (prayers as PrayerKey[]).filter(
+            (prayer) => original?.[prayer] !== r[prayer],
+          );
+          if (changedPrayers.length > 0) {
+            await markMosquePrayerOverridesAction(r.$id, changedPrayers);
+          }
         })
       );
 

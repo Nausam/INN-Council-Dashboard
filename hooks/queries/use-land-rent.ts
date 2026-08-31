@@ -9,10 +9,13 @@ import {
 } from "@/lib/landrent/landRent.actions";
 import { useQuery } from "@tanstack/react-query";
 
-export function useLandRentOverviewQuery() {
+export function useLandRentOverviewQuery(options?: {
+  initialData?: unknown;
+}) {
   return useQuery({
     queryKey: queryKeys.landRent.overview,
     queryFn: () => fetchLandRentOverview(),
+    initialData: options?.initialData,
   });
 }
 

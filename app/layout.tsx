@@ -1,6 +1,5 @@
 import { QueryProvider } from "@/Providers/QueryProvider";
 import { UserProvider } from "@/Providers/UserProvider";
-import { QueryWarmup } from "@/components/query/QueryWarmup";
 import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import "./globals.css";
@@ -29,7 +28,6 @@ export default function RootLayout({
       <body className={plusJakarta.className}>
         <ClerkProvider>
           <QueryProvider>
-            <QueryWarmup />
             <UserProvider>
               <main>{children}</main>
             </UserProvider>

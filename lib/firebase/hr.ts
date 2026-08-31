@@ -1,20 +1,20 @@
-"use server";
-
 import {
   fromFirestoreDoc,
   fromFirestoreDocs,
   stripLegacyFields,
   withTimestamps,
 } from "@/lib/firebase/adapters";
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue, type DocumentData, type Query } from "firebase-admin/firestore";
 import { COLLECTIONS, getFirestoreDb } from "@/lib/firebase/admin";
 import { listAllDocs, newDocId } from "@/lib/firebase/query";
 import type {
   AttendanceDoc,
   EmployeeDoc,
+  EmployeeLeaveCalendarEntry,
   HolidayCalendarDoc,
   LeaveRequest,
   MosqueAttendanceDoc,
+  SlimEmployee,
   OvertimeRequest,
   OvertimeRequestEmployee,
   PrayerTimesDoc,
@@ -74,15 +74,7 @@ export type CouncilAttendanceSubmitItem = {
   leaveDeducted: boolean;
 };
 
-export type EmployeeLeaveCalendarEntry = {
-  $id: string;
-  employeeId: string;
-  date: string;
-  leaveType: string;
-  leaveUsedAfter?: number | null;
-  leaveRemainingAfter?: number | null;
-  source: "Council" | "Mosque";
-};
+export type { EmployeeLeaveCalendarEntry, SlimEmployee } from "@/lib/firebase/types";
 
 type LeaveUsageRow = {
   collection: typeof COLLECTIONS.attendance | typeof COLLECTIONS.mosqueAttendance;
@@ -429,6 +421,17 @@ export async function fetchAllEmployees(): Promise<EmployeeDoc[]> {
   return listAllDocs<EmployeeDoc>(COLLECTIONS.employees);
 }
 
+export async function fetchSlimEmployees(): Promise<SlimEmployee[]> {
+  const employees = await fetchAllEmployees();
+  return employees.map((employee) => ({
+    $id: employee.$id,
+    name: employee.name,
+    designation: employee.designation,
+    section: employee.section,
+    recordCardNumber: employee.recordCardNumber,
+  }));
+}
+
 export async function createEmployeeRecord(
   employeeData: Partial<Omit<EmployeeDoc, "$id" | "$createdAt" | "$updatedAt">> & {
     name: string;
@@ -453,6 +456,37 @@ export async function fetchEmployeeById(employeeId: string): Promise<EmployeeDoc
   const doc = fromFirestoreDoc<EmployeeDoc>(snap);
   if (!doc) throw new Error("Employee not found");
   return doc;
+}
+
+export async function fetchEmployeesByIds(
+  employeeIds: string[],
+): Promise<EmployeeDoc[]> {
+  const ids = Array.from(
+    new Set(
+      employeeIds
+        .map((id) => String(id ?? "").trim())
+        .filter(Boolean),
+    ),
+  );
+  if (ids.length === 0) return [];
+
+  const db = getFirestoreDb();
+  const docs: EmployeeDoc[] = [];
+  const chunkSize = 300;
+
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const refs = ids
+      .slice(i, i + chunkSize)
+      .map((id) => db.collection(COLLECTIONS.employees).doc(id));
+    const snaps = await db.getAll(...refs);
+    docs.push(
+      ...snaps
+        .map((snap) => fromFirestoreDoc<EmployeeDoc>(snap))
+        .filter((doc): doc is EmployeeDoc => doc !== null),
+    );
+  }
+
+  return docs;
 }
 
 export async function fetchEmployeeByRecordCardNumber(
@@ -1196,6 +1230,28 @@ export async function fetchMosqueAttendanceForMonth(
   );
 }
 
+export async function fetchMosqueAttendanceForPeriod(
+  startDate: string,
+  endDate: string,
+): Promise<MosqueAttendanceDoc[]> {
+  const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+  if (
+    !datePattern.test(startDate) ||
+    !datePattern.test(endDate) ||
+    startDate > endDate
+  ) {
+    return [];
+  }
+
+  const endExclusiveDate = new Date(`${endDate}T00:00:00.000Z`);
+  endExclusiveDate.setUTCDate(endExclusiveDate.getUTCDate() + 1);
+  const endExclusive = endExclusiveDate.toISOString().slice(0, 10);
+
+  return listAllDocs<MosqueAttendanceDoc>(COLLECTIONS.mosqueAttendance, (q) =>
+    q.where("date", ">=", startDate).where("date", "<", endExclusive),
+  );
+}
+
 export async function fetchMosqueDailyAttendanceForMonth(
   month: string,
   employeeId: string,
@@ -1208,15 +1264,32 @@ export async function fetchMosqueDailyAttendanceForMonth(
       : `${y}-${String(m + 1).padStart(2, "0")}`;
   const monthEndExclusive = `${nextMonth}-01`;
 
-  const snap = await getFirestoreDb()
-    .collection(COLLECTIONS.mosqueAttendance)
-    .where("employeeId", "==", employeeId)
-    .get();
+  return listAllDocs<MosqueAttendanceDoc>(COLLECTIONS.mosqueAttendance, (q) =>
+    q
+      .where("employeeId", "==", employeeId)
+      .where("date", ">=", monthStart)
+      .where("date", "<", monthEndExclusive),
+  );
+}
 
-  return fromFirestoreDocs<MosqueAttendanceDoc>(snap.docs).filter((row) => {
-    const d = String(row.date ?? "");
-    return d >= monthStart && d < monthEndExclusive;
-  });
+export async function fetchAttendanceForEmployeeMonth(
+  month: string,
+  employeeId: string,
+): Promise<AttendanceDoc[]> {
+  const monthStart = `${month}-01`;
+  const [y, m] = month.split("-").map(Number);
+  const nextMonth =
+    m === 12
+      ? `${y + 1}-01`
+      : `${y}-${String(m + 1).padStart(2, "0")}`;
+  const monthEndExclusive = `${nextMonth}-01`;
+
+  return listAllDocs<AttendanceDoc>(COLLECTIONS.attendance, (q) =>
+    q
+      .where("employeeId", "==", employeeId)
+      .where("date", ">=", monthStart)
+      .where("date", "<", monthEndExclusive),
+  );
 }
 
 export async function deleteMosqueAttendancesByDate(date: string): Promise<void> {
@@ -1257,15 +1330,20 @@ export async function fetchLeaveRequests(
   limit = 10,
   offsetVal = 0,
 ): Promise<{ requests: LeaveRequest[]; totalCount: number }> {
-  const all = await listAllDocs<LeaveRequest>(COLLECTIONS.leaveRequests);
-  all.sort((a, b) =>
-    String(b.createdAt ?? b.$createdAt ?? "").localeCompare(
-      String(a.createdAt ?? a.$createdAt ?? ""),
-    ),
-  );
+  const db = getFirestoreDb();
+  const base = db.collection(COLLECTIONS.leaveRequests);
+  const [snap, countSnap] = await Promise.all([
+    base
+      .orderBy("createdAt", "desc")
+      .offset(Math.max(0, offsetVal))
+      .limit(Math.max(1, limit))
+      .get(),
+    base.count().get(),
+  ]);
+
   return {
-    requests: all.slice(offsetVal, offsetVal + limit),
-    totalCount: all.length,
+    requests: fromFirestoreDocs<LeaveRequest>(snap.docs),
+    totalCount: countSnap.data().count,
   };
 }
 
@@ -1306,15 +1384,20 @@ export async function fetchOvertimeRequests(
   limit = 10,
   offsetVal = 0,
 ): Promise<{ requests: OvertimeRequest[]; totalCount: number }> {
-  const all = await listAllDocs<OvertimeRequest>(COLLECTIONS.overtimeRequests);
-  all.sort((a, b) =>
-    String(b.createdAt ?? b.$createdAt ?? "").localeCompare(
-      String(a.createdAt ?? a.$createdAt ?? ""),
-    ),
-  );
+  const db = getFirestoreDb();
+  const base = db.collection(COLLECTIONS.overtimeRequests);
+  const [snap, countSnap] = await Promise.all([
+    base
+      .orderBy("createdAt", "desc")
+      .offset(Math.max(0, offsetVal))
+      .limit(Math.max(1, limit))
+      .get(),
+    base.count().get(),
+  ]);
+
   return {
-    requests: all.slice(offsetVal, offsetVal + limit),
-    totalCount: all.length,
+    requests: fromFirestoreDocs<OvertimeRequest>(snap.docs),
+    totalCount: countSnap.data().count,
   };
 }
 
@@ -1333,16 +1416,22 @@ export async function fetchUserLeaveRequests(
   limit = 10,
   offsetVal = 0,
 ): Promise<{ requests: LeaveRequest[]; totalCount: number }> {
-  let all = await listAllDocs<LeaveRequest>(COLLECTIONS.leaveRequests);
-  if (status) all = all.filter((r) => r.approvalStatus === status);
-  all.sort((a, b) =>
-    String(b.createdAt ?? b.$createdAt ?? "").localeCompare(
-      String(a.createdAt ?? a.$createdAt ?? ""),
-    ),
-  );
+  const db = getFirestoreDb();
+  let base: Query<DocumentData> = db.collection(COLLECTIONS.leaveRequests);
+  if (status) base = base.where("approvalStatus", "==", status);
+
+  const [snap, countSnap] = await Promise.all([
+    base
+      .orderBy("createdAt", "desc")
+      .offset(Math.max(0, offsetVal))
+      .limit(Math.max(1, limit))
+      .get(),
+    base.count().get(),
+  ]);
+
   return {
-    requests: all.slice(offsetVal, offsetVal + limit),
-    totalCount: all.length,
+    requests: fromFirestoreDocs<LeaveRequest>(snap.docs),
+    totalCount: countSnap.data().count,
   };
 }
 

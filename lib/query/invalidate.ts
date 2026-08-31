@@ -52,6 +52,10 @@ export function invalidateMosqueAttendance(
   void queryClient.invalidateQueries({
     queryKey: queryKeys.dashboard.byDate(date),
   });
+  // Monthly allowance / late-absent reports use period queries that can span months.
+  void queryClient.invalidateQueries({
+    queryKey: ["attendance", "mosque", "period"],
+  });
   if (month) {
     void queryClient.invalidateQueries({
       queryKey: queryKeys.attendance.mosqueMonth(month),

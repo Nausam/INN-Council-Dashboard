@@ -7,7 +7,6 @@ import {
   type CouncilAttendanceSubmitItem,
 } from "@/lib/firebase/hr";
 import { fetchEnrichedAttendanceForDate, fetchEnrichedMosqueAttendanceForDate } from "@/lib/attendance/enrich-attendance";
-import type { MosquePrayerTimes } from "@/lib/attendance/mosque-prefill";
 import { COLLECTIONS } from "@/lib/firebase/admin";
 import { withTimestamps } from "@/lib/firebase/adapters";
 import { getFirestoreDb } from "@/lib/firebase/admin";
@@ -17,46 +16,6 @@ import {
   getFirstPunchByDeviceUserId,
   getFirstPunchByEmployeeName,
 } from "@/lib/attendance/punch-lookup";
-import { getInnamaadhooFor } from "@/lib/salat";
-
-async function resolveMosquePrayerTimes(
-  date: string,
-): Promise<MosquePrayerTimes | null> {
-  try {
-    const salat = getInnamaadhooFor(date);
-    if (salat?.times) {
-      return {
-        fathisTime: salat.times.fathisTime,
-        mendhuruTime: salat.times.mendhuruTime,
-        asuruTime: salat.times.asuruTime,
-        maqribTime: salat.times.maqribTime,
-        ishaTime: salat.times.ishaTime,
-      };
-    }
-  } catch {
-    /* fall through to Firestore */
-  }
-
-  const { fetchPrayerTimesByDate } = await import("@/lib/firebase/hr");
-  const fetched = await fetchPrayerTimesByDate(date);
-  if (!fetched) return null;
-
-  return {
-    fathisTime: fetched.fathisTime,
-    mendhuruTime: fetched.mendhuruTime,
-    asuruTime: fetched.asuruTime,
-    maqribTime: fetched.maqribTime,
-    ishaTime: fetched.ishaTime,
-  };
-}
-
-function filterMosqueAssistants(employees: EmployeeDoc[]): EmployeeDoc[] {
-  return employees.filter(
-    (e) =>
-      (e.designation === "Council Assistant" || e.designation === "Imam") &&
-      e.section === "Mosque",
-  );
-}
 
 export const fetchAttendanceForDateAction = async (date: string) => {
   try {
@@ -205,43 +164,23 @@ export const fetchMosqueAttendanceForDateAction = async (date: string) => {
 
 export const generateMosqueAttendanceAction = async (date: string) => {
   try {
-    const {
-      createMosqueAttendanceForEmployees,
-      fetchAllEmployees,
-    } = await import("@/lib/firebase/hr");
+    const { ensureMosqueAttendanceSheets } = await import(
+      "@/lib/attendance-sync/ensure-sheets"
+    );
 
     const existing = await fetchEnrichedMosqueAttendanceForDate(date);
-    if (existing.length > 0) {
-      return {
-        success: true,
-        alreadyExists: true as const,
-        data: existing,
-      };
-    }
-
-    const prayerTimes = await resolveMosquePrayerTimes(date);
-    const employees = await fetchAllEmployees();
-    const mosqueAssistants = filterMosqueAssistants(employees);
-
-    if (mosqueAssistants.length === 0) {
-      return {
-        success: false,
-        error: "No mosque staff found (Council Assistant or Imam in Mosque section).",
-      };
-    }
-
-    await createMosqueAttendanceForEmployees(
-      date,
-      mosqueAssistants,
-      prayerTimes,
-    );
+    const ensureResult = await ensureMosqueAttendanceSheets(date, {
+      preview: false,
+    });
 
     const data = await fetchEnrichedMosqueAttendanceForDate(date);
 
     return {
       success: true,
-      alreadyExists: false as const,
-      prayerTimesFound: Boolean(prayerTimes),
+      alreadyExists: existing.length > 0 && ensureResult.created === 0,
+      created: ensureResult.created,
+      reused: ensureResult.reused,
+      conflicts: ensureResult.conflicts,
       data,
     };
   } catch (error: unknown) {
@@ -252,6 +191,50 @@ export const generateMosqueAttendanceAction = async (date: string) => {
         error instanceof Error
           ? error.message
           : "Failed to generate mosque attendance",
+    };
+  }
+};
+
+export const resumeMosquePrayerAutomationAction = async (
+  attendanceId: string,
+  prayer: import("@/types").PrayerKey,
+) => {
+  try {
+    const { resumeAutomaticPrayerSync } = await import(
+      "@/lib/attendance-sync/reconcile"
+    );
+    const result = await resumeAutomaticPrayerSync(attendanceId, prayer);
+    return { success: true as const, data: result };
+  } catch (error: unknown) {
+    console.error("Error resuming mosque prayer automation:", error);
+    return {
+      success: false as const,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to resume automatic sync",
+    };
+  }
+};
+
+export const markMosquePrayerOverridesAction = async (
+  attendanceId: string,
+  prayers: import("@/types").PrayerKey[],
+) => {
+  try {
+    const { markManualPrayerOverrides } = await import(
+      "@/lib/attendance-sync/reconcile"
+    );
+    await markManualPrayerOverrides(attendanceId, prayers);
+    return { success: true as const };
+  } catch (error: unknown) {
+    console.error("Error marking mosque prayer overrides:", error);
+    return {
+      success: false as const,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to mark manual overrides",
     };
   }
 };

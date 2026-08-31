@@ -29,11 +29,34 @@ export default function StatementsList({
         {statements.map((s, idx) => {
           const details = s as any;
 
-          const totalMonthly = fmtMoney(
-            Number(details.totalRentPaymentMonthly ?? 0)
+          const fixedAdjustmentRows = Array.isArray(details.fixedAdjustmentRows)
+            ? details.fixedAdjustmentRows
+            : [];
+          const generatedAdjustmentRows = Array.isArray(
+            details.generatedAdjustmentRows
+          )
+            ? details.generatedAdjustmentRows
+            : [];
+          const fixedAdjustmentTotal = Number(
+            details.fixedAdjustmentTotal ?? 0
           );
+          const generatedAdjustmentTotal = Number(
+            details.generatedAdjustmentTotal ?? 0
+          );
+          const invoiceTotalNumber = Number(
+            details.totalRentPaymentMonthly ?? 0
+          );
+          const liveTotalMonthly = Math.max(
+            0,
+            invoiceTotalNumber - fixedAdjustmentTotal - generatedAdjustmentTotal
+          );
+          const totalMonthly = fmtMoney(liveTotalMonthly);
+          const invoiceTotal = fmtMoney(invoiceTotalNumber);
           const monthlyRent = fmtMoney(
             Number(details.monthlyRentPaymentAmount ?? 0)
+          );
+          const calculatedRentTotal = fmtMoney(
+            Number(details.outstandingFees ?? 0)
           );
           const paymentsTotal = fmtMoney(Number(details.paymentsTotal ?? 0));
           const balance = fmtMoney(
@@ -154,9 +177,43 @@ export default function StatementsList({
                 },
               ]}
               rows={[
+                ...fixedAdjustmentRows.map((row: any) => ({
+                  c1: {
+                    value: fmtMoney(Number(row.total ?? 0)),
+                    highlight: true,
+                  },
+                  c2: {
+                    value: fmtMoney(Number(row.rentAmount ?? 0)),
+                    highlight: true,
+                  },
+                  c3: {
+                    value: String(row.unpaidMonths ?? 0),
+                    highlight: true,
+                  },
+                  c4: {
+                    value: fmtMoney(Number(row.fineAmount ?? 0)),
+                    highlight: true,
+                  },
+                  c5: {
+                    value: String(row.fineDays ?? 0),
+                    highlight: true,
+                  },
+                  c6: {
+                    value: String(row.periodLabel ?? ""),
+                    highlight: true,
+                  },
+                  c7: {
+                    value: String(row.rentRate ?? 0),
+                    highlight: true,
+                  },
+                  c8: {
+                    value: String(row.sizeOfLand ?? 0),
+                    highlight: true,
+                  },
+                })),
                 {
                   c1: { value: totalMonthly, highlight: true },
-                  c2: { value: monthlyRent, highlight: true },
+                  c2: { value: calculatedRentTotal, highlight: true },
                   c3: {
                     value: String(details.unpaidMonths ?? 0),
                     highlight: true,
@@ -170,7 +227,7 @@ export default function StatementsList({
                     highlight: true,
                   },
                   c6: {
-                    value: fmtDateShort(details.latestPaymentDate ?? null),
+                    value: fmtDateDhivehi(details.latestPaymentDate ?? null),
                     highlight: true,
                   },
                   c7: { value: String(details.rentRate ?? 0), highlight: true },
@@ -179,9 +236,23 @@ export default function StatementsList({
                     highlight: true,
                   },
                 },
+                ...generatedAdjustmentRows.map((row: any) => ({
+                  __spanText: {
+                    text: String(
+                        row.description ??
+                        row.periodLabel ??
+                        "2025 އޮގަސްޓް މަހުން ފެށިގެން ޖޫރިމަނާ (އޮޑިޓް އޮފީހުން ޖޫރިމަނާ ހިސާބުކުރުމަށް އެންގި ގޮތަށް)"
+                    ),
+                    highlight: true,
+                  },
+                  c1: {
+                    value: fmtMoney(Number(row.total ?? 0)),
+                    highlight: true,
+                  },
+                })),
               ]}
               totalLabel={{ text: "ޖުމްލަ: (ރުފިޔާ)", highlight: true }}
-              totalAmount={{ text: totalMonthly, highlight: true }}
+              totalAmount={{ text: invoiceTotal, highlight: true }}
               footerNote={{
                 text: `ނޯޓް: ކުލީގެ ތަފްސީލް ހެދިފައިވަނީ ${fmtDateDhivehi(
                   details.statement.createdAt ??

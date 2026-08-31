@@ -6,6 +6,7 @@ import {
 import { NextResponse } from "next/server";
 
 import {
+  emailsFromSessionClaims,
   getAllowedLoginEmails,
   isAnyEmailAllowed,
   resolveUserEmails,
@@ -38,14 +39,13 @@ export default clerkMiddleware(async (auth, request) => {
     }
 
     const claims = sessionClaims as Record<string, unknown> | null;
-    const emails = await resolveUserEmails(userId, claims);
-    const claimEmails = [
-      claims?.email,
-      claims?.primary_email_address,
-      claims?.primaryEmail,
-    ].filter((value): value is string => typeof value === "string");
+    const claimEmails = emailsFromSessionClaims(claims);
+    const emails =
+      claimEmails.length > 0
+        ? claimEmails
+        : await resolveUserEmails(userId, claims);
 
-    if (!isAnyEmailAllowed([...emails, ...claimEmails])) {
+    if (!isAnyEmailAllowed(emails)) {
       if (sessionId) {
         const client = await clerkClient();
         await client.sessions.revokeSession(sessionId);

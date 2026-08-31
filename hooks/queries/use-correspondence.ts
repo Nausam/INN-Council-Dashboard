@@ -7,9 +7,12 @@ import {
   listCorrespondence,
   type ListCorrespondenceParams,
 } from "@/lib/actions/correspondence.actions";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
-export function useCorrespondenceListQuery(params: ListCorrespondenceParams) {
+export function useCorrespondenceListQuery(
+  params: ListCorrespondenceParams,
+  options?: { initialData?: Awaited<ReturnType<typeof listCorrespondence>> },
+) {
   const filterKey = {
     limit: params.limit ?? 25,
     offset: params.offset ?? 0,
@@ -22,13 +25,18 @@ export function useCorrespondenceListQuery(params: ListCorrespondenceParams) {
   return useQuery({
     queryKey: queryKeys.correspondence.list(filterKey),
     queryFn: () => listCorrespondence(params),
+    placeholderData: keepPreviousData,
+    initialData: options?.initialData,
   });
 }
 
-export function useCorrespondenceStatsQuery() {
+export function useCorrespondenceStatsQuery(options?: {
+  initialData?: Awaited<ReturnType<typeof getCorrespondenceDashboardStats>>;
+}) {
   return useQuery({
     queryKey: queryKeys.correspondence.stats,
     queryFn: () => getCorrespondenceDashboardStats(),
+    initialData: options?.initialData,
   });
 }
 

@@ -5,6 +5,7 @@
 import { COLLECTIONS } from "@/lib/firebase/admin";
 import {
   createDocument,
+  deleteDocument,
   getDocument,
   listAllDocuments,
   listDocuments,
@@ -12,6 +13,7 @@ import {
   updateDocument,
   uploadBufferToR2,
 } from "@/lib/firebase/repository";
+import { requireAdmin } from "@/lib/auth/require-admin";
 import type {
   LandLeaseDoc,
   LandParcelDoc,
@@ -50,6 +52,7 @@ export type LandRentOverviewRow = {
 
   paymentDueDay: number;
   rateLariPerSqft: number;
+  fineLariPerDay?: number | null;
 
   sizeSqft: number;
   monthlyRent: number;
@@ -90,6 +93,106 @@ export type CreatedLandRentBundle = {
   parcel: LandParcelDoc;
   lease: LandLeaseDoc;
 };
+
+export type LandRentFixedAdjustmentRow = {
+  key: string;
+  total: number;
+  rentAmount: number;
+  unpaidMonths: number;
+  fineAmount: number;
+  fineDays: number;
+  periodLabel: string;
+  rentRate: number;
+  sizeOfLand: number;
+};
+
+export type LandRentGeneratedAdjustmentRow = LandRentFixedAdjustmentRow & {
+  description: string;
+  displayMode: "description";
+};
+
+function sanitizeFixedAdjustmentRows(
+  rows: unknown,
+): LandRentFixedAdjustmentRow[] {
+  if (!Array.isArray(rows)) return [];
+
+  return rows
+    .map((row, index) => {
+      const r = row as Record<string, unknown>;
+      const rentAmount = Math.max(0, Number(r.rentAmount ?? 0));
+      const fineAmount = Math.max(0, Number(r.fineAmount ?? 0));
+      const total = Math.max(0, Number(r.total ?? 0));
+
+      return {
+        key: String(r.key ?? `fixed-row-${index}-${newDocId()}`),
+        total: round2(total),
+        rentAmount: round2(rentAmount),
+        unpaidMonths: Math.max(0, Math.floor(Number(r.unpaidMonths ?? 0))),
+        fineAmount: round2(fineAmount),
+        fineDays: Math.max(0, Math.floor(Number(r.fineDays ?? 0))),
+        periodLabel: String(r.periodLabel ?? "").trim(),
+        rentRate: Math.max(0, Number(r.rentRate ?? 0)),
+        sizeOfLand: Math.max(0, Number(r.sizeOfLand ?? 0)),
+      };
+    })
+    .filter(
+      (row) =>
+        row.total > 0 ||
+        row.rentAmount > 0 ||
+        row.fineAmount > 0 ||
+        row.periodLabel,
+    );
+}
+
+function getFixedLandRentAdjustmentsFromLease(
+  lease: Record<string, unknown>,
+): LandRentFixedAdjustmentRow[] {
+  const raw = lease.fixedAdjustmentRowsJson;
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      return sanitizeFixedAdjustmentRows(JSON.parse(raw));
+    } catch {
+      return [];
+    }
+  }
+
+  return sanitizeFixedAdjustmentRows(lease.fixedAdjustmentRows);
+}
+
+function fixedLandRentAdjustmentTotal(rows: LandRentFixedAdjustmentRow[]) {
+  return round2(rows.reduce((sum, row) => sum + Number(row.total ?? 0), 0));
+}
+
+function withFixedLandRentAdjustments<T extends Record<string, any>>(
+  details: T,
+) {
+  const rows = sanitizeFixedAdjustmentRows(details.fixedAdjustmentRows);
+  const fixedAdjustmentTotal = fixedLandRentAdjustmentTotal(rows);
+  const generatedRows = Array.isArray(details.generatedAdjustmentRows)
+    ? (details.generatedAdjustmentRows as LandRentGeneratedAdjustmentRow[])
+    : [];
+  const generatedAdjustmentTotal = fixedLandRentAdjustmentTotal(generatedRows);
+  const totalRentPaymentMonthly = round2(
+    Number(details.totalRentPaymentMonthly ?? 0) +
+      fixedAdjustmentTotal +
+      generatedAdjustmentTotal,
+  );
+  const paymentsTotal = Number(details.paymentsTotal ?? 0);
+  const balanceRemaining = round2(
+    Math.max(0, totalRentPaymentMonthly - paymentsTotal),
+  );
+
+  return {
+    ...details,
+    fixedAdjustmentRows: rows,
+    fixedAdjustmentTotal,
+    generatedAdjustmentRows: generatedRows,
+    generatedAdjustmentTotal,
+    totalRentPaymentMonthly,
+    balanceRemaining,
+    isPaid: balanceRemaining <= 0.00001,
+  };
+}
 
 /* =============================== Helpers =============================== */
 
@@ -244,6 +347,11 @@ const daysBetweenUTC = (a: Date, b: Date) => {
   return Math.max(0, Math.floor((bb - aa) / ms));
 };
 
+const LAND_RENT_FINE_CUTOFF_DATE = new Date(Date.UTC(2025, 6, 30));
+const LAND_RENT_POST_CUTOFF_FINE_START_DATE = new Date(Date.UTC(2025, 7, 1));
+const LAND_RENT_POST_CUTOFF_FINE_LABEL =
+  "2025 އޮގަސްޓް މަހުން ފެށިގެން ޖޫރިމަނާ (އޮޑިޓް އޮފީހުން ޖޫރިމަނާ ހިސާބުކުރުމަށް އެންގި ގޮތަށް)";
+
 const monthStartsBetweenInclusiveUTC = (
   fromMonthStart: Date,
   toMonthStart: Date,
@@ -312,6 +420,199 @@ export const fetchLandLeaseOptions = async (): Promise<LandLeaseOption[]> => {
   return opts;
 };
 
+export const updateLandRentFixedAdjustmentRows = async (input: {
+  leaseId: string;
+  rows: unknown[];
+}) => {
+  const leaseId = String(input.leaseId ?? "").trim();
+  if (!leaseId) throw new Error("Lease is required.");
+
+  await getDocument<LandLeaseDoc>(COLLECTIONS.landLeases, leaseId);
+  const rows = sanitizeFixedAdjustmentRows(input.rows);
+
+  await updateDocument(COLLECTIONS.landLeases, leaseId, {
+    fixedAdjustmentRowsJson: JSON.stringify(rows),
+  });
+
+  return {
+    rows,
+    fixedAdjustmentTotal: fixedLandRentAdjustmentTotal(rows),
+  };
+};
+
+export const updateLandRentLease = async (input: {
+  leaseId: string;
+  landName: string;
+  renterName: string;
+  agreementNumber: string;
+  rentStartDate: string;
+  rentEndDate: string;
+  letGoDate: string | null;
+  lastPaymentDate: string | null;
+  sizeSqft: number;
+  rate: number;
+  paymentDueDay: number;
+  finePerDay: number;
+}) => {
+  await requireAdmin();
+
+  const leaseId = String(input.leaseId ?? "").trim();
+  if (!leaseId) throw new Error("Lease is required.");
+
+  const lease = await getDocument<LandLeaseDoc>(
+    COLLECTIONS.landLeases,
+    leaseId,
+  );
+
+  const landName = String(input.landName ?? "").trim();
+  const renterName = String(input.renterName ?? "").trim();
+  const agreementNumber = String(input.agreementNumber ?? "").trim();
+
+  if (!landName) throw new Error("Land name is required.");
+  if (!renterName) throw new Error("Renter name is required.");
+  if (!agreementNumber) throw new Error("Agreement number is required.");
+
+  const startISO = toIsoDateTimeOrNull(input.rentStartDate);
+  const endISO = toIsoDateTimeOrNull(input.rentEndDate);
+  if (!startISO) throw new Error("Invalid rent start date.");
+  if (!endISO) throw new Error("Invalid rent end date.");
+
+  const releasedISO = input.letGoDate
+    ? toIsoDateTimeOrNull(input.letGoDate)
+    : null;
+  const lastPaymentISO = input.lastPaymentDate
+    ? toIsoDateTimeOrNull(input.lastPaymentDate)
+    : null;
+
+  const sizeSqft = Math.max(0, Number(input.sizeSqft ?? 0));
+  const rate = Math.max(0, Number(input.rate ?? 0));
+  const paymentDueDay = clampInt(Number(input.paymentDueDay ?? 10), 1, 28);
+  const finePerDay = Math.max(0, Number(input.finePerDay ?? 0));
+
+  await Promise.all([
+    updateDocument(COLLECTIONS.landParcels, lease.parcelId, {
+      name: landName,
+      sizeSqft,
+    }),
+    updateDocument(COLLECTIONS.landTenants, lease.tenantId, {
+      fullName: renterName,
+    }),
+    updateDocument(COLLECTIONS.landLeases, leaseId, {
+      startDate: startISO,
+      endDate: endISO,
+      agreementNumber,
+      releasedDate: releasedISO,
+      lastPaymentDate: lastPaymentISO,
+      rateLariPerSqft: rate,
+      paymentDueDay,
+      fineLariPerDay: finePerDay,
+      monthlyRent: round2(sizeSqft * rate),
+    } as any),
+  ]);
+
+  const statements = await listAllDocuments<LandStatementDoc>(
+    COLLECTIONS.landStatements,
+    { where: [["leaseId", "==", leaseId]] },
+  );
+
+  await Promise.all(
+    statements.map(async (statement) => {
+      const baseStatementUpdate = {
+        landName,
+        tenantName: renterName,
+        agreementNumber,
+        startDate: startISO,
+        endDate: endISO,
+        releasedDate: releasedISO,
+        sizeSqft,
+        rateLariPerSqft: rate,
+        paymentDueDay,
+        fineLariPerDay: finePerDay,
+        monthlyRent: round2(sizeSqft * rate),
+      } as any;
+
+      if (statement.status !== "OPEN") {
+        await updateDocument(
+          COLLECTIONS.landStatements,
+          statement.$id,
+          baseStatementUpdate,
+        );
+        return;
+      }
+
+      const snapshot = await computeStatementFromBaseline({
+        leaseId,
+        monthKey: statement.monthKey,
+        capToEndDate: Boolean((statement as any).snapshot_capToEndDate),
+        payments: [],
+      });
+
+      await updateDocument(COLLECTIONS.landStatements, statement.$id, {
+        ...baseStatementUpdate,
+        snapshot_totalRentPaymentMonthly: Number(
+          snapshot.totalRentPaymentMonthly ?? 0,
+        ),
+        snapshot_monthlyRentPaymentAmount: Number(
+          snapshot.monthlyRentPaymentAmount ?? 0,
+        ),
+        snapshot_unpaidMonths: Number(snapshot.unpaidMonths ?? 0),
+        snapshot_outstandingFees: Number(snapshot.outstandingFees ?? 0),
+        snapshot_numberOfFineDays: Number(snapshot.numberOfFineDays ?? 0),
+        snapshot_fineAmount: Number(snapshot.fineAmount ?? 0),
+        snapshot_latestPaymentDate: snapshot.latestPaymentDate ?? null,
+        snapshot_fineBreakdownJson: JSON.stringify(
+          snapshot.fineBreakdown ?? [],
+        ),
+      });
+    }),
+  );
+
+  return { ok: true };
+};
+
+export const deleteLandRentLease = async (input: { leaseId: string }) => {
+  await requireAdmin();
+
+  const leaseId = String(input.leaseId ?? "").trim();
+  if (!leaseId) throw new Error("Lease is required.");
+
+  const lease = await getDocument<LandLeaseDoc>(
+    COLLECTIONS.landLeases,
+    leaseId,
+  );
+
+  const [statements, payments] = await Promise.all([
+    listAllDocuments<LandStatementDoc>(COLLECTIONS.landStatements, {
+      where: [["leaseId", "==", leaseId]],
+    }),
+    listAllDocuments<LandPaymentDoc>(COLLECTIONS.landPayments, {
+      where: [["leaseId", "==", leaseId]],
+    }),
+  ]);
+
+  await Promise.all([
+    ...payments.map((payment) =>
+      deleteDocument(COLLECTIONS.landPayments, payment.$id),
+    ),
+    ...statements.map((statement) =>
+      deleteDocument(COLLECTIONS.landStatements, statement.$id),
+    ),
+  ]);
+
+  await deleteDocument(COLLECTIONS.landLeases, leaseId);
+
+  await Promise.allSettled([
+    deleteDocument(COLLECTIONS.landParcels, lease.parcelId),
+    deleteDocument(COLLECTIONS.landTenants, lease.tenantId),
+  ]);
+
+  return {
+    ok: true,
+    deletedStatements: statements.length,
+    deletedPayments: payments.length,
+  };
+};
+
 /* =============================== Statements (NEW flow) =============================== */
 
 export const listLandStatementsForLease = async (leaseId: string) => {
@@ -319,28 +620,16 @@ export const listLandStatementsForLease = async (leaseId: string) => {
     COLLECTIONS.landStatements,
     {
       where: [["leaseId", "==", leaseId]],
-      orderBy: [{ field: "monthKey", direction: "asc" }],
     },
   );
 
-  // Ensure stable order even if monthKey duplicates (shouldn't)
   rows.sort((a, b) => monthKeyCompare(a.monthKey, b.monthKey));
   return rows;
 };
 
 export const fetchOpenLandStatementForLease = async (leaseId: string) => {
-  const res = await listDocuments<LandStatementDoc>(
-    COLLECTIONS.landStatements,
-    {
-      where: [
-        ["leaseId", "==", leaseId],
-        ["status", "==", "OPEN"],
-      ],
-      limit: 1,
-    },
-  );
-
-  return res.documents[0] ?? null;
+  const rows = await listLandStatementsForLease(leaseId);
+  return rows.find((row) => row.status === "OPEN") ?? null;
 };
 
 const computeStatementFromBaseline = async (args: {
@@ -368,6 +657,9 @@ const computeStatementFromBaseline = async (args: {
   const rentStart = safeDateUTC((lease as any).startDate ?? null);
   const rentEnd = safeDateUTC((lease as any).endDate ?? null);
   const released = safeDateUTC((lease as any).releasedDate ?? null);
+  const fixedAdjustmentRows = getFixedLandRentAdjustmentsFromLease(
+    lease as any,
+  );
 
   // Baseline = month AFTER the last paid month.
   // Prefer lease.lastPaymentDate (stored in land_leases). Fall back to last PAID statement, then rentStart.
@@ -422,6 +714,17 @@ const computeStatementFromBaseline = async (args: {
 
   const { y, m } = parseMonthKey(args.monthKey);
   const toMonth = new Date(Date.UTC(y, m - 1, 1));
+  const generatedAdjustmentRows = computePostCutoffFineRows({
+    effectiveCap: released
+      ? (minDate(dateOnlyInTimeZoneUTC(new Date()), released) ??
+        dateOnlyInTimeZoneUTC(new Date()))
+      : dateOnlyInTimeZoneUTC(new Date()),
+    paymentDueDay,
+    monthlyRent,
+    fineLariPerDay,
+    rentRate: rate,
+    sizeSqft,
+  });
 
   // Don't allow statements before baseline
   if (toMonth.getTime() < fromMonth.getTime()) {
@@ -434,6 +737,8 @@ const computeStatementFromBaseline = async (args: {
         endDate: String((lease as any).endDate ?? ""),
       },
       agreementNumber: String(lease.agreementNumber ?? ""),
+      fixedAdjustmentRows,
+      generatedAdjustmentRows,
       letGoDate: (lease as any).releasedDate
         ? String((lease as any).releasedDate)
         : null,
@@ -476,12 +781,14 @@ const computeStatementFromBaseline = async (args: {
   const today = dateOnlyInTimeZoneUTC(new Date());
   // Cap at today so "days overdue" counts from 11th of each month through today (not end of statement month)
   let effectiveCap = today;
+  let effectiveFineCap = today;
 
   if (args.capToEndDate && rentEnd) {
     effectiveCap = minDate(effectiveCap, rentEnd) ?? effectiveCap;
   }
   if (released) {
     effectiveCap = minDate(effectiveCap, released) ?? effectiveCap;
+    effectiveFineCap = minDate(effectiveFineCap, released) ?? effectiveFineCap;
   }
 
   const pays = (args.payments ?? []).slice();
@@ -507,6 +814,21 @@ const computeStatementFromBaseline = async (args: {
         )[0]
     : null;
 
+  const lastPaymentForFine = latestPay
+    ? dateOnlyUTC(new Date(latestPay.paidAt))
+    : leaseLastPaidDate;
+
+  const continuousFine = computeContinuousFineFromLastPayment({
+    lastPaymentDate: lastPaymentForFine,
+    rentStart,
+    effectiveCap: effectiveFineCap,
+    monthlyRent,
+  });
+
+  const totalOutstanding = round2(
+    computed.outstandingFees + continuousFine.fineAmount,
+  );
+
   const formatYMD = (d: Date) =>
     `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(
       d.getUTCDate(),
@@ -518,7 +840,7 @@ const computeStatementFromBaseline = async (args: {
       ? formatYMD(leaseLastPaidDate)
       : null;
 
-  const balanceRemaining = round2(computed.totalOutstanding);
+  const balanceRemaining = totalOutstanding;
 
   return {
     landName: String(parcel.name ?? ""),
@@ -528,6 +850,8 @@ const computeStatementFromBaseline = async (args: {
       endDate: String((lease as any).endDate ?? ""),
     },
     agreementNumber: String(lease.agreementNumber ?? ""),
+    fixedAdjustmentRows,
+    generatedAdjustmentRows,
     letGoDate: (lease as any).releasedDate
       ? String((lease as any).releasedDate)
       : null,
@@ -538,9 +862,9 @@ const computeStatementFromBaseline = async (args: {
 
     latestPaymentDate,
 
-    numberOfFineDays: computed.numberOfFineDays,
-    fineAmount: computed.fineAmount,
-    numberOfDaysRentNotPaid: computed.numberOfFineDays,
+    numberOfFineDays: continuousFine.numberOfFineDays,
+    fineAmount: continuousFine.fineAmount,
+    numberOfDaysRentNotPaid: continuousFine.numberOfFineDays,
 
     monthlyRentPaymentAmount: monthlyRent,
     totalRentPaymentMonthly: balanceRemaining,
@@ -551,7 +875,7 @@ const computeStatementFromBaseline = async (args: {
 
     unpaidMonths: computed.unpaidMonths,
     outstandingFees: computed.outstandingFees,
-    fineBreakdown: computed.fineBreakdown,
+    fineBreakdown: continuousFine.fineBreakdown,
 
     payments: pays,
     paymentsTotal,
@@ -575,12 +899,13 @@ export const previewLandRentStatement = async (params: {
   capToEndDate?: boolean;
 }) => {
   // Preview ignores payments (because no statement exists yet)
-  return computeStatementFromBaseline({
+  const details = await computeStatementFromBaseline({
     leaseId: params.leaseId,
     monthKey: params.monthKey,
     capToEndDate: params.capToEndDate,
     payments: [],
   });
+  return withFixedLandRentAdjustments(details);
 };
 
 export const createLandStatement = async (params: {
@@ -757,11 +1082,26 @@ export const getLandStatementDetails = async (params: {
 
   const sizeSqft = Number((parcel as any).sizeSqft ?? 0);
   const rentRate = Number((lease as any).rateLariPerSqft ?? 0);
+  const statementReleased = safeDateUTC((lease as any).releasedDate ?? null);
+  const generatedAdjustmentRows = computePostCutoffFineRows({
+    effectiveCap: statementReleased
+      ? (minDate(dateOnlyInTimeZoneUTC(new Date()), statementReleased) ??
+        dateOnlyInTimeZoneUTC(new Date()))
+      : dateOnlyInTimeZoneUTC(new Date()),
+    paymentDueDay,
+    monthlyRent: round2(sizeSqft * rentRate),
+    fineLariPerDay,
+    rentRate,
+    sizeSqft,
+  });
 
   const rentDuration = {
     startDate: String((lease as any).startDate ?? ""),
     endDate: String((lease as any).endDate ?? ""),
   };
+  const fixedAdjustmentRows = getFixedLandRentAdjustmentsFromLease(
+    lease as any,
+  );
 
   // ✅ Load payments (real-time)
   const paysDocs = await listLandPaymentsForStatement(params.statementId);
@@ -879,7 +1219,7 @@ export const getLandStatementDetails = async (params: {
 
   const isPaid = balanceRemaining <= 0.00001;
 
-  return {
+  return withFixedLandRentAdjustments({
     statement,
 
     // Stable identity fields used around the UI/PDF
@@ -893,6 +1233,8 @@ export const getLandStatementDetails = async (params: {
         (statement as any).agreementNumber ??
         "",
     ),
+    fixedAdjustmentRows,
+    generatedAdjustmentRows,
     letGoDate: (lease as any).releasedDate
       ? String((lease as any).releasedDate)
       : null,
@@ -922,7 +1264,7 @@ export const getLandStatementDetails = async (params: {
     paymentsTotal,
     balanceRemaining,
     isPaid,
-  };
+  });
 };
 
 /** Recompute fine (and snapshot) for an OPEN statement and update the document. */
@@ -1055,18 +1397,14 @@ export const createLandRentPayment = async (input: {
     );
   }
 
-  if (!input.slipDataUrl || !input.slipFilename) {
-    throw new Error("Payment slip is required.");
-  }
+  const uploaded =
+    input.slipDataUrl && input.slipFilename
+      ? await uploadSlipFromDataUrl(input.slipDataUrl, input.slipFilename)
+      : null;
 
-  const uploaded = await uploadSlipFromDataUrl(
-    input.slipDataUrl,
-    input.slipFilename,
-  );
-
-  const slipFileId = uploaded.fileId;
-  const slipMime = uploaded.mime;
-  const slipFileName = input.slipFilename;
+  const slipFileId = uploaded?.fileId ?? null;
+  const slipMime = uploaded?.mime ?? null;
+  const slipFileName = uploaded ? input.slipFilename : null;
 
   const created = await createDocument<LandPaymentDoc>(COLLECTIONS.landPayments, {
     leaseId: st.leaseId,
@@ -1263,6 +1601,99 @@ const computeBucketsWithPaymentsUTC = (args: {
   };
 };
 
+function computePostCutoffFineRows(args: {
+  effectiveCap: Date;
+  paymentDueDay: number;
+  monthlyRent: number;
+  fineLariPerDay: number;
+  rentRate: number;
+  sizeSqft: number;
+}): LandRentGeneratedAdjustmentRow[] {
+  const effectiveCap = dateOnlyUTC(args.effectiveCap);
+  if (effectiveCap.getTime() < LAND_RENT_POST_CUTOFF_FINE_START_DATE.getTime()) {
+    return [];
+  }
+
+  const computed = computeBucketsWithPaymentsUTC({
+    fromMonth: startOfMonthUTC(LAND_RENT_POST_CUTOFF_FINE_START_DATE),
+    toMonth: startOfMonthUTC(effectiveCap),
+    paymentDueDay: args.paymentDueDay,
+    monthlyRent: args.monthlyRent,
+    fineLariPerDay: args.fineLariPerDay,
+    effectiveCap,
+    payments: [],
+  });
+
+  if (computed.fineAmount <= 0) return [];
+
+  return [
+    {
+      key: "generated-post-july-2025-fine",
+      total: round2(computed.fineAmount),
+      rentAmount: 0,
+      unpaidMonths: computed.unpaidMonths,
+      fineAmount: round2(computed.fineAmount),
+      fineDays: computed.numberOfFineDays,
+      periodLabel: LAND_RENT_POST_CUTOFF_FINE_LABEL,
+      rentRate: round2(args.rentRate),
+      sizeOfLand: round2(args.sizeSqft),
+      description: LAND_RENT_POST_CUTOFF_FINE_LABEL,
+      displayMode: "description",
+    },
+  ];
+}
+
+function computeContinuousFineFromLastPayment(args: {
+  lastPaymentDate: Date | null;
+  rentStart: Date | null;
+  effectiveCap: Date;
+  monthlyRent: number;
+}) {
+  const start = args.lastPaymentDate ?? args.rentStart;
+  if (!start) {
+    return {
+      numberOfFineDays: 0,
+      fineAmount: 0,
+      fineBreakdown: [] as Array<{
+        key: string;
+        label: string;
+        days: number;
+        fine: number;
+      }>,
+    };
+  }
+
+  const fineEnd =
+    minDate(args.effectiveCap, LAND_RENT_FINE_CUTOFF_DATE) ?? args.effectiveCap;
+  if (fineEnd.getTime() < start.getTime()) {
+    return {
+      numberOfFineDays: 0,
+      fineAmount: 0,
+      fineBreakdown: [],
+    };
+  }
+
+  const numberOfFineDays = daysBetweenUTC(start, fineEnd) + 1;
+  const dailyFine = (Number(args.monthlyRent ?? 0) * 12 * 25) / 365 / 100;
+  const fineAmount = round2(numberOfFineDays * dailyFine);
+
+  return {
+    numberOfFineDays,
+    fineAmount,
+    fineBreakdown:
+      fineAmount > 0
+        ? [
+            {
+              key: "continuous-fine-period",
+              label: "Last payment to July 30, 2025",
+              days: numberOfFineDays,
+              fine: fineAmount,
+            },
+          ]
+        : [],
+  };
+}
+
 /* =============================== Optional: Overview (kept) =============================== */
 
 export const fetchLandRentOverview = async (params?: {
@@ -1275,20 +1706,109 @@ export const fetchLandRentOverview = async (params?: {
 
   const capToEndDate = !!params?.capToEndDate;
 
-  const leases = await listAllDocuments<LandLeaseDoc>(COLLECTIONS.landLeases, {
-    orderBy: [{ field: "$createdAt", direction: "desc" }],
-  });
-
-  const parcels = await listAllDocuments<LandParcelDoc>(COLLECTIONS.landParcels, {
-    orderBy: [{ field: "$createdAt", direction: "asc" }],
-  });
-
-  const tenants = await listAllDocuments<LandTenantDoc>(COLLECTIONS.landTenants, {
-    orderBy: [{ field: "$createdAt", direction: "asc" }],
-  });
+  const [leases, parcels, tenants, openStatements, currentMonthStatements] =
+    await Promise.all([
+      listAllDocuments<LandLeaseDoc>(COLLECTIONS.landLeases, {
+        orderBy: [{ field: "$createdAt", direction: "desc" }],
+      }),
+      listAllDocuments<LandParcelDoc>(COLLECTIONS.landParcels, {
+        orderBy: [{ field: "$createdAt", direction: "asc" }],
+      }),
+      listAllDocuments<LandTenantDoc>(COLLECTIONS.landTenants, {
+        orderBy: [{ field: "$createdAt", direction: "asc" }],
+      }),
+      listAllDocuments<LandStatementDoc>(COLLECTIONS.landStatements, {
+        where: [["status", "==", "OPEN"]],
+      }),
+      listAllDocuments<LandStatementDoc>(COLLECTIONS.landStatements, {
+        where: [["monthKey", "==", mk]],
+      }),
+    ]);
 
   const parcelById = new Map(parcels.map((p) => [p.$id, p]));
   const tenantById = new Map(tenants.map((t) => [t.$id, t]));
+  const relevantStatementIds = Array.from(
+    new Set(
+      [...openStatements, ...currentMonthStatements]
+        .map((statement) => statement.$id)
+        .filter(Boolean),
+    ),
+  );
+  const paymentGroups = await Promise.all(
+    relevantStatementIds.map((statementId) =>
+      listAllDocuments<LandPaymentDoc>(COLLECTIONS.landPayments, {
+        where: [["statementId", "==", statementId]],
+        orderBy: [{ field: "paidAt", direction: "asc" }],
+      }),
+    ),
+  );
+  const payments = paymentGroups.flat();
+  const openStatementByLease = new Map(
+    openStatements.map((statement) => [statement.leaseId, statement]),
+  );
+  const monthStatementByLease = new Map(
+    currentMonthStatements.map((statement) => [statement.leaseId, statement]),
+  );
+  const paymentsByStatement = new Map<string, LandPaymentDoc[]>();
+  for (const payment of payments) {
+    const statementId = String((payment as any).statementId ?? "");
+    if (!statementId) continue;
+    const list = paymentsByStatement.get(statementId) ?? [];
+    list.push(payment);
+    paymentsByStatement.set(statementId, list);
+  }
+
+  const overviewFromStatement = (
+    lease: LandLeaseDoc,
+    statement: LandStatementDoc,
+    statusFallback: string,
+  ): LandRentOverviewRow => {
+    const parcel = parcelById.get(lease.parcelId);
+    const tenant = tenantById.get(lease.tenantId);
+    const sizeSqft = Number(parcel?.sizeSqft ?? 0);
+    const rate = Number(lease.rateLariPerSqft ?? 0);
+    const statementPayments = paymentsByStatement.get(statement.$id) ?? [];
+    const paymentsTotal = round2(
+      statementPayments.reduce(
+        (sum, payment) => sum + Number((payment as any).amount ?? 0),
+        0,
+      ),
+    );
+    const latestPayment = statementPayments
+      .slice()
+      .sort((a, b) =>
+        String((b as any).paidAt ?? "").localeCompare(
+          String((a as any).paidAt ?? ""),
+        ),
+      )[0];
+    const snapshotTotal = Number(
+      (statement as any).snapshot_totalRentPaymentMonthly ??
+        (statement as any).totalRentPaymentMonthly ??
+        0,
+    );
+
+    return {
+      leaseId: lease.$id,
+      landName: String(parcel?.name ?? ""),
+      tenantName: String(tenant?.fullName ?? ""),
+      agreementNumber: String(lease.agreementNumber ?? ""),
+      startDate: String(lease.startDate ?? ""),
+      endDate: String(lease.endDate ?? ""),
+      releasedDate: lease.releasedDate ? String(lease.releasedDate) : null,
+      paymentDueDay: Number(lease.paymentDueDay ?? 10),
+      rateLariPerSqft: rate,
+      fineLariPerDay: Number(lease.fineLariPerDay ?? 0),
+      sizeSqft,
+      monthlyRent: round2(sizeSqft * rate),
+      lastPaymentDate: latestPayment?.paidAt
+        ? new Date(String(latestPayment.paidAt)).toISOString().slice(0, 10)
+        : ((statement as any).snapshot_latestPaymentDate ?? null),
+      openingOutstandingTotal: round2(Math.max(0, snapshotTotal - paymentsTotal)),
+      status: String((statement as any).status ?? statusFallback),
+      agreementPdfFileId: lease.agreementPdfFileId ?? null,
+      agreementPdfFilename: lease.agreementPdfFilename ?? null,
+    } satisfies LandRentOverviewRow;
+  };
 
   const rows = await Promise.all(
     leases.map(async (l) => {
@@ -1300,86 +1820,15 @@ export const fetchLandRentOverview = async (params?: {
       const monthlyRent = round2(sizeSqft * rate);
 
       // 1) If there is an OPEN statement: use LIVE remaining balance (payments included)
-      const open = await fetchOpenLandStatementForLease(l.$id);
+      const open = openStatementByLease.get(l.$id) ?? null;
       if (open) {
-        const details = await getLandStatementDetails({
-          statementId: open.$id,
-          capToEndDate,
-        });
-
-        const lastPay =
-          (details.payments ?? [])
-            .slice()
-            .sort(
-              (a: any, b: any) =>
-                new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime(),
-            )[0] ?? null;
-
-        const lastPaymentDate = lastPay?.paidAt
-          ? new Date(lastPay.paidAt).toISOString().slice(0, 10)
-          : (details.latestPaymentDate ?? null);
-
-        return {
-          leaseId: l.$id,
-          landName: String(parcel?.name ?? ""),
-          tenantName: String(tenant?.fullName ?? ""),
-          agreementNumber: String(l.agreementNumber ?? ""),
-          startDate: String(l.startDate ?? ""),
-          endDate: String(l.endDate ?? ""),
-          releasedDate: l.releasedDate ? String(l.releasedDate) : null,
-          paymentDueDay: Number(l.paymentDueDay ?? 10),
-          rateLariPerSqft: rate,
-          sizeSqft,
-          monthlyRent,
-
-          lastPaymentDate,
-          // ✅ IMPORTANT: show remaining, not snapshot total
-          openingOutstandingTotal: Number(details.balanceRemaining ?? 0),
-          status: "OPEN",
-
-          agreementPdfFileId: l.agreementPdfFileId ?? null, // ADD THIS
-          agreementPdfFilename: l.agreementPdfFilename ?? null, // ADD THIS
-        } satisfies LandRentOverviewRow;
+        return overviewFromStatement(l, open, "OPEN");
       }
 
       // 2) If a statement exists for the selected monthKey, use it (instead of preview)
-      const stForMonth = await listDocuments<LandStatementDoc>(
-        COLLECTIONS.landStatements,
-        {
-          where: [
-            ["leaseId", "==", l.$id],
-            ["monthKey", "==", mk],
-          ],
-          limit: 1,
-        },
-      );
-
-      const st = stForMonth.documents[0] ?? null;
-      if (st) {
-        const details = await getLandStatementDetails({
-          statementId: st.$id,
-          capToEndDate,
-        });
-
-        return {
-          leaseId: l.$id,
-          landName: String(parcel?.name ?? ""),
-          tenantName: String(tenant?.fullName ?? ""),
-          agreementNumber: String(l.agreementNumber ?? ""),
-          startDate: String(l.startDate ?? ""),
-          endDate: String(l.endDate ?? ""),
-          releasedDate: l.releasedDate ? String(l.releasedDate) : null,
-          paymentDueDay: Number(l.paymentDueDay ?? 10),
-          rateLariPerSqft: rate,
-          sizeSqft,
-          monthlyRent,
-
-          lastPaymentDate: details.latestPaymentDate ?? null,
-          openingOutstandingTotal: Number(details.balanceRemaining ?? 0),
-          status: String(details.statement.status ?? "PAID"),
-          agreementPdfFileId: l.agreementPdfFileId ?? null,
-          agreementPdfFilename: l.agreementPdfFilename ?? null,
-        } satisfies LandRentOverviewRow;
+      const cachedStatement = monthStatementByLease.get(l.$id) ?? null;
+      if (cachedStatement) {
+        return overviewFromStatement(l, cachedStatement, "PAID");
       }
 
       // 3) No statement yet: fallback to preview (computed)
@@ -1399,6 +1848,7 @@ export const fetchLandRentOverview = async (params?: {
         releasedDate: l.releasedDate ? String(l.releasedDate) : null,
         paymentDueDay: Number(l.paymentDueDay ?? 10),
         rateLariPerSqft: rate,
+        fineLariPerDay: Number(l.fineLariPerDay ?? 0),
         sizeSqft,
         monthlyRent,
 

@@ -9,8 +9,8 @@ export const IMAM_RECORD_CARDS: Partial<Record<ImamOptionKey, string>> = {
 };
 
 export const LEAVE_LABEL_DHIVEHI: Record<string, string> = {
-  "Sick Leave": "ސެޓިފިކެޓް ސަލާމް",
-  "Certificate Leave": "ސެޓިފިކެޓް ސަލާމް",
+  "Sick Leave": "ސަލާމް",
+  "Certificate Leave": "ސެޓްފިކެޓް ސަލާމް",
   "Annual Leave": "އަހަރީ ޗުއްޓީ",
   "Family Related Leave": "އާއިލީ ޒިންމާ",
   "Maternity Leave": "މެޓާނިޓީ ލީވް",

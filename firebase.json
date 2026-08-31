@@ -1,0 +1,8 @@
+{
+  "firestore": [
+    {
+      "database": "council-hr-dashboard",
+      "indexes": "firestore.indexes.json"
+    }
+  ]
+}

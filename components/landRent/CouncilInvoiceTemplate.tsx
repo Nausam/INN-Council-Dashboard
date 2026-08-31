@@ -37,6 +37,10 @@ type CellValue =
       className?: string;
     };
 
+type TableRow = Record<string, CellValue> & {
+  __spanText?: TextRun;
+};
+
 type CouncilInvoiceTemplateProps = {
   leftLogoSrc?: string;
   crestSrc?: string;
@@ -50,7 +54,7 @@ type CouncilInvoiceTemplateProps = {
   contact: ContactInfo;
 
   columns: TableColumn[];
-  rows: Array<Record<string, CellValue>>;
+  rows: TableRow[];
 
   totalLabel: TextRun;
   totalAmount: TextRun;
@@ -323,24 +327,42 @@ export default function CouncilInvoiceTemplate(
                   </thead>
 
                   <tbody dir="rtl">
-                    {rows.map((r, idx) => (
-                      <tr
-                        key={idx}
-                        className={cx(
-                          "text-center text-sm font-semibold text-black",
-                          idx % 2 === 0 ? "bg-white" : "bg-black/[0.015]"
-                        )}
-                      >
-                        {columns.map((c) => (
-                          <td
-                            key={c.key}
-                            className="px-4 py-4 border-t border-r border-black/10 last:border-r-0"
-                          >
-                            {renderCell(r[c.key])}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
+                    {rows.map((r, idx) => {
+                      const rowClassName = cx(
+                        "text-center text-sm font-semibold text-black",
+                        idx % 2 === 0 ? "bg-white" : "bg-black/[0.015]",
+                      );
+
+                      if (r.__spanText && columns.length > 1) {
+                        const firstColumn = columns[0];
+                        return (
+                          <tr key={idx} className={rowClassName}>
+                            <td className="px-4 py-4 border-t border-r border-black/10">
+                              {renderCell(r[firstColumn.key])}
+                            </td>
+                            <td
+                              colSpan={columns.length - 1}
+                              className="px-5 py-4 text-right border-t border-black/10"
+                            >
+                              {renderText(r.__spanText)}
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return (
+                        <tr key={idx} className={rowClassName}>
+                          {columns.map((c) => (
+                            <td
+                              key={c.key}
+                              className="px-4 py-4 border-t border-r border-black/10 last:border-r-0"
+                            >
+                              {renderCell(r[c.key])}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
                   </tbody>
 
                   <tfoot dir="rtl">

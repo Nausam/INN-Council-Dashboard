@@ -26,15 +26,16 @@ export default async function WasteInvoicesPage({
   const status = (searchParams?.status?.trim() || "ALL") as any;
   const customerId = searchParams?.customerId?.trim() || "";
 
-  const invoices = await listWasteInvoices({
-    periodMonth: month,
-    status: status === "ALL" ? undefined : status,
-    customerId: customerId || undefined,
-    limit: 200,
-  });
-
-  const summary = await getWasteInvoiceSummary({ periodMonth: month });
-  const customers = await listWasteCustomersLight({ limit: 500 });
+  const [invoices, summary, customers] = await Promise.all([
+    listWasteInvoices({
+      periodMonth: month,
+      status: status === "ALL" ? undefined : status,
+      customerId: customerId || undefined,
+      limit: 200,
+    }),
+    getWasteInvoiceSummary({ periodMonth: month }),
+    listWasteCustomersLight({ limit: 500 }),
+  ]);
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 px-4 pb-10 md:px-6 mt-20">

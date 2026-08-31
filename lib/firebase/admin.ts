@@ -1,16 +1,30 @@
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
 
-let app: App | undefined;
-let db: Firestore | undefined;
+type FirebaseAdminCache = {
+  app?: App;
+  dbByDatabaseId: Record<string, Firestore>;
+};
+
+const firebaseAdminCache = globalThis as typeof globalThis & {
+  __hrDashboardFirebaseAdmin?: FirebaseAdminCache;
+};
+
+function getCache(): FirebaseAdminCache {
+  firebaseAdminCache.__hrDashboardFirebaseAdmin ??= {
+    dbByDatabaseId: {},
+  };
+  return firebaseAdminCache.__hrDashboardFirebaseAdmin;
+}
 
 function getFirebaseApp(): App {
-  if (app) return app;
+  const cache = getCache();
+  if (cache.app) return cache.app;
 
   const existing = getApps();
   if (existing.length > 0) {
-    app = existing[0]!;
-    return app;
+    cache.app = existing[0]!;
+    return cache.app;
   }
 
   const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
@@ -23,22 +37,31 @@ function getFirebaseApp(): App {
     );
   }
 
-  app = initializeApp({
+  cache.app = initializeApp({
     credential: cert({ projectId, clientEmail, privateKey }),
     projectId,
   });
 
-  return app;
+  return cache.app;
 }
 
 export function getFirestoreDb(): Firestore {
-  if (db) return db;
-
   const databaseId =
     process.env.FIRESTORE_DATABASE_ID ?? "council-hr-dashboard";
+  const cache = getCache();
+  const cachedDb = cache.dbByDatabaseId[databaseId];
+  if (cachedDb) return cachedDb;
 
-  db = getFirestore(getFirebaseApp(), databaseId);
-  db.settings({ ignoreUndefinedProperties: true });
+  const db = getFirestore(getFirebaseApp(), databaseId);
+  try {
+    db.settings({ ignoreUndefinedProperties: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!message.includes("settings()")) {
+      throw error;
+    }
+  }
+  cache.dbByDatabaseId[databaseId] = db;
   return db;
 }
 

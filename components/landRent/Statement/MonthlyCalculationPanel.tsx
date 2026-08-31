@@ -13,6 +13,7 @@ import type {
   PreviewDetails,
   StatementDetails,
 } from "@/components/landRent/Statement/useLandRentStatementPage";
+import type { LandRentFixedAdjustmentRow } from "@/lib/landrent/landRent.actions";
 import React from "react";
 
 function clamp01(n: number) {
@@ -56,6 +57,8 @@ export default function MonthlyCalculationPanel({
   onRefresh,
   onRecalculateAll,
   recalculatingFines,
+  onSaveFixedAdjustmentRows,
+  savingFixedAdjustmentRows,
   leaseId,
 }: {
   previewSource: StatementDetails | PreviewDetails | null;
@@ -94,6 +97,10 @@ export default function MonthlyCalculationPanel({
   onRefresh: () => Promise<void>;
   onRecalculateAll?: () => Promise<void>;
   recalculatingFines?: boolean;
+  onSaveFixedAdjustmentRows: (
+    rows: LandRentFixedAdjustmentRow[],
+  ) => Promise<void>;
+  savingFixedAdjustmentRows: boolean;
   leaseId: string;
 }) {
   const [paymentsOpen, setPaymentsOpen] = React.useState(false);
@@ -123,6 +130,12 @@ export default function MonthlyCalculationPanel({
 
   const fineBreakdown = Array.isArray((previewSource as any).fineBreakdown)
     ? (previewSource as any).fineBreakdown
+    : [];
+  const fixedAdjustmentRows = Array.isArray(
+    (previewSource as any).fixedAdjustmentRows
+  )
+    ? ((previewSource as any)
+        .fixedAdjustmentRows as LandRentFixedAdjustmentRow[])
     : [];
 
   const paymentsTotal = openStatement
@@ -347,6 +360,13 @@ export default function MonthlyCalculationPanel({
           </div>
         </div>
 
+        <ExtraInvoiceRowsEditor
+          rows={fixedAdjustmentRows}
+          onSave={onSaveFixedAdjustmentRows}
+          saving={savingFixedAdjustmentRows}
+          disabled={!leaseId}
+        />
+
         {/* Fine Breakdown */}
         {fineBreakdown.length ? (
           <div className="mt-6 rounded-2xl bg-white shadow-sm ring-1 ring-slate-100">
@@ -523,6 +543,275 @@ export default function MonthlyCalculationPanel({
         </PaymentsModal>
       </div>
     </div>
+  );
+}
+
+function ExtraInvoiceRowsEditor({
+  rows,
+  onSave,
+  saving,
+  disabled,
+}: {
+  rows: LandRentFixedAdjustmentRow[];
+  onSave: (rows: LandRentFixedAdjustmentRow[]) => Promise<void>;
+  saving: boolean;
+  disabled: boolean;
+}) {
+  type DraftRow = {
+    key: string;
+    total: string;
+    rentAmount: string;
+    unpaidMonths: string;
+    fineAmount: string;
+    fineDays: string;
+    periodLabel: string;
+    rentRate: string;
+    sizeOfLand: string;
+  };
+
+  const [draft, setDraft] = React.useState<DraftRow[]>([]);
+
+  React.useEffect(() => {
+    setDraft(
+      rows.map((row) => ({
+        key: String(row.key ?? ""),
+        total: formatDraftNumber(row.total),
+        rentAmount: formatDraftNumber(row.rentAmount),
+        fineAmount: formatDraftNumber(row.fineAmount),
+        unpaidMonths: formatDraftNumber(row.unpaidMonths),
+        fineDays: formatDraftNumber(row.fineDays),
+        rentRate: formatDraftNumber(row.rentRate),
+        sizeOfLand: formatDraftNumber(row.sizeOfLand),
+        periodLabel: String(row.periodLabel ?? ""),
+      }))
+    );
+  }, [rows]);
+
+  const updateRow = (
+    index: number,
+    patch: Partial<DraftRow>
+  ) => {
+    setDraft((current) =>
+      current.map((row, i) => (i === index ? { ...row, ...patch } : row))
+    );
+  };
+
+  const addRow = () => {
+    setDraft((current) => [
+      ...current,
+      {
+        key: `fixed-row-${Date.now()}`,
+        total: "",
+        rentAmount: "",
+        unpaidMonths: "",
+        fineAmount: "",
+        fineDays: "",
+        periodLabel: "",
+        rentRate: "",
+        sizeOfLand: "",
+      },
+    ]);
+  };
+
+  const removeRow = (index: number) => {
+    setDraft((current) => current.filter((_, i) => i !== index));
+  };
+
+  const saveRows = async () => {
+    await onSave(
+      draft.map((row) => ({
+        key: row.key || `fixed-row-${Date.now()}`,
+        total: parseDraftNumber(row.total),
+        rentAmount: parseDraftNumber(row.rentAmount),
+        unpaidMonths: Math.floor(parseDraftNumber(row.unpaidMonths)),
+        fineAmount: parseDraftNumber(row.fineAmount),
+        fineDays: Math.floor(parseDraftNumber(row.fineDays)),
+        periodLabel: row.periodLabel,
+        rentRate: parseDraftNumber(row.rentRate),
+        sizeOfLand: parseDraftNumber(row.sizeOfLand),
+      }))
+    );
+  };
+
+  return (
+    <div className="mt-6 rounded-2xl bg-white shadow-sm ring-1 ring-slate-100">
+      <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="text-xl font-semibold text-slate-900">
+            Extra Invoice Rows
+          </div>
+          <div className="mt-1 text-sm text-slate-500">
+            Fixed rows that appear before the calculated monthly row.
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={addRow}
+            disabled={disabled || saving}
+            className="h-10 rounded-xl bg-slate-50 px-4 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-100 transition hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 disabled:hover:translate-y-0"
+          >
+            Add row
+          </button>
+          <button
+            type="button"
+            onClick={saveRows}
+            disabled={disabled || saving}
+            className="h-10 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-700 hover:shadow-md disabled:opacity-50 disabled:hover:translate-y-0"
+          >
+            {saving ? "Saving..." : "Save rows"}
+          </button>
+        </div>
+      </div>
+
+      <div className="h-px bg-slate-100" />
+
+      <div className="p-4">
+        {draft.length ? (
+          <div className="space-y-4">
+            {draft.map((row, index) => (
+              <div
+                key={row.key || index}
+                className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-100"
+              >
+                <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
+                  <FixedRowField label="Size">
+                    <NumberInput
+                      value={row.sizeOfLand}
+                      onChange={(value) =>
+                        updateRow(index, { sizeOfLand: value })
+                      }
+                    />
+                  </FixedRowField>
+                  <FixedRowField label="Rate">
+                    <NumberInput
+                      value={row.rentRate}
+                      onChange={(value) => updateRow(index, { rentRate: value })}
+                    />
+                  </FixedRowField>
+                  <FixedRowField label="Period">
+                    <input
+                      value={row.periodLabel}
+                      onChange={(e) =>
+                        updateRow(index, { periodLabel: e.target.value })
+                      }
+                      className={fixedRowInputClass}
+                      placeholder="2023 December"
+                    />
+                  </FixedRowField>
+                  <FixedRowField label="Fine days">
+                    <NumberInput
+                      value={row.fineDays}
+                      onChange={(value) =>
+                        updateRow(index, { fineDays: value })
+                      }
+                    />
+                  </FixedRowField>
+                  <FixedRowField label="Fine">
+                    <NumberInput
+                      value={row.fineAmount}
+                      onChange={(value) =>
+                        updateRow(index, { fineAmount: value })
+                      }
+                    />
+                  </FixedRowField>
+                  <FixedRowField label="Months">
+                    <NumberInput
+                      value={row.unpaidMonths}
+                      onChange={(value) =>
+                        updateRow(index, { unpaidMonths: value })
+                      }
+                    />
+                  </FixedRowField>
+                  <FixedRowField label="Rent">
+                    <NumberInput
+                      value={row.rentAmount}
+                      onChange={(value) =>
+                        updateRow(index, { rentAmount: value })
+                      }
+                    />
+                  </FixedRowField>
+                  <FixedRowField label="Total">
+                    <NumberInput
+                      value={row.total}
+                      onChange={(value) => updateRow(index, { total: value })}
+                    />
+                  </FixedRowField>
+                </div>
+
+                <div className="mt-3 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => removeRow(index)}
+                    disabled={saving}
+                    className="h-9 rounded-xl bg-white px-3 text-sm font-semibold text-rose-700 ring-1 ring-rose-100 transition hover:bg-rose-50 disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-2xl bg-slate-50 px-4 py-6 text-sm text-slate-500 ring-1 ring-slate-100">
+            No fixed rows yet.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function formatDraftNumber(value: unknown) {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n) || n === 0) return "";
+  return String(n);
+}
+
+function parseDraftNumber(value: string) {
+  const n = Number(String(value ?? "").replace(/,/g, ""));
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return n;
+}
+
+const fixedRowInputClass =
+  "h-10 w-full min-w-0 rounded-xl bg-white px-3 text-sm font-semibold text-slate-900 ring-1 ring-slate-200 transition focus:outline-none focus:ring-2 focus:ring-emerald-200";
+
+function FixedRowField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="min-w-0 space-y-1.5">
+      <span className="block text-[11px] font-semibold text-slate-500">
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+function NumberInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      className={fixedRowInputClass}
+    />
   );
 }
 
@@ -984,7 +1273,7 @@ function StatementAndPaymentsForm({
           </Field>
         </div>
 
-        <Field label="Slip upload">
+        <Field label="Slip upload (optional)">
           <div className="flex items-center gap-3">
             <label className="inline-flex h-11 cursor-pointer items-center justify-center rounded-xl bg-slate-50 px-4 text-sm font-semibold text-slate-700 ring-1 ring-slate-100 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md disabled:opacity-60">
               <input

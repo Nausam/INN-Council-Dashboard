@@ -15,7 +15,6 @@ import {
   AlertCircle,
   ArrowLeft,
   Banknote,
-  CalendarDays,
   CheckCircle2,
   FileText,
   Landmark,
@@ -398,20 +397,17 @@ export default function Page() {
     }
 
     const start = safeParseDate(rentStartDate);
-    const end = safeParseDate(rentEndDate);
     const letGo = safeParseDate(letGoDate);
 
     const dueDay = clampInt(num(paymentDueDay || "10"), 1, 28);
 
     const realToday = dateOnly(new Date());
+    // Rent end is the agreement date; arrears continue until the land is let go.
     const capA = letGo ? dateOnly(letGo) : null;
-    const capB = end ? dateOnly(end) : null;
 
     let effectiveToday = realToday;
     if (capA && capA.getTime() < effectiveToday.getTime())
       effectiveToday = capA;
-    if (capB && capB.getTime() < effectiveToday.getTime())
-      effectiveToday = capB;
 
     let fromMonth = addMonths(startOfMonth(lastPaid), 1);
 
@@ -483,7 +479,6 @@ export default function Page() {
   }, [
     lastPaymentDate,
     rentStartDate,
-    rentEndDate,
     letGoDate,
     paymentDueDay,
     monthlyRent,
@@ -573,7 +568,7 @@ export default function Page() {
 
             <FormField
               label="Let go date"
-              hint="Optional. Caps fines when the lease ends early."
+              hint="Optional. Stops rent and fine calculation from this date."
             >
               <CouncilDatePicker
                 value={letGoDate}

@@ -37,9 +37,11 @@ import {
 import {
   deleteAttendancesByDate,
   fetchEmployeeLeaveCalendar,
-  type EmployeeDoc,
-  type EmployeeLeaveCalendarEntry,
-} from "@/lib/firebase/hr";
+} from "@/lib/actions/hr.actions";
+import type {
+  EmployeeDoc,
+  EmployeeLeaveCalendarEntry,
+} from "@/lib/firebase/types";
 import { QUERY_STALE_TIME_ATTENDANCE } from "@/lib/query/config";
 import { queryKeys } from "@/lib/query/keys";
 import { cn } from "@/lib/utils";

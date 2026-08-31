@@ -4,7 +4,7 @@ import {
   getAgreementPdfDownloadUrl,
   getAgreementPdfUrl,
 } from "@/lib/landrent/landRent.urls";
-import { Download, Eye, FileText, User2 } from "lucide-react";
+import { Download, Eye, FileText, Pencil, Trash2, User2 } from "lucide-react";
 import Link from "next/link";
 import {
   buildStatementHref,
@@ -16,9 +16,15 @@ import {
 export default function OverviewTable({
   rows,
   monthKey,
+  isAdmin = false,
+  onEditLease,
+  onDeleteLease,
 }: {
   rows: LandRentOverviewUIRow[];
   monthKey: string;
+  isAdmin?: boolean;
+  onEditLease?: (row: LandRentOverviewUIRow) => void;
+  onDeleteLease?: (row: LandRentOverviewUIRow) => void;
 }) {
   return (
     <div className="hidden md:block rounded-2xl bg-white shadow-sm ring-1 ring-slate-100 overflow-hidden">
@@ -102,7 +108,7 @@ export default function OverviewTable({
                   </td>
 
                   <td className="px-4 py-3">
-                    <div className="flex justify-end">
+                    <div className="flex flex-wrap justify-end gap-2">
                       <Link
                         href={buildStatementHref(r.leaseId, monthKey)}
                         className="inline-flex items-center gap-2 h-10 rounded-xl px-4 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md
@@ -111,6 +117,28 @@ export default function OverviewTable({
                         <FileText className="h-4 w-4" />
                         Statement
                       </Link>
+                      {isAdmin ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => onEditLease?.(r)}
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:-translate-y-0.5 hover:shadow-md"
+                            aria-label="Edit lease"
+                            title="Edit lease"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onDeleteLease?.(r)}
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white text-rose-700 shadow-sm ring-1 ring-rose-100 transition hover:-translate-y-0.5 hover:bg-rose-50 hover:shadow-md"
+                            aria-label="Delete lease"
+                            title="Delete lease"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </>
+                      ) : null}
                     </div>
                   </td>
                 </tr>

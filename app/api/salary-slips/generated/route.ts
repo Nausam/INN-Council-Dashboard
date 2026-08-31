@@ -5,6 +5,7 @@ import {
 import {
   fetchAllEmployees,
   fetchAttendanceForPayPeriod,
+  fetchEmployeeById,
   fetchSalaryPeriodConfig,
 } from "@/lib/firebase/hr";
 import { formatPayPeriodRange } from "@/lib/salary-slips/pay-period";
@@ -25,28 +26,25 @@ export async function GET(request: NextRequest) {
 
   try {
     const [employees, attendance, periodConfig] = await Promise.all([
-      fetchAllEmployees(),
+      employeeId ? fetchEmployeeById(employeeId).then((employee) => [employee]) : fetchAllEmployees(),
       fetchAttendanceForPayPeriod(trimmed),
       fetchSalaryPeriodConfig(trimmed),
     ]);
 
     const holidayDates = periodConfig?.holidayDates ?? [];
 
-    let slips: SalarySlipComputed[] = computeSalarySlipsForPeriod(
+    const slips: SalarySlipComputed[] = computeSalarySlipsForPeriod(
       employees,
       trimmed,
       attendance,
       holidayDates,
     );
 
-    if (employeeId) {
-      slips = slips.filter((s) => s.employeeId === employeeId);
-      if (slips.length === 0) {
-        return NextResponse.json(
-          { error: "Employee not found for this period" },
-          { status: 404 },
-        );
-      }
+    if (employeeId && slips.length === 0) {
+      return NextResponse.json(
+        { error: "Employee not found for this period" },
+        { status: 404 },
+      );
     }
 
     return NextResponse.json({

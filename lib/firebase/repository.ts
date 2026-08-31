@@ -71,34 +71,11 @@ function matchesWhere(
   }
 }
 
-/** True when Firestore can run the query without a manual composite index. */
+/** True when Firestore can run the query shape. Composite indexes are declared in firestore.indexes.json. */
 function canRunOnFirestore(options: ListQueryOptions): boolean {
   const wheres = options.where ?? [];
-  const orderBys = options.orderBy ?? [];
-
-  if (orderBys.length > 0) {
-    return wheres.length === 0 && orderBys.length === 1;
-  }
-
-  if (wheres.length <= 1) return true;
-
-  const equality = wheres.filter(([, op]) => op === "==");
-  const nonEquality = wheres.filter(([, op]) => op !== "==");
-
-  if (equality.length === 0 && nonEquality.length >= 2) {
-    const fields = new Set(nonEquality.map(([field]) => field));
-    return fields.size === 1;
-  }
-
-  if (equality.length > 0 && nonEquality.length > 0) {
-    return false;
-  }
-
-  if (equality.length > 1) {
-    return false;
-  }
-
-  return true;
+  const arrayClauses = wheres.filter(([, op]) => op === "array-contains");
+  return arrayClauses.length <= 1;
 }
 
 function sortDocuments<T extends { $id: string }>(
@@ -210,12 +187,46 @@ export async function getDocument<T extends { $id: string }>(
   return doc;
 }
 
+export async function countDocuments(
+  collectionPath: string,
+  options: Omit<ListQueryOptions, "limit"> = {},
+): Promise<number> {
+  if (canRunOnFirestore(options)) {
+    const snap = await applyQuery(collectionPath, options).count().get();
+    return snap.data().count;
+  }
+  const docs = await queryDocumentsInMemory(collectionPath, options);
+  return docs.length;
+}
+
 export async function listDocuments<T extends { $id: string }>(
   collectionPath: string,
   options: ListQueryOptions = {},
 ): Promise<{ documents: T[]; total: number }> {
   const documents = await runListQuery<T>(collectionPath, options);
   return { documents, total: documents.length };
+}
+
+export async function listDocumentsPage<T extends { $id: string }>(
+  collectionPath: string,
+  options: ListQueryOptions & { offset?: number } = {},
+): Promise<{ documents: T[]; total: number }> {
+  const limit = options.limit ?? 25;
+  const offset = Math.max(options.offset ?? 0, 0);
+  const [window, total] = await Promise.all([
+    runListQuery<T>(collectionPath, {
+      ...options,
+      limit: offset + limit,
+    }),
+    countDocuments(collectionPath, {
+      where: options.where,
+      orderBy: options.orderBy,
+    }),
+  ]);
+  return {
+    documents: window.slice(offset, offset + limit),
+    total,
+  };
 }
 
 export async function listAllDocuments<T extends { $id: string }>(

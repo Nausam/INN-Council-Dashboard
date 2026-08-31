@@ -1,44 +1,16 @@
 "use server";
 
-import { auth, clerkClient, currentUser } from "@clerk/nextjs/server";
+import { auth, clerkClient } from "@clerk/nextjs/server";
 
-import { isAnyEmailAllowed } from "@/lib/auth/allowed-emails";
+import { getSessionAuthProfile } from "@/lib/auth/session-profile";
+import type { AuthProfile } from "@/lib/auth/session-claims";
 import { parseStringify } from "@/lib/utils";
 
-export type AuthProfile = {
-  id: string;
-  fullName: string;
-  email: string;
-  isAdmin: boolean;
-};
+export type { AuthProfile };
 
 export async function getAuthProfile(): Promise<AuthProfile | null> {
-  try {
-    const { userId } = await auth();
-    if (!userId) return null;
-
-    const user = await currentUser();
-    if (!user) return null;
-    const emails = user.emailAddresses.map((e) => e.emailAddress);
-    const email =
-      user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId)
-        ?.emailAddress ??
-      user.emailAddresses[0]?.emailAddress ??
-      "";
-
-    const fullName =
-      [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ||
-      email ||
-      "User";
-
-    const isAdmin = user.privateMetadata?.role === "admin";
-
-    if (!isAnyEmailAllowed(emails)) return null;
-
-    return parseStringify({ id: userId, fullName, email, isAdmin });
-  } catch {
-    return null;
-  }
+  const profile = await getSessionAuthProfile();
+  return profile ? parseStringify(profile) : null;
 }
 
 /** @deprecated Use getAuthProfile */

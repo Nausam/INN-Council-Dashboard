@@ -3,11 +3,35 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
+  const month = searchParams.get("month");
   const date = searchParams.get("date");
+
+  if (month) {
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return NextResponse.json(
+        { error: "Invalid month format. Use YYYY-MM" },
+        { status: 400 },
+      );
+    }
+    try {
+      const { getInnamaadhooForMonth } = await import("@/lib/salat");
+      return NextResponse.json({ month, days: getInnamaadhooForMonth(month) });
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to fetch prayer times",
+        },
+        { status: 500 },
+      );
+    }
+  }
 
   if (!date) {
     return NextResponse.json(
-      { error: "Date parameter is required" },
+      { error: "Date or month parameter is required" },
       { status: 400 }
     );
   }

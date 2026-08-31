@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useEmployeesQuery, useQueryInvalidation } from "@/hooks/queries";
 import { toast } from "@/hooks/use-toast";
 import { recordCardLabelForEmployee } from "@/lib/employees/record-card-label";
-import { createOvertimeRequest } from "@/lib/firebase/hr";
+import { createOvertimeRequest } from "@/lib/actions/hr.actions";
 import { formatJoinedDate } from "@/lib/salary-slips/format";
 import type { EmployeeDoc } from "@/lib/firebase/types";
 import { cn } from "@/lib/utils";

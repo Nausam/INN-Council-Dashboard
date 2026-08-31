@@ -1,6 +1,14 @@
 "use client";
 
-import { CalendarDays, Download, Eye, FileText, User2 } from "lucide-react";
+import {
+  CalendarDays,
+  Download,
+  Eye,
+  FileText,
+  Pencil,
+  Trash2,
+  User2,
+} from "lucide-react";
 import Link from "next/link";
 import {
   buildStatementHref,
@@ -17,9 +25,15 @@ import {
 export default function OverviewCards({
   rows,
   monthKey,
+  isAdmin = false,
+  onEditLease,
+  onDeleteLease,
 }: {
   rows: LandRentOverviewUIRow[];
   monthKey: string;
+  isAdmin?: boolean;
+  onEditLease?: (row: LandRentOverviewUIRow) => void;
+  onDeleteLease?: (row: LandRentOverviewUIRow) => void;
 }) {
   return (
     <div className="md:hidden grid gap-3">
@@ -47,14 +61,36 @@ export default function OverviewCards({
                     </div>
                   </div>
 
-                  <Link
-                    href={buildStatementHref(r.leaseId, monthKey)}
-                    className="shrink-0 inline-flex items-center gap-2 h-10 rounded-2xl bg-black text-white px-4 text-sm font-semibold
-                      ring-1 ring-black/10 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-                  >
-                    <FileText className="h-4 w-4" />
-                    Statement
-                  </Link>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {isAdmin ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => onEditLease?.(r)}
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-slate-700 ring-1 ring-black/10 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                          aria-label="Edit lease"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDeleteLease?.(r)}
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-rose-700 ring-1 ring-rose-100 shadow-sm transition hover:-translate-y-0.5 hover:bg-rose-50 hover:shadow-md"
+                          aria-label="Delete lease"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </>
+                    ) : null}
+                    <Link
+                      href={buildStatementHref(r.leaseId, monthKey)}
+                      className="inline-flex h-10 items-center gap-2 rounded-2xl bg-black px-4 text-sm font-semibold text-white
+                        ring-1 ring-black/10 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                    >
+                      <FileText className="h-4 w-4" />
+                      Statement
+                    </Link>
+                  </div>
                 </div>
 
                 <div className="mt-3 grid gap-2 text-xs">

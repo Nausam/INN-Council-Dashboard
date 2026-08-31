@@ -1,11 +1,6 @@
 {
   "indexes": [
     {
-      "collectionGroup": "employees",
-      "queryScope": "COLLECTION",
-      "fields": [{ "fieldPath": "recordCardNumber", "order": "ASCENDING" }]
-    },
-    {
       "collectionGroup": "salary_slips",
       "queryScope": "COLLECTION",
       "fields": [
@@ -14,19 +9,69 @@
       ]
     },
     {
-      "collectionGroup": "salary_slips",
+      "collectionGroup": "correspondence",
       "queryScope": "COLLECTION",
-      "fields": [{ "fieldPath": "periodLabel", "order": "ASCENDING" }]
-    },
-    {
-      "collectionGroup": "attendance",
-      "queryScope": "COLLECTION",
-      "fields": [{ "fieldPath": "date", "order": "ASCENDING" }]
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "receivedAt", "order": "DESCENDING" }
+      ]
     },
     {
       "collectionGroup": "correspondence",
       "queryScope": "COLLECTION",
-      "fields": [{ "fieldPath": "referenceNumber", "order": "ASCENDING" }]
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "dueAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "correspondence",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "searchTokens", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "receivedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "correspondence",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "answeredAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "punch_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "employeeId", "order": "ASCENDING" },
+        { "fieldPath": "localDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "punch_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "source", "order": "ASCENDING" },
+        { "fieldPath": "localDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "punch_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "source", "order": "ASCENDING" },
+        { "fieldPath": "sourceEmployeeId", "order": "ASCENDING" },
+        { "fieldPath": "localDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "punch_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "employeeId", "order": "ASCENDING" },
+        { "fieldPath": "eligible", "order": "ASCENDING" }
+      ]
     },
     {
       "collectionGroup": "punch_logs",
@@ -37,7 +82,31 @@
       ]
     },
     {
+      "collectionGroup": "punch_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "empNameNorm", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "punch_logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "empName", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "mosque_attendance",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "employeeId", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "attendance",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "employeeId", "order": "ASCENDING" },
@@ -53,11 +122,70 @@
       ]
     },
     {
+      "collectionGroup": "invoices",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "serviceType", "order": "ASCENDING" },
+        { "fieldPath": "periodMonth", "order": "ASCENDING" },
+        { "fieldPath": "issueDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "invoices",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "serviceType", "order": "ASCENDING" },
+        { "fieldPath": "customerId", "order": "ASCENDING" },
+        { "fieldPath": "issueDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "invoices",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "serviceType", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "issueDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "payments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "receivedAt", "order": "ASCENDING" },
+        { "fieldPath": "method", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "payment_allocations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "paymentId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "land_statements",
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "leaseId", "order": "ASCENDING" },
         { "fieldPath": "monthKey", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "land_statements",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "leaseId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "land_payments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "statementId", "order": "ASCENDING" },
+        { "fieldPath": "paidAt", "order": "ASCENDING" }
       ]
     }
   ],
