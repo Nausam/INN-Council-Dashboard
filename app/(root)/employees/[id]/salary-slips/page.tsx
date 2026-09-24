@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
+import surface from "../employee-portal-surface.module.css";
 
 type UploadedSlip = {
   periodLabel: string;
@@ -183,7 +184,7 @@ export default function EmployeeSalarySlipsPage() {
 
   if (isError || (!employeePending && !employee)) {
     return (
-      <div className="min-h-screen bg-[#f4f6f4] px-4 py-6">
+      <div className={cn(surface.page, "px-4 py-6")}>
         <style>{`@media (max-width: 767px){[data-council-mobile-header]{display:none !important;}}`}</style>
         <div className="mx-auto max-w-3xl">
           <BackButton onClick={() => router.back()} />
@@ -198,17 +199,17 @@ export default function EmployeeSalarySlipsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f4f6f4] px-4 pb-12 pt-6">
+    <div className={cn(surface.page, "px-4 pb-12 pt-6")}>
       {/* Hide the app's mobile header on this page only */}
       <style>{`@media (max-width: 767px){[data-council-mobile-header]{display:none !important;}}`}</style>
 
-      <div className="mx-auto max-w-3xl space-y-5">
+      <div className={cn(surface.shell, "max-w-3xl space-y-5")}>
         <BackButton onClick={() => router.back()} />
 
         {/* Hero */}
-        <section className="overflow-hidden rounded-[28px] bg-white shadow-sm ring-1 ring-slate-100">
-          <div className="bg-gradient-to-br from-teal-600 to-emerald-500 px-6 py-6 text-white">
-            <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-white/80">
+        <section className={surface.hero}>
+          <div className="px-6 py-7 text-slate-900">
+            <p className={cn(surface.eyebrow, "flex items-center gap-1.5 text-xs font-black uppercase tracking-wide")}>
               <Wallet className="h-4 w-4" />
               Salary slips
             </p>
@@ -217,16 +218,16 @@ export default function EmployeeSalarySlipsPage() {
                 <AvatarGlow
                   name={employee.name}
                   size="lg"
-                  className="h-16 w-16 rounded-[22px] text-2xl ring-4 ring-white/30"
+                  className={cn(surface.avatar, "h-16 w-16 text-2xl")}
                 />
               ) : (
-                <div className="h-16 w-16 animate-pulse rounded-[22px] bg-white/30" />
+                <div className="h-16 w-16 animate-pulse rounded-[22px] bg-slate-100" />
               )}
               <div className="min-w-0">
                 <h1 className="truncate text-2xl font-black tracking-tight">
                   {employee?.name ?? "Loading"}
                 </h1>
-                <p className="truncate text-sm font-bold text-white/85">
+                <p className="truncate text-sm font-bold text-slate-500">
                   {recordCard ? `Record card #${recordCard}` : ""}
                 </p>
               </div>
@@ -235,9 +236,9 @@ export default function EmployeeSalarySlipsPage() {
         </section>
 
         {/* Pinned: current month slip */}
-        <section className="rounded-[28px] bg-white p-5 shadow-sm ring-1 ring-slate-100">
+        <section className={cn(surface.surface, "p-5")}>
           <div className="mb-4 flex items-center gap-2">
-            <span className="rounded-full bg-teal-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-teal-700">
+            <span className={cn(surface.tag, "px-2.5 py-1 text-[10px] font-black uppercase tracking-wide")}>
               This month
             </span>
             <h2 className="text-lg font-black tracking-tight text-slate-900">
@@ -275,7 +276,7 @@ export default function EmployeeSalarySlipsPage() {
                 <SummaryTile
                   label="Net pay"
                   value={slip.netIncome}
-                  tone="text-teal-700"
+                  tone="text-slate-900"
                   strong
                 />
               </div>
@@ -285,7 +286,7 @@ export default function EmployeeSalarySlipsPage() {
                   type="button"
                   onClick={handleView}
                   disabled={busy !== null}
-                  className="flex h-11 items-center justify-center gap-1.5 rounded-2xl bg-slate-50 text-sm font-bold text-slate-700 ring-1 ring-slate-200 transition active:scale-[0.98] disabled:opacity-60"
+                  className={cn(surface.pill, "flex h-11 items-center justify-center gap-1.5 text-sm font-bold text-slate-700 transition active:scale-[0.98] disabled:opacity-60")}
                 >
                   {busy === "view" ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -298,7 +299,7 @@ export default function EmployeeSalarySlipsPage() {
                   type="button"
                   onClick={handleDownload}
                   disabled={busy !== null}
-                  className="flex h-11 items-center justify-center gap-1.5 rounded-2xl bg-teal-600 text-sm font-bold text-white shadow-sm shadow-teal-600/25 transition active:scale-[0.98] disabled:opacity-60"
+                  className={cn(surface.blackButton, "flex h-11 items-center justify-center gap-1.5 text-sm font-bold transition active:scale-[0.98] disabled:opacity-60")}
                 >
                   {busy === "download" ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -336,7 +337,7 @@ export default function EmployeeSalarySlipsPage() {
         </section>
 
         {/* History */}
-        <section className="rounded-[28px] bg-white p-5 shadow-sm ring-1 ring-slate-100">
+        <section className={cn(surface.surface, "p-5")}>
           <h2 className="mb-4 text-lg font-black tracking-tight text-slate-900">
             Slip history
           </h2>
@@ -347,10 +348,10 @@ export default function EmployeeSalarySlipsPage() {
                 {pageItems.map((u, index) => (
                   <div
                     key={`${u.periodLabel}-${u.fileName ?? index}`}
-                    className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 p-3"
+                    className={cn(surface.pill, "flex items-center justify-between gap-3 p-3")}
                   >
                     <div className="flex min-w-0 items-center gap-3">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-slate-800">
                         <FileText className="h-5 w-5" />
                       </span>
                       <div className="min-w-0">
@@ -382,7 +383,7 @@ export default function EmployeeSalarySlipsPage() {
                           download
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex h-9 w-9 items-center justify-center rounded-full bg-teal-600 text-white shadow-sm shadow-teal-600/25 transition active:scale-95"
+                          className={cn(surface.blackButton, "flex h-9 w-9 items-center justify-center transition active:scale-95")}
                           aria-label="Download slip"
                         >
                           <Download className="h-4 w-4" />
@@ -434,9 +435,9 @@ export default function EmployeeSalarySlipsPage() {
 
 function UploadedRow({ slip }: { slip: UploadedSlip }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl bg-emerald-50 p-3 ring-1 ring-emerald-100">
+    <div className={cn(surface.pill, "flex items-center justify-between gap-3 p-3")}>
       <div className="flex min-w-0 items-center gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-slate-800">
           <FileText className="h-5 w-5" />
         </span>
         <div className="min-w-0">
@@ -466,7 +467,7 @@ function UploadedRow({ slip }: { slip: UploadedSlip }) {
             download
             target="_blank"
             rel="noopener noreferrer"
-            className="flex h-9 items-center gap-1.5 rounded-full bg-teal-600 px-3 text-sm font-bold text-white shadow-sm shadow-teal-600/25 transition active:scale-95"
+            className={cn(surface.blackButton, "flex h-9 items-center gap-1.5 px-3 text-sm font-bold transition active:scale-95")}
           >
             <Download className="h-4 w-4" />
             Save
@@ -491,8 +492,8 @@ function SummaryTile({
   return (
     <div
       className={cn(
-        "rounded-2xl p-3 text-center",
-        strong ? "bg-teal-50 ring-1 ring-teal-100" : "bg-slate-50",
+        "rounded-[20px] border border-white p-3 text-center",
+        strong ? "bg-[#e8f6ec]" : label === "Deductions" ? "bg-[#fff0ef]" : "bg-[#f1efff]",
       )}
     >
       <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
@@ -510,7 +511,7 @@ function BackButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-slate-700 ring-1 ring-slate-200 transition active:scale-95"
+      className={cn(surface.back, "flex h-10 w-10 items-center justify-center rounded-full transition active:scale-95")}
       aria-label="Back"
     >
       <ArrowLeft className="h-5 w-5" />

@@ -2,6 +2,7 @@ import {
   fetchSalaryPeriodConfig,
   upsertSalaryPeriodConfig,
 } from "@/lib/firebase/hr";
+import { adminErrorStatus, requireAdmin } from "@/lib/auth/require-admin";
 import { formatPayPeriodRange } from "@/lib/salary-slips/pay-period";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -42,6 +43,15 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
+  try {
+    await requireAdmin();
+  } catch (error) {
+    return NextResponse.json(
+      { error: "Admin access required" },
+      { status: adminErrorStatus(error) },
+    );
+  }
+
   const period = parsePeriod(request.nextUrl.searchParams.get("period"));
   if (!period) {
     return NextResponse.json(

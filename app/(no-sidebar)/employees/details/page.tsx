@@ -2,8 +2,11 @@
 
 import { useEmployeesQuery } from "@/hooks/queries";
 import { ArrowRight, IdCard, Loader2 } from "lucide-react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
+import { EmployeePwaInstallPrompt } from "./EmployeePwaInstallPrompt";
+import styles from "./employee-login.module.css";
 
 type EmployeeLookupRow = {
   id: string;
@@ -55,7 +58,7 @@ export default function EmployeeDetailsLoginPage() {
   const [identifier, setIdentifier] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const { data, isPending } = useEmployeesQuery();
+  const { data, isPending, isError } = useEmployeesQuery();
 
   const employees = useMemo(
     () =>
@@ -71,12 +74,17 @@ export default function EmployeeDetailsLoginPage() {
 
     const lookupValue = normalizeIdentifier(identifier);
     if (!lookupValue) {
-      setError("Enter your ID card number or record card number.");
+      setError("Enter your ID or record card number.");
       return;
     }
 
     if (isPending) {
-      setError("Employee records are still loading. Please try again.");
+      setError("Records are loading. Try again shortly.");
+      return;
+    }
+
+    if (isError) {
+      setError("Records are unavailable. Try again shortly.");
       return;
     }
 
@@ -87,7 +95,7 @@ export default function EmployeeDetailsLoginPage() {
 
     if (!match) {
       setSubmitting(false);
-      setError("No employee matched that ID card or record card number.");
+      setError("No matching employee found.");
       return;
     }
 
@@ -97,60 +105,52 @@ export default function EmployeeDetailsLoginPage() {
   const loading = isPending || submitting;
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#f4f6f4] px-4 py-6">
-      {/* Hide the app's mobile header on this page only */}
-      <style>{`@media (max-width: 767px){[data-council-mobile-header]{display:none !important;}}`}</style>
-
-      <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center">
-        {/* Hero card */}
-        <section className="overflow-hidden rounded-[28px] bg-white shadow-sm ring-1 ring-slate-100">
-          <div className="bg-gradient-to-br from-teal-600 to-emerald-500 px-6 py-8 text-center text-white">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-[22px] bg-white/15 ring-1 ring-white/25">
-              <IdCard className="h-8 w-8" />
-            </div>
-            <h1 className="text-2xl font-black tracking-tight">
-              Employee Login
-            </h1>
+    <div className={styles.page}>
+      <div className={styles.shell}>
+        <div className={styles.brand}>
+          <div className={styles.brandMark}>
+            <Image src="/council-logo.png" alt="" width={116} height={65} unoptimized />
           </div>
+          <span className={styles.brandName}>Innamaadhoo Council</span>
+        </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4 p-5 sm:p-6">
-            <label className="block">
-              <span className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500">
-                <IdCard className="h-4 w-4 text-teal-600" />
-                ID card or record card number
-              </span>
+        <section className={styles.panel} aria-labelledby="employee-portal-title">
+          <h1 id="employee-portal-title">Employee Portal</h1>
+          <form onSubmit={handleSubmit} className={styles.form}>
+            <label htmlFor="employee-identifier" className={styles.fieldLabel}>
+              ID card or record card number
+            </label>
+            <div className={styles.inputWrap}>
+              <IdCard className={styles.inputIcon} aria-hidden="true" />
               <input
+                id="employee-identifier"
                 value={identifier}
                 onChange={(event) => {
                   setIdentifier(event.target.value);
                   if (error) setError("");
                 }}
-                placeholder="Example: A123456 or RC001"
+                placeholder="Enter your number"
                 autoComplete="off"
-                className="h-14 w-full rounded-2xl border-0 bg-slate-50 px-4 text-base font-bold text-slate-950 outline-none ring-1 ring-slate-200 transition placeholder:text-slate-400 focus:bg-white focus:ring-4 focus:ring-teal-100"
+                autoCapitalize="characters"
+                spellCheck={false}
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? "employee-login-error" : undefined}
               />
-            </label>
+            </div>
 
             {error ? (
-              <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700 ring-1 ring-rose-100">
+              <p id="employee-login-error" className={styles.error} role="alert">
                 {error}
-              </div>
+              </p>
             ) : null}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-teal-600 text-sm font-black text-white shadow-sm shadow-teal-600/25 transition active:scale-[0.98] disabled:opacity-60"
-            >
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <ArrowRight className="h-4 w-4" />
-              )}
-              Open details
+            <button type="submit" disabled={loading} className={styles.submit}>
+              <span>{isPending ? "Loading…" : submitting ? "Opening…" : "Continue"}</span>
+              {loading ? <Loader2 className="animate-spin" aria-hidden="true" /> : <ArrowRight aria-hidden="true" />}
             </button>
           </form>
         </section>
+        <EmployeePwaInstallPrompt />
       </div>
     </div>
   );

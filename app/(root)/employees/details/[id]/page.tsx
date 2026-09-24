@@ -14,9 +14,16 @@ export default async function EmployeeDetailsDashboardPage({
   searchParams,
 }: {
   params: { id: string };
-  searchParams?: { month?: string };
+  searchParams?: { month?: string; tab?: string };
 }) {
   const month = monthFromSearchParam(searchParams?.month);
+  const requestedTab = searchParams?.tab;
+  const initialTab: "overview" | "attendance" | "leave" | "pay" =
+    requestedTab === "attendance" ||
+    requestedTab === "leave" ||
+    requestedTab === "pay"
+      ? requestedTab
+      : "overview";
   const [employee, leaves, councilAttendance, mosqueAttendance] =
     await Promise.all([
       fetchEmployeeById(params.id).catch(() => null),
@@ -31,6 +38,7 @@ export default async function EmployeeDetailsDashboardPage({
       leaves={leaves}
       councilAttendance={councilAttendance}
       mosqueAttendance={mosqueAttendance}
+      initialTab={initialTab}
     />
   );
 }

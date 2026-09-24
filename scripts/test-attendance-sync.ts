@@ -9,7 +9,7 @@ import {
   classifyPunchMinute,
   selectEarliestPunchForPrayer,
 } from "../lib/attendance-sync/prayer-classifier";
-import { utcToMaldivesParts } from "../lib/attendance-sync/time";
+import { utcToMaldivesParts, mosqueRecoveryStartDate, enumerateIsoDates } from "../lib/attendance-sync/time";
 import { parseEtimeHtmlSnapshot } from "../lib/etime/parser";
 
 function testMaldivesConversion() {
@@ -78,6 +78,10 @@ function testEtimeParser() {
 }
 
 function run() {
+  assert.equal(mosqueRecoveryStartDate("2026-09-21"), "2026-08-01");
+  assert.equal(mosqueRecoveryStartDate("2027-01-01"), "2026-12-01");
+  assert.equal(mosqueRecoveryStartDate("2028-03-01"), "2028-02-01");
+  assert.equal(enumerateIsoDates(mosqueRecoveryStartDate("2026-09-21"), "2026-09-21").length, 52);
   testMaldivesConversion();
   testPrayerClassification();
   testLateness();

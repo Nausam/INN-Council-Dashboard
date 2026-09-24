@@ -37,6 +37,29 @@ npm run dev
 npm run zk:worker
 ```
 
+### Mosque daily attendance
+
+Use `npm run attendance-sync:worker` for mosque sheet creation and prayer-punch
+updates. Run one worker on a computer that can reach the fingerprint device and
+keep that computer awake. The web server alone does not run this worker.
+
+With `ATTENDANCE_SYNC_AUTO_WRITE=1` and `ETIME_ENABLED=1`, startup recovers
+mosque sheets from the first day of the previous calendar month through today,
+reconciles stored punches, imports recent device records, and refreshes eTime
+history for that period. Existing punches are reconciled on repeated imports too.
+Leave records and manually overridden prayer entries remain protected.
+
+Startup can take several minutes while device history is imported. The console
+logs its phases. After startup, the worker creates today's sheets after 00:05,
+reconciles yesterday after 00:15, and polls eTime at its configured intervals
+(Maldives time). Device connectivity is required to enter the ongoing polling
+loop. Restart the running worker after updating its code.
+
+Check status with `npx tsx scripts/attendance-sync-status.ts`. Check heartbeat
+timestamps and lease expiry, because saved `running`/`connected` flags alone do
+not prove that polling is current. This worker's attendance automation is for
+mosque employees.
+
 Manual backfill is available from the admin page, or by CLI:
 
 ```bash
@@ -68,6 +91,7 @@ The Salary Slips page lets employees view and download PDF slips by record card 
 1. **Firestore** (`council-hr-dashboard`): collections `employees` and `salary_slips` with fields `recordCardNumber`, `employeeId`, `periodLabel`, `objectKey`, `fileName`.
 2. **Cloudflare R2**: set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`. Correspondence uses `R2_CORRESPONDENCE_BUCKET_NAME`.
 3. **Clerk**: set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY` for dashboard auth.
+   Set `ADMIN_EMAILS` to a comma-separated list of verified Clerk email addresses for site admins. These addresses can sign in without being repeated in `ALLOWED_LOGIN_EMAILS`. When `ADMIN_EMAILS` is set, it determines the admin role instead of Clerk role metadata.
 4. **Firebase Admin**: set `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, `FIRESTORE_DATABASE_ID=council-hr-dashboard`.
 
 Upload PDFs to R2 (e.g. `slips/{recordCardNumber}/2025-01.pdf`) and register via `POST /api/salary-slips` or the admin upload UI.

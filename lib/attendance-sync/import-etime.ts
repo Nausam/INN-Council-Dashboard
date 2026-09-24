@@ -164,9 +164,10 @@ export async function importEtimePunches(options: {
 
         const result = await writeCanonicalPunchIfNew(punch);
         seenDocIds.add(result.docId);
+        // A repeated import must also repair attendance from existing punches.
+        if (matched && punch.eligible) affectedDates.add(localDate);
         if (result.written) {
           written += 1;
-          if (matched && punch.eligible) affectedDates.add(localDate);
         } else {
           skipped += 1;
         }

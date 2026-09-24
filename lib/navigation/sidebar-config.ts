@@ -15,6 +15,7 @@ import {
 export type SidebarNavChild = {
   title: string;
   url: string;
+  adminOnly?: boolean;
 };
 
 export type SidebarNavItem = {
@@ -31,7 +32,7 @@ export const councilSidebarNav: SidebarNavItem[] = [
     icon: Home,
     items: [
       { title: "Home", url: "/" },
-      { title: "Admin", url: "/admin" },
+      { title: "Admin", url: "/admin", adminOnly: true },
     ],
   },
   {
@@ -47,7 +48,7 @@ export const councilSidebarNav: SidebarNavItem[] = [
     items: [
       { title: "All Employees", url: "/employees" },
       { title: "Employee Details", url: "/employees/details" },
-      { title: "Add Employee", url: "/employees/add" },
+      { title: "Add Employee", url: "/employees/add", adminOnly: true },
     ],
   },
   {
@@ -57,7 +58,7 @@ export const councilSidebarNav: SidebarNavItem[] = [
     items: [
       { title: "Salary Slips", url: "/salary-slips" },
       { title: "View Salary Slip", url: "/salary-slips/view" },
-      { title: "Upload Slips", url: "/salary-slips/upload" },
+      { title: "Upload Slips", url: "/salary-slips/upload", adminOnly: true },
     ],
   },
   {
@@ -76,7 +77,7 @@ export const councilSidebarNav: SidebarNavItem[] = [
     url: "#",
     icon: Calendar,
     items: [
-      { title: "Leave", url: "/requests/leave" },
+      { title: "Leave", url: "/requests/leave", adminOnly: true },
       { title: "Overtime", url: "/requests/overtime" },
     ],
   },

@@ -2,19 +2,22 @@
 
 import EmployeeForm, { type EmployeeFormData } from "@/components/EmployeeForm";
 import SkeletonEmployeeForm from "@/components/skeletons/SkeletonEmployeeForm";
-import { PageShell } from "@/components/design-system";
+import { EmptyState, PageShell } from "@/components/design-system";
+import { useUser } from "@/Providers/UserProvider";
 import { useEmployeeQuery } from "@/hooks/queries";
 import { toast } from "@/hooks/use-toast";
 import { updateEmployeeRecord } from "@/lib/actions/hr.actions";
 import { employeeFormDataForFirestore } from "@/lib/employees/form-payload";
 import { toEmployeeFormValues } from "@/lib/employees/transforms";
 import { useRouter } from "next/navigation";
+import { ShieldAlert } from "lucide-react";
 import { useMemo, useState } from "react";
 
 const EmployeeEditPage = ({ params }: { params: { id: string } }) => {
   const [submitting, setSubmitting] = useState(false);
   const employeeId = params.id;
   const router = useRouter();
+  const { isAdmin, loading: userLoading } = useUser();
 
   const { data, isLoading } = useEmployeeQuery(employeeId);
   const employeeData = useMemo(
@@ -42,6 +45,28 @@ const EmployeeEditPage = ({ params }: { params: { id: string } }) => {
       setSubmitting(false);
     }
   };
+
+  if (userLoading) {
+    return (
+      <PageShell>
+        <SkeletonEmployeeForm />
+      </PageShell>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <PageShell>
+        <div className="mx-auto max-w-lg pt-12">
+          <EmptyState
+            icon={ShieldAlert}
+            title="Access denied"
+            description="You don't have permission to edit employees."
+          />
+        </div>
+      </PageShell>
+    );
+  }
 
   if (isLoading || !employeeData) {
     return (

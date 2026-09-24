@@ -18,10 +18,7 @@ export {
   useAllEmployeesActionQuery,
 } from "./use-attendance";
 export { useDashboardQuery } from "./use-dashboard";
-export {
-  useAdminLeaveRequestsQuery,
-  useUserLeaveRequestsQuery,
-} from "./use-leave";
+export { useAdminLeaveRequestsQuery } from "./use-leave";
 export { useAdminOvertimeRequestsQuery } from "./use-overtime";
 export {
   useCorrespondenceListQuery,

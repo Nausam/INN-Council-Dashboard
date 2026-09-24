@@ -6,7 +6,6 @@ import {
 import { NextResponse } from "next/server";
 
 import {
-  emailsFromSessionClaims,
   getAllowedLoginEmails,
   isAnyEmailAllowed,
   resolveUserEmails,
@@ -34,16 +33,12 @@ export default clerkMiddleware(async (auth, request) => {
     const allowed = getAllowedLoginEmails();
     if (allowed.size === 0) {
       console.error(
-        "ALLOWED_LOGIN_EMAILS is empty — no users can sign in. Set it in .env.local and restart the dev server.",
+        "ALLOWED_LOGIN_EMAILS and ADMIN_EMAILS are empty — no users can sign in. Set one in .env.local and restart the dev server.",
       );
     }
 
     const claims = sessionClaims as Record<string, unknown> | null;
-    const claimEmails = emailsFromSessionClaims(claims);
-    const emails =
-      claimEmails.length > 0
-        ? claimEmails
-        : await resolveUserEmails(userId, claims);
+    const emails = await resolveUserEmails(userId, claims);
 
     if (!isAnyEmailAllowed(emails)) {
       if (sessionId) {

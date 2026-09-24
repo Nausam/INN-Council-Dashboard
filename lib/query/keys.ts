@@ -31,7 +31,6 @@ export const queryKeys = {
   leave: {
     admin: (page: number, limit: number) =>
       ["leave-requests", "admin", page, limit] as const,
-    user: (userId: string) => ["leave-requests", "user", userId] as const,
   },
   overtime: {
     admin: (page: number, limit: number) =>

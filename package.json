@@ -61,6 +61,7 @@
     "dotenv": "^17.2.3",
     "firebase": "^12.14.0",
     "firebase-admin": "^13.10.0",
+    "fflate": "^0.8.2",
     "html2pdf.js": "^0.9.3",
     "input-otp": "^1.4.1",
     "jspdf": "^4.0.0",

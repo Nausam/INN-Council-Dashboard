@@ -109,7 +109,7 @@ export function AdminPageView({
 
       <section>
         <div className="flex justify-between items-center mb-5 mt-10">
-          <h1 className="text-3xl font-bold">Leave Requests</h1>
+          <h1 className="text-3xl font-bold">Annual leave requests</h1>
           <ShowDropdown
             label="Show:"
             options={[4, 6, 8]}
@@ -188,6 +188,7 @@ export function AdminPageView({
               <AdminOvertimeRequestCard
                 key={req.$id}
                 requestId={req.$id}
+                workDate={req.workDate}
                 details={req.details}
                 startTime={req.startTime}
                 endTime={req.endTime}

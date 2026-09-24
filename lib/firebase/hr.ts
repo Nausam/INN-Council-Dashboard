@@ -4,7 +4,7 @@ import {
   stripLegacyFields,
   withTimestamps,
 } from "@/lib/firebase/adapters";
-import { FieldValue, type DocumentData, type Query } from "firebase-admin/firestore";
+import { FieldValue } from "firebase-admin/firestore";
 import { COLLECTIONS, getFirestoreDb } from "@/lib/firebase/admin";
 import { listAllDocs, newDocId } from "@/lib/firebase/query";
 import type {
@@ -1302,9 +1302,8 @@ export async function deleteMosqueAttendancesByDate(date: string): Promise<void>
   );
 }
 
-export async function createLeaveRequest(leaveRequestData: {
+export async function createAnnualLeaveRequest(leaveRequestData: {
   fullName: string;
-  leaveType: string;
   reason: string;
   totalDays: number;
   startDate: string;
@@ -1315,14 +1314,15 @@ export async function createLeaveRequest(leaveRequestData: {
   const payload = withTimestamps(
     {
       ...leaveRequestData,
+      leaveType: "Annual Leave",
       createdAt: new Date().toISOString(),
       approvalStatus: "Pending",
     },
     true,
   );
-  await db.collection(COLLECTIONS.leaveRequests).doc(id).set(payload);
+  await db.collection(COLLECTIONS.annualLeaveRequests).doc(id).set(payload);
   return fromFirestoreDoc<LeaveRequest>(
-    await db.collection(COLLECTIONS.leaveRequests).doc(id).get(),
+    await db.collection(COLLECTIONS.annualLeaveRequests).doc(id).get(),
   )!;
 }
 
@@ -1331,7 +1331,7 @@ export async function fetchLeaveRequests(
   offsetVal = 0,
 ): Promise<{ requests: LeaveRequest[]; totalCount: number }> {
   const db = getFirestoreDb();
-  const base = db.collection(COLLECTIONS.leaveRequests);
+  const base = db.collection(COLLECTIONS.annualLeaveRequests);
   const [snap, countSnap] = await Promise.all([
     base
       .orderBy("createdAt", "desc")
@@ -1352,12 +1352,13 @@ export async function updateLeaveRequest(
   data: { approvalStatus: string; actionBy?: string },
 ): Promise<void> {
   await getFirestoreDb()
-    .collection(COLLECTIONS.leaveRequests)
+    .collection(COLLECTIONS.annualLeaveRequests)
     .doc(requestId)
     .update(withTimestamps(data as Record<string, unknown>));
 }
 
 export async function createOvertimeRequest(data: {
+  workDate?: string;
   details: string;
   startTime: string;
   endTime: string;
@@ -1409,30 +1410,6 @@ export async function updateOvertimeRequest(
     .collection(COLLECTIONS.overtimeRequests)
     .doc(requestId)
     .update(withTimestamps(data as Record<string, unknown>));
-}
-
-export async function fetchUserLeaveRequests(
-  status?: string,
-  limit = 10,
-  offsetVal = 0,
-): Promise<{ requests: LeaveRequest[]; totalCount: number }> {
-  const db = getFirestoreDb();
-  let base: Query<DocumentData> = db.collection(COLLECTIONS.leaveRequests);
-  if (status) base = base.where("approvalStatus", "==", status);
-
-  const [snap, countSnap] = await Promise.all([
-    base
-      .orderBy("createdAt", "desc")
-      .offset(Math.max(0, offsetVal))
-      .limit(Math.max(1, limit))
-      .get(),
-    base.count().get(),
-  ]);
-
-  return {
-    requests: fromFirestoreDocs<LeaveRequest>(snap.docs),
-    totalCount: countSnap.data().count,
-  };
 }
 
 export async function listSalarySlipsByRecordCard(

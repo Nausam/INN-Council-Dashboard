@@ -1,0 +1,71 @@
+.page {
+  min-height: 100vh;
+  background: #fff;
+  color: #17191d;
+}
+
+.shell {
+  width: min(100%, 960px);
+  margin-inline: auto;
+}
+
+.hero {
+  overflow: hidden;
+  border: 1px solid #fff;
+  border-radius: 30px;
+  background: radial-gradient(circle at 10% 82%, #dcf5df 0, transparent 35%), radial-gradient(circle at 87% 16%, #ffe2d3 0, transparent 38%), radial-gradient(circle at 76% 85%, #e8dfff 0, transparent 38%), #fcf8fb;
+  box-shadow: 0 18px 44px rgba(67, 53, 82, .1);
+}
+
+.surface {
+  border: 1px solid #f4f0f6;
+  border-radius: 28px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(66, 55, 80, .055);
+}
+
+.pill {
+  border: 1px solid #f5f3f8;
+  border-radius: 999px;
+  background: #faf9fd;
+}
+
+.softTile {
+  border: 1px solid rgba(255,255,255,.9);
+  border-radius: 22px;
+  background: rgba(255,255,255,.76);
+  box-shadow: 0 6px 18px rgba(56,46,67,.05);
+}
+
+.avatar {
+  border: 3px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 6px 20px rgba(56,46,67,.1);
+}
+
+.back {
+  border: 1px solid #fff;
+  background: #fff;
+  color: #17191d;
+  box-shadow: 0 4px 20px rgba(43,38,55,.09);
+}
+
+.blackButton {
+  border-radius: 999px;
+  background: #17191d;
+  color: #fff;
+  box-shadow: 0 5px 14px rgba(23,25,29,.15);
+}
+
+.eyebrow { color: #67616e; }
+
+.tag {
+  border: 1px solid #fff;
+  border-radius: 999px;
+  background: rgba(255,255,255,.75);
+  color: #56515e;
+}
+
+@media (max-width: 640px) {
+  .hero, .surface { border-radius: 26px; }
+}

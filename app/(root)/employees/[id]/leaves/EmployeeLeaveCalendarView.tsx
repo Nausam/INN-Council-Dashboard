@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { ArrowLeft, CalendarDays, ChevronLeft, ChevronRight, User } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import surface from "../employee-portal-surface.module.css";
 
 type LeaveCalendarEntryWithAmount = EmployeeLeaveCalendarEntry & {
   amountLabel: string;
@@ -256,7 +257,7 @@ export function EmployeeLeaveCalendarView({
 
   if (isError || (!loading && !employee)) {
     return (
-      <div className="min-h-screen bg-[#f4f6f4] px-4 py-6">
+      <div className={cn(surface.page, "px-4 py-6")}>
         <style>{`@media (max-width: 767px){[data-council-mobile-header]{display:none !important;}}`}</style>
         <div className="mx-auto max-w-5xl">
           <BackButton onClick={() => router.back()} />
@@ -271,16 +272,16 @@ export function EmployeeLeaveCalendarView({
   }
 
   return (
-    <div className="min-h-screen bg-[#f4f6f4] px-4 pb-12 pt-6">
+    <div className={cn(surface.page, "px-4 pb-12 pt-6")}>
       {/* Hide the app's mobile header on this page only */}
       <style>{`@media (max-width: 767px){[data-council-mobile-header]{display:none !important;}}`}</style>
-      <div className="mx-auto max-w-5xl space-y-5">
+      <div className={cn(surface.shell, "space-y-5")}>
         <BackButton onClick={() => router.back()} />
 
         {/* Hero */}
-        <section className="overflow-hidden rounded-[28px] bg-white shadow-sm ring-1 ring-slate-100">
-          <div className="bg-gradient-to-br from-teal-600 to-emerald-500 px-6 pb-12 pt-6 text-white">
-            <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-white/80">
+        <section className={surface.hero}>
+          <div className="px-6 pb-6 pt-6 text-slate-900">
+            <p className={cn(surface.eyebrow, "flex items-center gap-1.5 text-xs font-black uppercase tracking-wide")}>
               <CalendarDays className="h-4 w-4" />
               Leave calendar
             </p>
@@ -289,16 +290,16 @@ export function EmployeeLeaveCalendarView({
                 <AvatarGlow
                   name={employee.name}
                   size="lg"
-                  className="h-16 w-16 rounded-[22px] text-2xl ring-4 ring-white/30"
+                  className={cn(surface.avatar, "h-16 w-16 text-2xl")}
                 />
               ) : (
-                <div className="h-16 w-16 animate-pulse rounded-[22px] bg-white/30" />
+                <div className="h-16 w-16 animate-pulse rounded-[22px] bg-slate-100" />
               )}
               <div className="min-w-0">
                 <h1 className="truncate text-2xl font-black tracking-tight">
                   {employee?.name ?? "Loading"}
                 </h1>
-                <p className="truncate text-sm font-bold text-white/85">
+                <p className="truncate text-sm font-bold text-slate-500">
                   {employee?.designation ?? ""}
                   {employee?.section ? ` · ${employee.section}` : ""}
                 </p>
@@ -307,8 +308,8 @@ export function EmployeeLeaveCalendarView({
           </div>
 
           {/* Floating stats */}
-          <div className="-mt-8 grid grid-cols-2 gap-3 px-4 pb-4">
-            <div className="rounded-2xl bg-white p-4 text-center shadow-sm ring-1 ring-slate-100">
+          <div className="grid grid-cols-2 gap-3 px-4 pb-4">
+            <div className={cn(surface.softTile, "p-4 text-center")}>
               <p className="text-2xl font-black tabular-nums text-slate-900">
                 {leaves.length}
               </p>
@@ -316,8 +317,8 @@ export function EmployeeLeaveCalendarView({
                 Total leaves
               </p>
             </div>
-            <div className="rounded-2xl bg-white p-4 text-center shadow-sm ring-1 ring-slate-100">
-              <p className="text-2xl font-black tabular-nums text-teal-600">
+            <div className={cn(surface.softTile, "p-4 text-center")}>
+              <p className="text-2xl font-black tabular-nums text-slate-900">
                 {monthRecords.length}
               </p>
               <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">
@@ -328,7 +329,7 @@ export function EmployeeLeaveCalendarView({
         </section>
 
         {/* Calendar */}
-        <section className="rounded-[28px] bg-white p-4 shadow-sm ring-1 ring-slate-100 sm:p-5">
+        <section className={cn(surface.surface, "p-4 sm:p-5")}>
           <div className="mb-4 flex items-center justify-between gap-2">
             <h2 className="text-lg font-black tracking-tight text-slate-900">
               {monthTitle}
@@ -405,11 +406,11 @@ export function EmployeeLeaveCalendarView({
                   className={cn(
                     "flex aspect-square flex-col items-center justify-center gap-1 rounded-2xl text-sm font-black tabular-nums transition",
                     isSelected
-                      ? "bg-teal-600 text-white shadow-sm shadow-teal-600/30"
+                      ? "bg-[#17191d] text-white shadow-sm"
                       : hasLeave
-                        ? "bg-teal-50 text-slate-900 ring-1 ring-teal-100 active:scale-95"
+                        ? "bg-violet-50 text-slate-900 ring-1 ring-violet-100 active:scale-95"
                         : "text-slate-400",
-                    isToday && !isSelected && "ring-2 ring-teal-400",
+                    isToday && !isSelected && "ring-2 ring-violet-300",
                   )}
                 >
                   {date.getDate()}
@@ -435,7 +436,7 @@ export function EmployeeLeaveCalendarView({
         </section>
 
         {/* Records */}
-        <section className="rounded-[28px] bg-white p-5 shadow-sm ring-1 ring-slate-100">
+        <section className={cn(surface.surface, "p-5")}>
           <div className="mb-4 flex items-center justify-between gap-2">
             <h2 className="text-lg font-black tracking-tight text-slate-900">
               {selectedKey ? formatDateLabel(selectedKey) : `${monthTitle}`}
@@ -456,7 +457,7 @@ export function EmployeeLeaveCalendarView({
               {visibleRecords.map((entry) => (
                 <div
                   key={`${entry.source}-${entry.$id}`}
-                  className="flex items-center gap-3 rounded-2xl bg-slate-50 p-3"
+                  className={cn(surface.pill, "flex items-center gap-3 p-3")}
                 >
                   <span
                     className={cn(
@@ -500,7 +501,7 @@ export function EmployeeLeaveCalendarView({
         </section>
 
         {/* Leave type summary */}
-        <section className="rounded-[28px] bg-white p-5 shadow-sm ring-1 ring-slate-100">
+        <section className={cn(surface.surface, "p-5")}>
           <h2 className="mb-4 text-lg font-black tracking-tight text-slate-900">
             Leave types
           </h2>
@@ -509,7 +510,7 @@ export function EmployeeLeaveCalendarView({
               {leaveTypeCounts.map(([type]) => (
                 <div
                   key={type}
-                  className="flex items-center gap-2.5 rounded-2xl bg-slate-50 p-3"
+                  className={cn(surface.pill, "flex items-center gap-2.5 p-3")}
                 >
                   <span
                     className={cn("h-2.5 w-2.5 rounded-full", leaveDot(type))}
@@ -544,7 +545,7 @@ function BackButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-slate-700 ring-1 ring-slate-200 transition active:scale-95"
+      className={cn(surface.back, "flex h-10 w-10 items-center justify-center rounded-full transition active:scale-95")}
       aria-label="Back"
     >
       <ArrowLeft className="h-5 w-5" />

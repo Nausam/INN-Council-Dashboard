@@ -45,6 +45,7 @@ const nextConfig = {
     },
     serverComponentsExternalPackages: ["better-sqlite3", "node-zklib"],
     outputFileTracingIncludes: {
+      "/*": ["./assets/forms/salaam-family-leave-template.docx"],
       // match your API route file path precisely
       "app/api/innamaadhoo/route.ts": ["./data/salat.db"],
     },

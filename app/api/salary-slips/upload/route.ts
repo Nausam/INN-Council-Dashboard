@@ -2,6 +2,7 @@ import {
   fetchEmployeeByRecordCardNumber,
   upsertSalarySlipRecord,
 } from "@/lib/firebase/hr";
+import { adminErrorStatus, requireAdmin } from "@/lib/auth/require-admin";
 import { isR2Configured, uploadToR2 } from "@/lib/r2";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -16,6 +17,15 @@ function sanitizePeriodForKey(period: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  try {
+    await requireAdmin();
+  } catch (error) {
+    return NextResponse.json(
+      { error: "Admin access required" },
+      { status: adminErrorStatus(error) },
+    );
+  }
+
   try {
     if (!isR2Configured()) {
       return NextResponse.json(

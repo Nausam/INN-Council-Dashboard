@@ -141,7 +141,6 @@ function buildTargets(): MigrationTarget[] {
     hr("attendance", "attendance", "6701373d00373ea0dd09"),
     hr("mosque_attendance", "mosque_attendance", "6748841b0005589c9c31"),
     hr("prayer_times", "prayer_times", "6749573400305f49417b"),
-    hr("leave_requests", "leave_requests", "674ee238003517f3004d"),
     hr("waste_management_forms", "waste_management_forms", "6784e0610000e598d1e6"),
   ];
 

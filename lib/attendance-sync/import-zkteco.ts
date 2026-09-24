@@ -124,9 +124,10 @@ export async function importZktecoPunches(options: {
     };
 
     const result = await writeCanonicalPunchIfNew(punch);
+    // Existing punches still need to populate newly created/recovered sheets.
+    if (matched) affectedDates.add(localDate);
     if (result.written) {
       written += 1;
-      if (matched) affectedDates.add(localDate);
     } else {
       skipped += 1;
     }

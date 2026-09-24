@@ -1,10 +1,10 @@
 "use client";
 
 import { useAuth, useUser as useClerkUser } from "@clerk/nextjs";
-import { createContext, useContext, useMemo } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
+import { getAuthProfile } from "@/lib/actions/user.actions";
 import type { AuthProfile } from "@/lib/auth/session-claims";
-import { isAdminFromSessionClaims } from "@/lib/auth/session-claims";
 
 const UserContext = createContext({
   currentUser: null as AuthProfile | null,
@@ -14,44 +14,39 @@ const UserContext = createContext({
 
 export const useUser = () => useContext(UserContext);
 
-function readAdminFromUser(user: {
-  publicMetadata?: unknown;
-  privateMetadata?: unknown;
-  unsafeMetadata?: unknown;
-} | null): boolean | null {
-  if (!user) return null;
-
-  for (const value of [
-    user.publicMetadata,
-    user.privateMetadata,
-    user.unsafeMetadata,
-  ]) {
-    if (!value || typeof value !== "object") continue;
-    const role = (value as Record<string, unknown>).role;
-    if (role === "admin") return true;
-    if (typeof role === "string") return false;
-  }
-
-  return null;
-}
-
 export const UserProvider = ({ children }: { children: React.ReactNode }) => {
   const { user: clerkUser, isLoaded, isSignedIn } = useClerkUser();
-  const auth = useAuth() as { sessionClaims?: Record<string, unknown> | null };
+  const { sessionId } = useAuth();
+  const [resolved, setResolved] = useState<{
+    key: string;
+    profile: AuthProfile | null;
+  } | null>(null);
+  const sessionKey = clerkUser ? `${clerkUser.id}:${sessionId ?? "active"}` : null;
 
-  const isAdmin = useMemo(() => {
-    const fromClaims = isAdminFromSessionClaims(auth.sessionClaims ?? null);
-    if (fromClaims) return true;
-    return readAdminFromUser(clerkUser ?? null) === true;
-  }, [auth.sessionClaims, clerkUser]);
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !sessionKey) return;
+    let active = true;
+    void getAuthProfile()
+      .then((profile) => {
+        if (active) setResolved({ key: sessionKey, profile });
+      })
+      .catch(() => {
+        if (active) setResolved({ key: sessionKey, profile: null });
+      });
+    return () => {
+      active = false;
+    };
+  }, [isLoaded, isSignedIn, sessionKey]);
+
+  const serverProfile = resolved?.key === sessionKey ? resolved.profile : null;
+  const isAdmin = serverProfile?.isAdmin ?? false;
 
   const currentUser = useMemo((): AuthProfile | null => {
     if (!clerkUser) return null;
 
-    const email =
-      clerkUser.primaryEmailAddress?.emailAddress ??
-      clerkUser.emailAddresses[0]?.emailAddress ??
-      "";
+    if (serverProfile) return serverProfile;
+
+    const email = clerkUser.primaryEmailAddress?.emailAddress ?? "";
 
     const fullName =
       clerkUser.fullName?.trim() ||
@@ -65,9 +60,10 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
       email,
       isAdmin,
     };
-  }, [clerkUser, isAdmin]);
+  }, [clerkUser, isAdmin, serverProfile]);
 
-  const loading = !isLoaded || (Boolean(isSignedIn) && !clerkUser);
+  const loading =
+    !isLoaded || (Boolean(isSignedIn) && (!clerkUser || !sessionKey || resolved?.key !== sessionKey));
 
   return (
     <UserContext.Provider value={{ currentUser, isAdmin, loading }}>

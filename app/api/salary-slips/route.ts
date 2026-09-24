@@ -3,6 +3,7 @@ import {
   fetchEmployeeByRecordCardNumber,
   listSalarySlipsByRecordCard,
 } from "@/lib/firebase/hr";
+import { adminErrorStatus, requireAdmin } from "@/lib/auth/require-admin";
 import {
   getPresignedDownloadUrl,
   getPresignedViewUrl,
@@ -80,6 +81,15 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  try {
+    await requireAdmin();
+  } catch (error) {
+    return NextResponse.json(
+      { error: "Admin access required" },
+      { status: adminErrorStatus(error) },
+    );
+  }
+
   try {
     const body = await request.json();
     const {

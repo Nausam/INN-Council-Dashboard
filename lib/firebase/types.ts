@@ -30,6 +30,7 @@ export type OvertimeRequestEmployee = {
 };
 
 export type OvertimeRequest = LegacyDocument & {
+  workDate?: string;
   details: string;
   startTime: string;
   endTime: string;
@@ -98,13 +99,17 @@ export type SlimEmployee = {
 
 export type EmployeeDoc = LegacyDocument & {
   name: string;
+  nameDv?: string;
   designation?: string;
+  designationDv?: string;
+  sectionDv?: string;
   section?: string;
   deviceUserId?: string;
   recordCardNumber?: string;
   attendanceSync?: EmployeeAttendanceSyncConfig;
   joinedDate?: string;
   address?: string;
+  addressDv?: string;
   sickLeave?: number;
   certificateSickLeave?: number;
   annualLeave?: number;

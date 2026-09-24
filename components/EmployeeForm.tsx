@@ -23,6 +23,7 @@ import {
   SECTION_OPTIONS,
 } from "@/lib/employees/field-options";
 import { employeeFormDataForFirestore } from "@/lib/employees/form-payload";
+import { isDhivehiText } from "@/lib/leave/dhivehi-text";
 import { computeRetirementPension } from "@/lib/employees/retirement-pension";
 import { cn } from "@/lib/utils";
 import { useParams, useRouter } from "next/navigation";
@@ -57,9 +58,13 @@ export type { CreditSchemeEntry };
 
 export type EmployeeFormData = {
   name: string;
+  nameDv: string;
   designation: string;
+  designationDv: string;
+  sectionDv: string;
   joinedDate: string;
   address: string;
+  addressDv: string;
   section: string;
   recordCardNumber: string;
   deviceUserId: string;
@@ -136,9 +141,13 @@ function buildInitialFormData(
 ): EmployeeFormData {
   return {
     name: initialData?.name ?? "",
+    nameDv: initialData?.nameDv ?? "",
     designation: initialData?.designation ?? "",
+    designationDv: initialData?.designationDv ?? "",
+    sectionDv: initialData?.sectionDv ?? "",
     joinedDate: initialData?.joinedDate ?? "",
     address: initialData?.address ?? "",
+    addressDv: initialData?.addressDv ?? "",
     section: initialData?.section ?? "",
     recordCardNumber: initialData?.recordCardNumber ?? "",
     deviceUserId: initialData?.deviceUserId ?? "",
@@ -287,6 +296,20 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const invalidDhivehiField = [
+      { label: "name", value: formData.nameDv, maxLength: 100 },
+      { label: "address", value: formData.addressDv, maxLength: 150 },
+      { label: "designation", value: formData.designationDv, maxLength: 100 },
+      { label: "section", value: formData.sectionDv, maxLength: 100 },
+    ].find(({ value, maxLength }) => value.trim() && !isDhivehiText(value, maxLength));
+    if (invalidDhivehiField) {
+      toast({
+        title: "Use Dhivehi text",
+        description: `Enter the ${invalidDhivehiField.label} in Dhivehi.`,
+        variant: "destructive",
+      });
+      return;
+    }
     setLoading(true);
     const payload = employeeFormDataForFirestore(formData);
 
@@ -345,6 +368,55 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                 onChange={handleInputChange}
                 icon={<MapPin className="h-4 w-4" />}
                 required
+              />
+            </div>
+          </FormSection>
+
+          <FormSection
+            icon={FileText}
+            title="Dhivehi details"
+            description="Used to fill the Salaam / Family leave form"
+          >
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+              <InputField
+                id="nameDv"
+                label="Name (Dhivehi)"
+                value={formData.nameDv}
+                onChange={handleInputChange}
+                icon={<User className="h-4 w-4" />}
+                dir="rtl"
+                lang="dv"
+                maxLength={100}
+              />
+              <InputField
+                id="addressDv"
+                label="Address (Dhivehi)"
+                value={formData.addressDv}
+                onChange={handleInputChange}
+                icon={<MapPin className="h-4 w-4" />}
+                dir="rtl"
+                lang="dv"
+                maxLength={150}
+              />
+              <InputField
+                id="designationDv"
+                label="Designation (Dhivehi)"
+                value={formData.designationDv}
+                onChange={handleInputChange}
+                icon={<Briefcase className="h-4 w-4" />}
+                dir="rtl"
+                lang="dv"
+                maxLength={100}
+              />
+              <InputField
+                id="sectionDv"
+                label="Section (Dhivehi)"
+                value={formData.sectionDv}
+                onChange={handleInputChange}
+                icon={<Building2 className="h-4 w-4" />}
+                dir="rtl"
+                lang="dv"
+                maxLength={100}
               />
             </div>
           </FormSection>
@@ -659,6 +731,9 @@ function InputField({
   onChange,
   icon,
   required = false,
+  dir,
+  lang,
+  maxLength,
 }: {
   id: keyof EmployeeFormData;
   label: string;
@@ -667,6 +742,9 @@ function InputField({
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   icon: React.ReactNode;
   required?: boolean;
+  dir?: "rtl" | "ltr" | "auto";
+  lang?: string;
+  maxLength?: number;
 }) {
   const fieldId = id as string;
 
@@ -685,6 +763,10 @@ function InputField({
           onChange={onChange}
           className={fieldClass}
           required={required}
+          dir={dir}
+          lang={lang}
+          maxLength={maxLength}
+          style={dir === "rtl" ? { fontFamily: "Faruma, sans-serif", textAlign: "right" } : undefined}
         />
       </div>
     </div>

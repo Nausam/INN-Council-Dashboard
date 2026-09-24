@@ -6,6 +6,7 @@ import React from "react";
 
 interface AdminOvertimeRequestCardProps {
   requestId: string;
+  workDate?: string;
   details: string;
   startTime: string;
   endTime: string;
@@ -33,6 +34,7 @@ function formatDuration(minutes: number): string {
 
 const AdminOvertimeRequestCard: React.FC<AdminOvertimeRequestCardProps> = ({
   requestId,
+  workDate,
   details,
   startTime,
   endTime,
@@ -68,6 +70,7 @@ const AdminOvertimeRequestCard: React.FC<AdminOvertimeRequestCardProps> = ({
         <div className="min-w-0">
           <h3 className="text-xl font-bold text-gray-800">Overtime</h3>
           <p className="font-extralight text-md truncate">{employeeSummary}</p>
+          {workDate ? <p className="mt-1 text-sm text-gray-600">{workDate}</p> : null}
         </div>
         <span
           className={`shrink-0 border ${

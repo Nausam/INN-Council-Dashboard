@@ -5,6 +5,7 @@ import {
   type SidebarNavItem,
 } from "@/lib/navigation/sidebar-config";
 import { sidebar } from "@/lib/design-tokens";
+import { useUser } from "@/Providers/UserProvider";
 import { cn } from "@/lib/utils";
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
@@ -188,16 +189,25 @@ const NavSection = React.memo(function NavSection({
 
 export function CouncilSidebarNav() {
   const pathname = usePathname();
+  const { isAdmin } = useUser();
   const { collapsed, isMobile, setMobileOpen } = useCouncilSidebar();
   const [open, setOpen] = React.useState<Record<string, boolean>>({});
   const iconOnly = collapsed && !isMobile;
+  const navItems = React.useMemo(
+    () =>
+      councilSidebarNav.map((item) => ({
+        ...item,
+        items: item.items?.filter((child) => !child.adminOnly || isAdmin),
+      })),
+    [isAdmin],
+  );
 
   React.useEffect(() => {
     setOpen((prev) => {
       let changed = false;
       const next = { ...prev };
 
-      for (const item of councilSidebarNav) {
+      for (const item of navItems) {
         if (
           item.items?.length &&
           isSectionActive(pathname, item) &&
@@ -210,7 +220,7 @@ export function CouncilSidebarNav() {
 
       return changed ? next : prev;
     });
-  }, [pathname]);
+  }, [navItems, pathname]);
 
   const closeMobile = React.useCallback(() => {
     if (isMobile) setMobileOpen(false);
@@ -218,7 +228,7 @@ export function CouncilSidebarNav() {
 
   return (
     <nav className="space-y-0.5 px-2 py-3">
-      {councilSidebarNav.map((item) => (
+      {navItems.map((item) => (
         <NavSection
           key={item.title}
           item={item}

@@ -100,6 +100,12 @@ export function enumerateIsoDates(from: string, to: string): string[] {
   return dates;
 }
 
+/** Include the previous calendar month when recovering mosque attendance. */
+export function mosqueRecoveryStartDate(today: string): string {
+  assertIsoDate(today);
+  return `${addDaysIso(`${today.slice(0, 7)}-01`, -1).slice(0, 7)}-01`;
+}
+
 export function maldivesMinutesNow(now = new Date()): number {
   const parts = utcToMaldivesParts(now.toISOString());
   return parts.localMinutes;

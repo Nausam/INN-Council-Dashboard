@@ -1,17 +1,13 @@
 "use server";
 
 import * as hr from "@/lib/firebase/hr";
+import { requireAdmin } from "@/lib/auth/require-admin";
 
 export async function createEmployeeRecord(
   ...args: Parameters<typeof hr.createEmployeeRecord>
 ) {
+  await requireAdmin();
   return hr.createEmployeeRecord(...args);
-}
-
-export async function createLeaveRequest(
-  ...args: Parameters<typeof hr.createLeaveRequest>
-) {
-  return hr.createLeaveRequest(...args);
 }
 
 export async function createOvertimeRequest(
@@ -27,18 +23,21 @@ export async function deductLeave(...args: Parameters<typeof hr.deductLeave>) {
 export async function deleteAttendancesByDate(
   ...args: Parameters<typeof hr.deleteAttendancesByDate>
 ) {
+  await requireAdmin();
   return hr.deleteAttendancesByDate(...args);
 }
 
 export async function deleteEmployeeRecord(
   ...args: Parameters<typeof hr.deleteEmployeeRecord>
 ) {
+  await requireAdmin();
   return hr.deleteEmployeeRecord(...args);
 }
 
 export async function deleteMosqueAttendancesByDate(
   ...args: Parameters<typeof hr.deleteMosqueAttendancesByDate>
 ) {
+  await requireAdmin();
   return hr.deleteMosqueAttendancesByDate(...args);
 }
 
@@ -79,6 +78,7 @@ export async function fetchEmployeeLeaveCalendar(
 export async function fetchLeaveRequests(
   ...args: Parameters<typeof hr.fetchLeaveRequests>
 ) {
+  await requireAdmin();
   return hr.fetchLeaveRequests(...args);
 }
 
@@ -107,6 +107,7 @@ export async function fetchMosqueDailyAttendanceForMonth(
 export async function fetchOvertimeRequests(
   ...args: Parameters<typeof hr.fetchOvertimeRequests>
 ) {
+  await requireAdmin();
   return hr.fetchOvertimeRequests(...args);
 }
 
@@ -126,27 +127,24 @@ export async function fetchSlimEmployees() {
   return hr.fetchSlimEmployees();
 }
 
-export async function fetchUserLeaveRequests(
-  ...args: Parameters<typeof hr.fetchUserLeaveRequests>
-) {
-  return hr.fetchUserLeaveRequests(...args);
-}
-
 export async function savePrayerTimes(
   ...args: Parameters<typeof hr.savePrayerTimes>
 ) {
+  await requireAdmin();
   return hr.savePrayerTimes(...args);
 }
 
 export async function updateEmployeeRecord(
   ...args: Parameters<typeof hr.updateEmployeeRecord>
 ) {
+  await requireAdmin();
   return hr.updateEmployeeRecord(...args);
 }
 
 export async function updateLeaveRequest(
   ...args: Parameters<typeof hr.updateLeaveRequest>
 ) {
+  await requireAdmin();
   return hr.updateLeaveRequest(...args);
 }
 
@@ -159,5 +157,6 @@ export async function updateMosqueAttendanceRecord(
 export async function updateOvertimeRequest(
   ...args: Parameters<typeof hr.updateOvertimeRequest>
 ) {
+  await requireAdmin();
   return hr.updateOvertimeRequest(...args);
 }

@@ -3,6 +3,7 @@ import {
   type EmployeeDoc,
   upsertSalarySlipRecord,
 } from "@/lib/firebase/hr";
+import { adminErrorStatus, requireAdmin } from "@/lib/auth/require-admin";
 import {
   describeSlipMatchFailure,
   getSlipFileBaseName,
@@ -57,6 +58,15 @@ function getUploadableFiles(rawFiles: FormDataEntryValue[]): File[] {
 }
 
 export async function POST(request: NextRequest) {
+  try {
+    await requireAdmin();
+  } catch (error) {
+    return NextResponse.json(
+      { error: "Admin access required" },
+      { status: adminErrorStatus(error) },
+    );
+  }
+
   try {
     if (!isR2Configured()) {
       return NextResponse.json(

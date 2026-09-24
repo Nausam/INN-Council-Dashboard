@@ -6,14 +6,24 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-export function getAllowedLoginEmails(): Set<string> {
-  const raw = process.env.ALLOWED_LOGIN_EMAILS ?? "";
+function parseEmailList(raw: string): Set<string> {
   return new Set(
     raw
-      .split(",")
-      .map((email) => normalizeEmail(email))
+      .split(/[,;\s]+/)
+      .map(normalizeEmail)
       .filter(Boolean),
   );
+}
+
+export function getAdminEmails(): Set<string> {
+  return parseEmailList(process.env.ADMIN_EMAILS ?? "");
+}
+
+export function getAllowedLoginEmails(): Set<string> {
+  return new Set([
+    ...parseEmailList(process.env.ALLOWED_LOGIN_EMAILS ?? ""),
+    ...getAdminEmails(),
+  ]);
 }
 
 export function isEmailAllowed(email: string | null | undefined): boolean {
@@ -67,7 +77,11 @@ export function emailsFromSessionClaims(
   return Array.from(new Set(emails.map(normalizeEmail)));
 }
 
-type EmailCacheEntry = { emails: string[]; role: string | null; expiresAt: number };
+type EmailCacheEntry = {
+  verifiedEmails: string[];
+  role: string | null;
+  expiresAt: number;
+};
 
 const EMAIL_CACHE_TTL_MS = 10 * 60 * 1000;
 const emailCache = new Map<string, EmailCacheEntry>();
@@ -78,8 +92,9 @@ async function loadClerkUserSnapshot(userId: string): Promise<EmailCacheEntry> {
 
   const client = await clerkClient();
   const user = await client.users.getUser(userId);
-  const emails = user.emailAddresses
-    .map((entry) => entry.emailAddress)
+  const verifiedEmails = user.emailAddresses
+    .filter((entry) => entry.verification?.status === "verified")
+    .map((entry) => normalizeEmail(entry.emailAddress))
     .filter(Boolean);
   const role =
     typeof user.privateMetadata?.role === "string"
@@ -88,7 +103,7 @@ async function loadClerkUserSnapshot(userId: string): Promise<EmailCacheEntry> {
         ? user.publicMetadata.role
         : null;
   const entry = {
-    emails,
+    verifiedEmails,
     role,
     expiresAt: Date.now() + EMAIL_CACHE_TTL_MS,
   };
@@ -101,13 +116,15 @@ export async function resolveUserEmails(
   sessionClaims?: Record<string, unknown> | null,
 ): Promise<string[]> {
   const claimEmails = emailsFromSessionClaims(sessionClaims);
-  if (claimEmails.length > 0) return claimEmails;
+  const regularAllowed = parseEmailList(process.env.ALLOWED_LOGIN_EMAILS ?? "");
+  const allowedClaimEmails = claimEmails.filter((email) => regularAllowed.has(email));
+  if (allowedClaimEmails.length > 0) return allowedClaimEmails;
 
   try {
     const snapshot = await loadClerkUserSnapshot(userId);
-    return snapshot.emails;
+    return snapshot.verifiedEmails;
   } catch {
-    return [];
+    return allowedClaimEmails;
   }
 }
 
@@ -115,6 +132,18 @@ export async function resolveUserRole(
   userId: string,
   sessionClaims?: Record<string, unknown> | null,
 ): Promise<string | null> {
+  const adminEmails = getAdminEmails();
+  if (adminEmails.size > 0) {
+    try {
+      const snapshot = await loadClerkUserSnapshot(userId);
+      return snapshot.verifiedEmails.some((email) => adminEmails.has(email))
+        ? "admin"
+        : "user";
+    } catch {
+      return "user";
+    }
+  }
+
   const claimRole = roleFromSessionClaims(sessionClaims);
   if (claimRole) return claimRole;
 

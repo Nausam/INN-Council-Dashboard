@@ -23,10 +23,14 @@ export type EmployeeForDetails = {
 
 type EmployeeDoc = {
   name?: string;
+  nameDv?: string;
   designation?: string;
+  designationDv?: string;
   section?: string;
+  sectionDv?: string;
   joinedDate?: string | null;
   address?: string;
+  addressDv?: string;
   recordCardNumber?: string;
   deviceUserId?: string;
   sickLeave?: number;
@@ -105,11 +109,15 @@ export function toEmployeeFormValues(raw: unknown): EmployeeFormData {
   const r = (raw ?? {}) as EmployeeDoc;
   return {
     name: str(r.name),
+    nameDv: str(r.nameDv),
     designation: str(r.designation),
+    designationDv: str(r.designationDv),
+    sectionDv: str(r.sectionDv),
     joinedDate: r.joinedDate
       ? new Date(r.joinedDate).toISOString().split("T")[0]
       : "",
     address: str(r.address),
+    addressDv: str(r.addressDv),
     section: str(r.section),
     recordCardNumber: str(r.recordCardNumber),
     deviceUserId: str(r.deviceUserId),

@@ -33,6 +33,8 @@ async function main() {
     isPastDailyCreationTime,
     isPastDailyReconcileTime,
     todayMaldivesIso,
+    mosqueRecoveryStartDate,
+    enumerateIsoDates,
   } = await import("../lib/attendance-sync/time");
   const { isEtimeEnabled } = await import("../lib/attendance-sync/runtime");
   const { getEtimeConfig } = await import("../lib/etime/config");
@@ -59,44 +61,63 @@ async function main() {
   let lastReconcileDate = "";
   let lastEtimeTodayPoll = 0;
   let lastEtimeHistoryPoll = 0;
+  let recoveredEtimeHistory = false;
   let etimeRetryMs = 60_000;
 
   const catchUpSheets = async () => {
     const today = todayMaldivesIso();
-    const from = addDaysIso(lastSheetDate, -7);
+    const from = mosqueRecoveryStartDate(today);
+    console.log(`Recovering mosque sheets and stored punches: ${from} through ${today}`);
     await ensureMissingDates(from, today, { preview: false });
+    // Sheets may have been created after their punches were already imported.
+    for (const date of enumerateIsoDates(from, today)) {
+      await reconcileMosqueAttendanceDate(date, undefined, { preview: false });
+    }
     await updateSheetsStatus({
       lastSuccessAt: new Date().toISOString(),
       lastDate: today,
       lastHeartbeatAt: new Date().toISOString(),
     });
     lastSheetDate = today;
+    console.log("Mosque sheet recovery complete");
   };
 
-  await catchUpSheets();
-
   const renewLoop = setInterval(() => {
-    void renewWorkerLease().then((ok) => {
-      if (!ok) console.warn("Failed to renew worker lease");
-    });
+    void renewWorkerLease()
+      .then((ok) => {
+        if (!ok) console.warn("Failed to renew worker lease");
+      })
+      .catch((error) => console.error("Worker lease renewal failed:", error));
   }, WORKER_LEASE_RENEW_MS);
 
+  // Recovery can take longer than the lease TTL; renew throughout startup.
+  try {
+    await catchUpSheets();
+  } catch (error) {
+    clearInterval(renewLoop);
+    await releaseWorkerLease().catch(() => undefined);
+    throw error;
+  }
+
   const runEtimePoll = async (from: string, to: string) => {
-    if (!isEtimeEnabled()) return;
+    if (!isEtimeEnabled()) return false;
     const config = getEtimeConfig();
     if (config.errors.length > 0) {
       console.warn("eTime config errors:", config.errors.join("; "));
-      return;
+      return false;
     }
 
     try {
+      console.log(`eTime poll: ${from} through ${to}`);
       await importEtimePunches({ from, to, reconcile: true });
       etimeRetryMs = 60_000;
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error("eTime poll failed:", message);
       etimeRetryMs = Math.min(etimeRetryMs * 2, config.maxRetryMs);
       await sleep(etimeRetryMs);
+      return false;
     }
   };
 
@@ -126,6 +147,7 @@ async function main() {
 
       const catchupCount = Math.min(lastLogCount, zkConfig.startupCatchupRecords);
       if (catchupCount > 0) {
+        console.log(`Reading and importing ${catchupCount} recent device records; startup may take several minutes`);
         const records = await client.getRecentAttendances(Math.max(catchupCount + 25, 50));
         const catchup = await importLatestZktecoRecords(
           records,
@@ -171,7 +193,11 @@ async function main() {
             lastEtimeTodayPoll = now;
           }
           if (now - lastEtimeHistoryPoll >= etimeConfig.pollHistoryMs) {
-            await runEtimePoll(addDaysIso(today, -2), yesterday);
+            const recovered = await runEtimePoll(
+              recoveredEtimeHistory ? addDaysIso(today, -2) : mosqueRecoveryStartDate(today),
+              yesterday,
+            );
+            if (recovered) recoveredEtimeHistory = true;
             lastEtimeHistoryPoll = now;
           }
         }
