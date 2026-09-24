@@ -20,10 +20,9 @@ export function getAdminEmails(): Set<string> {
 }
 
 export function getAllowedLoginEmails(): Set<string> {
-  return new Set([
-    ...parseEmailList(process.env.ALLOWED_LOGIN_EMAILS ?? ""),
-    ...getAdminEmails(),
-  ]);
+  const allowed = parseEmailList(process.env.ALLOWED_LOGIN_EMAILS ?? "");
+  getAdminEmails().forEach((email) => allowed.add(email));
+  return allowed;
 }
 
 export function isEmailAllowed(email: string | null | undefined): boolean {
