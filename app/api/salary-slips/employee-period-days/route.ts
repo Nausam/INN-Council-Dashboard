@@ -1,4 +1,5 @@
 import { fetchEmployeeById, fetchAttendanceForPayPeriod } from "@/lib/firebase/hr";
+import { hasEmployeeProfileAccess } from "@/lib/auth/employee-profile-session";
 import { buildEmployeeLeaveDays } from "@/lib/salary-slips/employee-leave-days";
 import { formatPayPeriodRange } from "@/lib/salary-slips/pay-period";
 import { NextRequest, NextResponse } from "next/server";
@@ -19,6 +20,10 @@ export async function GET(request: NextRequest) {
       { error: "employeeId is required" },
       { status: 400 },
     );
+  }
+
+  if (!(await hasEmployeeProfileAccess(employeeId))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {

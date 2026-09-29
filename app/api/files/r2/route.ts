@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { hasEmployeeProfileAccess } from "@/lib/auth/employee-profile-session";
+import { COLLECTIONS, getFirestoreDb } from "@/lib/firebase/admin";
+import { fetchEmployeeByRecordCardNumber } from "@/lib/firebase/hr";
 
 import {
   getPresignedDownloadUrl,
@@ -13,6 +16,23 @@ export async function GET(request: NextRequest) {
 
   if (!key?.trim()) {
     return NextResponse.json({ error: "key is required" }, { status: 400 });
+  }
+
+  if (key.startsWith("slips/")) {
+    const slipDoc = await getFirestoreDb()
+      .collection(COLLECTIONS.salarySlips)
+      .where("objectKey", "==", key)
+      .limit(1)
+      .get();
+    const slip = slipDoc.docs[0]?.data();
+    const employeeId = typeof slip?.employeeId === "string" && slip.employeeId
+      ? slip.employeeId
+      : typeof slip?.recordCardNumber === "string"
+        ? (await fetchEmployeeByRecordCardNumber(slip.recordCardNumber))?.$id
+        : null;
+    if (!employeeId || !(await hasEmployeeProfileAccess(employeeId))) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
   }
 
   if (!isR2Configured()) {

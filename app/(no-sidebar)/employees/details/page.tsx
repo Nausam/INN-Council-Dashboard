@@ -2,129 +2,69 @@
 
 import {
   EMPLOYEE_PROFILE_HOME,
-  LAST_EMPLOYEE_PROFILE_KEY,
   isStandaloneApp,
 } from "@/lib/employee-profile-pwa";
-import { useEmployeesQuery } from "@/hooks/queries";
-import { ArrowRight, IdCard, Loader2 } from "lucide-react";
+import {
+  beginEmployeeProfileSignIn,
+  completeEmployeeProfilePinSetup,
+  currentEmployeeProfileSession,
+  signInEmployeeProfileWithPin,
+} from "@/lib/actions/employee-profile.actions";
+import { ArrowLeft, ArrowRight, IdCard, KeyRound, Loader2 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { EmployeePwaInstallPrompt } from "./EmployeePwaInstallPrompt";
 import styles from "./employee-login.module.css";
-
-type EmployeeLookupRow = {
-  id: string;
-  name: string;
-  recordCardNumber: string;
-  identifiers: string[];
-};
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function asString(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function normalizeIdentifier(value: string): string {
-  return value.replace(/[\s-]/g, "").toLowerCase();
-}
-
-function toEmployeeLookupRow(value: unknown): EmployeeLookupRow | null {
-  if (!isRecord(value)) return null;
-
-  const id = asString(value.$id) || asString(value.id);
-  if (!id) return null;
-
-  const recordCardNumber = asString(value.recordCardNumber);
-  const identifiers = [
-    recordCardNumber,
-    asString(value.idCard),
-    asString(value.idCardNumber),
-    asString(value.nationalId),
-    asString(value.nationalIdCard),
-    asString(value.identityCardNumber),
-  ]
-    .map(normalizeIdentifier)
-    .filter(Boolean);
-
-  return {
-    id,
-    name: asString(value.name) || "Employee",
-    recordCardNumber,
-    identifiers,
-  };
-}
 
 export default function EmployeeDetailsLoginPage() {
   const router = useRouter();
   const [identifier, setIdentifier] = useState("");
+  const [step, setStep] = useState<"identifier" | "setup" | "pin">("identifier");
+  const [pin, setPin] = useState("");
+  const [pinConfirmation, setPinConfirmation] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const { data, isPending, isError } = useEmployeesQuery();
-
-  const employees = useMemo(
-    () =>
-      (Array.isArray(data) ? data : [])
-        .map(toEmployeeLookupRow)
-        .filter((employee): employee is EmployeeLookupRow => employee !== null),
-    [data],
-  );
-
   useEffect(() => {
     if (!isStandaloneApp()) return;
-    try {
-      const employeeId = window.localStorage.getItem(LAST_EMPLOYEE_PROFILE_KEY);
-      if (employeeId && /^[\w-]{1,128}$/.test(employeeId)) {
-        router.replace(`${EMPLOYEE_PROFILE_HOME}/${employeeId}`);
-      }
-    } catch {
-      // The lookup form remains available if local storage is disabled.
-    }
+    void currentEmployeeProfileSession()
+      .then((employeeId) => {
+        if (employeeId) router.replace(`${EMPLOYEE_PROFILE_HOME}/${employeeId}`);
+      })
+      .catch(() => {
+        // Keep the sign-in form available when a saved session cannot be read.
+      });
   }, [router]);
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
-
-    const lookupValue = normalizeIdentifier(identifier);
-    if (!lookupValue) {
-      setError("Enter your ID or record card number.");
-      return;
-    }
-
-    if (isPending) {
-      setError("Records are loading. Try again shortly.");
-      return;
-    }
-
-    if (isError) {
-      setError("Records are unavailable. Try again shortly.");
-      return;
-    }
-
     setSubmitting(true);
-    const match = employees.find((employee) =>
-      employee.identifiers.includes(lookupValue),
-    );
-
-    if (!match) {
-      setSubmitting(false);
-      setError("No matching employee found.");
-      return;
-    }
-
     try {
-      window.localStorage.setItem(LAST_EMPLOYEE_PROFILE_KEY, match.id);
-    } catch {
-      // Continue to the profile when browser storage is unavailable.
+      if (step === "identifier") {
+        if (!identifier.trim()) {
+          setError("Enter your ID or record card number.");
+          return;
+        }
+        const result = await beginEmployeeProfileSignIn(identifier);
+        setStep(result.requiresSetup ? "setup" : "pin");
+        setPin("");
+        setPinConfirmation("");
+        return;
+      }
+
+      const employeeId = step === "setup"
+        ? await completeEmployeeProfilePinSetup(pin, pinConfirmation)
+        : await signInEmployeeProfileWithPin(pin);
+      router.push(`${EMPLOYEE_PROFILE_HOME}/${employeeId}`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not open Employee Profile.");
+    } finally {
+      setSubmitting(false);
     }
-    router.push(`${EMPLOYEE_PROFILE_HOME}/${match.id}`);
   };
 
-  const loading = isPending || submitting;
+  const loading = submitting;
 
   return (
     <div className={styles.page}>
@@ -137,28 +77,105 @@ export default function EmployeeDetailsLoginPage() {
         </div>
 
         <section className={styles.panel} aria-labelledby="employee-portal-title">
-          <h1 id="employee-portal-title">Employee Profile</h1>
+          {step !== "identifier" ? (
+            <button
+              type="button"
+              className={styles.back}
+              onClick={() => {
+                setStep("identifier");
+                setPin("");
+                setPinConfirmation("");
+                setError("");
+              }}
+              disabled={loading}
+            >
+              <ArrowLeft aria-hidden="true" /> Change number
+            </button>
+          ) : null}
+          <h1 id="employee-portal-title">
+            {step === "identifier" ? "Employee Profile" : step === "setup" ? "Create your PIN" : "Enter your PIN"}
+          </h1>
           <form onSubmit={handleSubmit} className={styles.form}>
-            <label htmlFor="employee-identifier" className={styles.fieldLabel}>
-              ID card or record card number
-            </label>
-            <div className={styles.inputWrap}>
-              <IdCard className={styles.inputIcon} aria-hidden="true" />
-              <input
-                id="employee-identifier"
-                value={identifier}
-                onChange={(event) => {
-                  setIdentifier(event.target.value);
-                  if (error) setError("");
-                }}
-                placeholder="Enter your number"
-                autoComplete="off"
-                autoCapitalize="characters"
-                spellCheck={false}
-                aria-invalid={Boolean(error)}
-                aria-describedby={error ? "employee-login-error" : undefined}
-              />
-            </div>
+            {step === "identifier" ? (
+              <>
+                <label htmlFor="employee-identifier" className={styles.fieldLabel}>
+                  ID card or record card number
+                </label>
+                <div className={styles.inputWrap}>
+                  <IdCard className={styles.inputIcon} aria-hidden="true" />
+                  <input
+                    id="employee-identifier"
+                    value={identifier}
+                    onChange={(event) => {
+                      setIdentifier(event.target.value);
+                      if (error) setError("");
+                    }}
+                    placeholder="Enter your number"
+                    autoComplete="off"
+                    autoCapitalize="characters"
+                    spellCheck={false}
+                    aria-invalid={Boolean(error)}
+                    aria-describedby={error ? "employee-login-error" : undefined}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <p className={styles.helper}>
+                  {step === "setup"
+                    ? "This is your first sign-in. Create a four-digit PIN for future access."
+                    : "Enter the four-digit PIN you set for this profile."}
+                </p>
+                <label htmlFor="employee-pin" className={styles.fieldLabel}>
+                  {step === "setup" ? "New PIN" : "PIN"}
+                </label>
+                <div className={styles.inputWrap}>
+                  <KeyRound className={styles.inputIcon} aria-hidden="true" />
+                  <input
+                    id="employee-pin"
+                    type="password"
+                    value={pin}
+                    onChange={(event) => {
+                      setPin(event.target.value.replace(/\D/g, "").slice(0, 4));
+                      if (error) setError("");
+                    }}
+                    placeholder="Four digits"
+                    inputMode="numeric"
+                    pattern="[0-9]{4}"
+                    maxLength={4}
+                    autoComplete={step === "setup" ? "new-password" : "current-password"}
+                    aria-invalid={Boolean(error)}
+                    aria-describedby={error ? "employee-login-error" : undefined}
+                    required
+                  />
+                </div>
+                {step === "setup" ? (
+                  <>
+                    <label htmlFor="employee-pin-confirmation" className={`${styles.fieldLabel} ${styles.nextLabel}`}>
+                      Confirm PIN
+                    </label>
+                    <div className={styles.inputWrap}>
+                      <KeyRound className={styles.inputIcon} aria-hidden="true" />
+                      <input
+                        id="employee-pin-confirmation"
+                        type="password"
+                        value={pinConfirmation}
+                        onChange={(event) => {
+                          setPinConfirmation(event.target.value.replace(/\D/g, "").slice(0, 4));
+                          if (error) setError("");
+                        }}
+                        placeholder="Repeat your PIN"
+                        inputMode="numeric"
+                        pattern="[0-9]{4}"
+                        maxLength={4}
+                        autoComplete="new-password"
+                        required
+                      />
+                    </div>
+                  </>
+                ) : null}
+              </>
+            )}
 
             {error ? (
               <p id="employee-login-error" className={styles.error} role="alert">
@@ -167,7 +184,7 @@ export default function EmployeeDetailsLoginPage() {
             ) : null}
 
             <button type="submit" disabled={loading} className={styles.submit}>
-              <span>{isPending ? "Loading…" : submitting ? "Opening…" : "Continue"}</span>
+              <span>{submitting ? "Please wait…" : step === "setup" ? "Create PIN and continue" : step === "pin" ? "Unlock profile" : "Continue"}</span>
               {loading ? <Loader2 className="animate-spin" aria-hidden="true" /> : <ArrowRight aria-hidden="true" />}
             </button>
           </form>

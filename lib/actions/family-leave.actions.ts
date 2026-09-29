@@ -5,6 +5,7 @@ import { FieldValue } from "firebase-admin/firestore";
 
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { getSessionAuthProfile } from "@/lib/auth/session-profile";
+import { getEmployeeProfileSessionId } from "@/lib/auth/employee-profile-session";
 import { maldivesDateTime } from "@/lib/dates/maldives";
 import { COLLECTIONS, getFirestoreDb } from "@/lib/firebase/admin";
 import { fetchAllEmployees, fetchEmployeeById } from "@/lib/firebase/hr";
@@ -102,10 +103,9 @@ export async function submitFamilyLeaveRequest(input: {
   | { ok: true; id: string; requestDate: string; reportedTime: string }
   | { ok: false; code: "missing_dhivehi_details" }
 > {
-  const profile = await getSessionAuthProfile();
-  if (!profile) throw new Error("Unauthorized");
-
   const employeeId = String(input.employeeId ?? "").trim();
+  const profile = await getSessionAuthProfile();
+  if (!profile && getEmployeeProfileSessionId() !== employeeId) throw new Error("Unauthorized");
   const leaveType = String(input.leaveType ?? "");
   const reason = String(input.reason ?? "").trim();
   const startDate = String(input.startDate ?? "").trim();
@@ -165,7 +165,7 @@ export async function submitFamilyLeaveRequest(input: {
     leaveEndDate: range.endDate,
     durationDays: range.durationDays,
     submittedAt: now.toISOString(),
-    submittedBy: profile.email || profile.fullName,
+    submittedBy: profile?.email || profile?.fullName || employee.name,
     approvalStatus: "Pending",
   };
   batch.set(db.collection(COLLECTIONS.familyLeaveRequests).doc(id), summary);

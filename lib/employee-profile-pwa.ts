@@ -8,7 +8,7 @@ export function isStandaloneApp(): boolean {
 }
 
 export function isEmployeeProfileRoute(pathname: string): boolean {
+  if (pathname === "/employees/details/sign-in" || pathname.startsWith("/employees/details/sign-in/")) return false;
   return pathname === EMPLOYEE_PROFILE_HOME
-    || pathname.startsWith(`${EMPLOYEE_PROFILE_HOME}/`)
-    || pathname === "/sign-in";
+    || pathname.startsWith(`${EMPLOYEE_PROFILE_HOME}/`);
 }

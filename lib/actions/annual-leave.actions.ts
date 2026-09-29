@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { getSessionAuthProfile } from "@/lib/auth/session-profile";
+import { getEmployeeProfileSessionId } from "@/lib/auth/employee-profile-session";
 import { maldivesDateTime } from "@/lib/dates/maldives";
 import { COLLECTIONS, getFirestoreDb } from "@/lib/firebase/admin";
 import { fetchAllEmployees, fetchEmployeeById } from "@/lib/firebase/hr";
@@ -41,7 +42,7 @@ function personFromEmployee(employee: Awaited<ReturnType<typeof fetchEmployeeByI
 }
 
 export async function listAnnualLeaveEmployeeOptions(): Promise<AnnualLeaveEmployeeOption[]> {
-  if (!(await getSessionAuthProfile())) throw new Error("Unauthorized");
+  if (!(await getSessionAuthProfile()) && !getEmployeeProfileSessionId()) throw new Error("Unauthorized");
   const employees = await fetchAllEmployees();
   return employees.map((employee) => ({ employeeId: employee.$id, name: employee.name }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -54,9 +55,9 @@ export async function submitAnnualLeaveRequest(input: {
   reason: string;
   takeoverEmployeeId: string;
 }): Promise<void> {
-  const profile = await getSessionAuthProfile();
-  if (!profile) throw new Error("Unauthorized");
   const employeeId = String(input.employeeId ?? "").trim();
+  const profile = await getSessionAuthProfile();
+  if (!profile && getEmployeeProfileSessionId() !== employeeId) throw new Error("Unauthorized");
   const takeoverEmployeeId = String(input.takeoverEmployeeId ?? "").trim();
   if (!/^[\w-]{1,128}$/.test(employeeId) || !/^[\w-]{1,128}$/.test(takeoverEmployeeId) || employeeId === takeoverEmployeeId) {
     throw new Error("Select another employee to take over responsibilities");
@@ -83,7 +84,7 @@ export async function submitAnnualLeaveRequest(input: {
     approvalStatus: "Pending",
     createdAt: now.toISOString(),
     employeeId,
-    submittedBy: profile.email || profile.fullName,
+    submittedBy: profile?.email || profile?.fullName || employee.name,
     employeeNameDv: String(employee.nameDv || employee.name || "").trim(),
     addressDv: String(employee.addressDv || employee.address || "").trim(),
     permanentAddressDv: String(raw.permanentAddressDv || raw.permanentAddress || employee.addressDv || employee.address || "").trim(),

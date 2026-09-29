@@ -1,7 +1,11 @@
 import { listRecordCardNumbersWithSlipForPeriod } from "@/lib/firebase/hr";
+import { getSessionAuthProfile } from "@/lib/auth/session-profile";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
+  if (!(await getSessionAuthProfile())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   const period = request.nextUrl.searchParams.get("period");
   const trimmed = typeof period === "string" ? period.trim() : "";
   if (!trimmed) {

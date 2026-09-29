@@ -4,6 +4,7 @@ import {
   listSalarySlipsByRecordCard,
 } from "@/lib/firebase/hr";
 import { adminErrorStatus, requireAdmin } from "@/lib/auth/require-admin";
+import { hasEmployeeProfileAccess } from "@/lib/auth/employee-profile-session";
 import {
   getPresignedDownloadUrl,
   getPresignedViewUrl,
@@ -29,6 +30,10 @@ export async function GET(request: NextRequest) {
         { error: "No employee found for this record card number" },
         { status: 404 }
       );
+    }
+
+    if (!(await hasEmployeeProfileAccess(employee.$id))) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const slips = await listSalarySlipsByRecordCard(trimmed);

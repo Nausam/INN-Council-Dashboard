@@ -1,6 +1,7 @@
 "use server";
 
 import { getSessionAuthProfile } from "@/lib/auth/session-profile";
+import { getEmployeeProfileSessionId } from "@/lib/auth/employee-profile-session";
 import { recordCardLabelForEmployee } from "@/lib/employees/record-card-label";
 import {
   createOvertimeRequest,
@@ -21,7 +22,7 @@ function minutesFromTime(value: string): number | null {
 
 async function employeeForRequest(employeeId: string) {
   const profile = await getSessionAuthProfile();
-  if (!profile) throw new Error("Unauthorized");
+  if (!profile && getEmployeeProfileSessionId() !== employeeId) throw new Error("Unauthorized");
   if (!/^[\w-]{1,128}$/.test(employeeId)) throw new Error("Invalid employee");
   return fetchEmployeeById(employeeId);
 }

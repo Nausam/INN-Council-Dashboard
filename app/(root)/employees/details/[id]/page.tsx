@@ -6,6 +6,7 @@ import {
   fetchEmployeeLeaveCalendar,
   fetchMosqueDailyAttendanceForMonth,
 } from "@/lib/firebase/hr";
+import { requireEmployeeProfileAccess } from "@/lib/auth/employee-profile-session";
 import { monthFromSearchParam } from "@/lib/dates/page-params";
 import { EmployeeDetailsDashboardView } from "./EmployeeDetailsDashboardView";
 
@@ -16,6 +17,7 @@ export default async function EmployeeDetailsDashboardPage({
   params: { id: string };
   searchParams?: { month?: string; tab?: string };
 }) {
+  await requireEmployeeProfileAccess(params.id);
   const month = monthFromSearchParam(searchParams?.month);
   const requestedTab = searchParams?.tab;
   const initialTab: "overview" | "attendance" | "leave" | "pay" | "requests" =

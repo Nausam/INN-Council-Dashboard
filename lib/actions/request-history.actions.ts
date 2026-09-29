@@ -1,6 +1,7 @@
 "use server";
 
 import { getSessionAuthProfile } from "@/lib/auth/session-profile";
+import { getEmployeeProfileSessionId } from "@/lib/auth/employee-profile-session";
 import { COLLECTIONS, getFirestoreDb } from "@/lib/firebase/admin";
 import { fetchEmployeeById } from "@/lib/firebase/hr";
 import type { FamilyLeaveRequestSummary } from "@/lib/actions/family-leave.actions";
@@ -38,7 +39,7 @@ function isoDateTime(value: unknown): string | undefined {
 }
 
 export async function listEmployeeRequestHistory(employeeId: string): Promise<RequestHistoryEntry[]> {
-  if (!(await getSessionAuthProfile())) throw new Error("Unauthorized");
+  if (!(await getSessionAuthProfile()) && getEmployeeProfileSessionId() !== employeeId) throw new Error("Unauthorized");
   if (!/^[\w-]{1,128}$/.test(employeeId)) throw new Error("Invalid employee");
   const db = getFirestoreDb();
   const employee = await fetchEmployeeById(employeeId);

@@ -14,6 +14,8 @@ import {
 const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
   "/employees/details/sign-in(.*)",
+  "/employees/details(.*)",
+  "/api/employee-requests/annual(.*)",
   "/salary-slips(.*)",
   "/api/salary-slips(.*)",
   "/api/files/r2(.*)",

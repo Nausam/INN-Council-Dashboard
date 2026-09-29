@@ -11,8 +11,9 @@ import { useEffect, useState } from "react";
 export function EmployeePwaScope({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [standalone, setStandalone] = useState(false);
+  const [standalone, setStandalone] = useState<boolean | null>(null);
   const allowed = isEmployeeProfileRoute(pathname);
+  const isSignInRoute = pathname === "/sign-in" || pathname === "/employees/details/sign-in";
 
   useEffect(() => {
     const displayMode = window.matchMedia("(display-mode: standalone)");
@@ -27,11 +28,12 @@ export function EmployeePwaScope({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("employee-profile-app", standalone);
+    document.documentElement.classList.toggle("employee-profile-app", standalone === true);
     if (standalone && !allowed) router.replace(EMPLOYEE_PROFILE_HOME);
     return () => document.documentElement.classList.remove("employee-profile-app");
   }, [allowed, router, standalone]);
 
-  if (standalone && !allowed) return null;
+  // Keep Clerk's sign-in UI out of the installed app while display mode is resolving.
+  if ((standalone === null && isSignInRoute) || (standalone && !allowed)) return null;
   return <>{children}</>;
 }

@@ -9,6 +9,8 @@ import {
   fetchSalaryPeriodConfig,
 } from "@/lib/firebase/hr";
 import { formatPayPeriodRange } from "@/lib/salary-slips/pay-period";
+import { hasEmployeeProfileAccess } from "@/lib/auth/employee-profile-session";
+import { getSessionAuthProfile } from "@/lib/auth/session-profile";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -23,6 +25,13 @@ export async function GET(request: NextRequest) {
   }
 
   const employeeId = request.nextUrl.searchParams.get("employeeId")?.trim();
+
+  const authorized = employeeId
+    ? await hasEmployeeProfileAccess(employeeId)
+    : Boolean(await getSessionAuthProfile());
+  if (!authorized) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   try {
     const [employees, attendance, periodConfig] = await Promise.all([

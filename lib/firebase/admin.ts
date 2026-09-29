@@ -68,6 +68,7 @@ export function getFirestoreDb(): Firestore {
 /** Firestore collection names in council-hr-dashboard */
 export const COLLECTIONS = {
   employees: "employees",
+  employeeProfileAuth: "employee_profile_auth",
   salarySlips: "salary_slips",
   salaryPeriodConfig: "salary_period_config",
   holidayCalendar: "holiday_calendar",
