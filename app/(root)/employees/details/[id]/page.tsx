@@ -18,10 +18,11 @@ export default async function EmployeeDetailsDashboardPage({
 }) {
   const month = monthFromSearchParam(searchParams?.month);
   const requestedTab = searchParams?.tab;
-  const initialTab: "overview" | "attendance" | "leave" | "pay" =
+  const initialTab: "overview" | "attendance" | "leave" | "pay" | "requests" =
     requestedTab === "attendance" ||
     requestedTab === "leave" ||
-    requestedTab === "pay"
+    requestedTab === "pay" ||
+    requestedTab === "requests"
       ? requestedTab
       : "overview";
   const [employee, leaves, councilAttendance, mosqueAttendance] =

@@ -1,6 +1,8 @@
 "use client";
 
 import { AvatarGlow, EmptyState } from "@/components/design-system";
+import { EmployeePortalMobileNav } from "@/components/employee-portal/EmployeePortalMobileNav";
+import mobileNavStyles from "@/components/employee-portal/EmployeePortalMobileNav.module.css";
 import { reverseLeaveTypeMapping } from "@/constants";
 import type { EmployeeDoc, EmployeeLeaveCalendarEntry } from "@/lib/firebase/types";
 import {
@@ -260,7 +262,7 @@ export function EmployeeLeaveCalendarView({
       <div className={cn(surface.page, "px-4 py-6")}>
         <style>{`@media (max-width: 767px){[data-council-mobile-header]{display:none !important;}}`}</style>
         <div className="mx-auto max-w-5xl">
-          <BackButton onClick={() => router.back()} />
+          <BackButton onClick={() => router.push("/employees/details")} />
           <EmptyState
             icon={User}
             title="Employee not found"
@@ -272,11 +274,11 @@ export function EmployeeLeaveCalendarView({
   }
 
   return (
-    <div className={cn(surface.page, "px-4 pb-12 pt-6")}>
+    <div className={cn(surface.page, mobileNavStyles.pageWithMobileNav, "px-4 pt-6")}>
       {/* Hide the app's mobile header on this page only */}
       <style>{`@media (max-width: 767px){[data-council-mobile-header]{display:none !important;}}`}</style>
       <div className={cn(surface.shell, "space-y-5")}>
-        <BackButton onClick={() => router.back()} />
+        <BackButton onClick={() => router.push(`/employees/details/${id}?tab=leave`)} />
 
         {/* Hero */}
         <section className={surface.hero}>
@@ -536,6 +538,7 @@ export function EmployeeLeaveCalendarView({
           )}
         </section>
       </div>
+      {id ? <EmployeePortalMobileNav employeeId={id} active="leave" /> : null}
     </div>
   );
 }

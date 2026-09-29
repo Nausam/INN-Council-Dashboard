@@ -20,6 +20,7 @@ import { getZkDashboardStatus } from "@/lib/zk/sync-service";
 import { publicZkConfig } from "@/lib/zk/config";
 
 const SHEETS_STATUS_ID = "attendance-sync-sheets";
+const COUNCIL_SHEETS_STATUS_ID = "attendance-sync-council-sheets";
 const RECONCILE_STATUS_ID = "attendance-sync-reconcile";
 
 export type IntegrationSliceStatus = {
@@ -47,6 +48,36 @@ export async function updateSheetsStatus(
     );
 }
 
+export async function getSheetsLastDate(): Promise<string | null> {
+  const snap = await getFirestoreDb()
+    .collection(COLLECTIONS.integrationStatus)
+    .doc(SHEETS_STATUS_ID)
+    .get();
+  const date = snap.data()?.lastDate;
+  return typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date)
+    ? date
+    : null;
+}
+
+export async function getCouncilSheetsLastDate(): Promise<string | null> {
+  const snap = await getFirestoreDb()
+    .collection(COLLECTIONS.integrationStatus)
+    .doc(COUNCIL_SHEETS_STATUS_ID)
+    .get();
+  const date = snap.data()?.lastDate;
+  return typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date)
+    ? date
+    : null;
+}
+
+export async function updateCouncilSheetsStatus(patch: IntegrationSliceStatus): Promise<void> {
+  await getFirestoreDb()
+    .collection(COLLECTIONS.integrationStatus)
+    .doc(COUNCIL_SHEETS_STATUS_ID)
+    .set({ ...patch, updatedAt: new Date().toISOString(), updatedAtServer: FieldValue.serverTimestamp() },
+      { merge: true });
+}
+
 export async function updateReconcileStatus(
   patch: IntegrationSliceStatus,
 ): Promise<void> {
@@ -67,7 +98,7 @@ export async function getAttendanceSyncDashboardStatus() {
   const today = todayMaldivesIso();
   const employees = await fetchAllEmployees();
   const maps = buildSourceEmployeeMaps(employees, today);
-  const [zk, etimeStatus, lease, unmatched, sheetsSnap, reconcileSnap] =
+  const [zk, etimeStatus, lease, unmatched, sheetsSnap, councilSheetsSnap, reconcileSnap] =
     await Promise.all([
       getZkDashboardStatus(),
       getEtimeStatus(),
@@ -76,6 +107,10 @@ export async function getAttendanceSyncDashboardStatus() {
       getFirestoreDb()
         .collection(COLLECTIONS.integrationStatus)
         .doc(SHEETS_STATUS_ID)
+        .get(),
+      getFirestoreDb()
+        .collection(COLLECTIONS.integrationStatus)
+        .doc(COUNCIL_SHEETS_STATUS_ID)
         .get(),
       getFirestoreDb()
         .collection(COLLECTIONS.integrationStatus)
@@ -100,6 +135,7 @@ export async function getAttendanceSyncDashboardStatus() {
       status: etimeStatus,
     },
     sheets: sheetsSnap.exists ? sheetsSnap.data() : null,
+    councilSheets: councilSheetsSnap.exists ? councilSheetsSnap.data() : null,
     reconcile: reconcileSnap.exists ? reconcileSnap.data() : null,
     lease,
     unmatchedPunches: unmatched,
@@ -127,6 +163,8 @@ export async function runAttendanceSyncJob(request: {
   const { reconcileMosqueAttendanceDate } = await import(
     "@/lib/attendance-sync/reconcile"
   );
+  const { ensureCouncilAttendanceSheets, reconcileCouncilAttendanceDate } =
+    await import("@/lib/attendance-sync/council");
   const { importZktecoFromDeviceRange } = await import(
     "@/lib/attendance-sync/import-zkteco"
   );
@@ -139,7 +177,7 @@ export async function runAttendanceSyncJob(request: {
   const reconcileResults = [];
 
   if (request.sources.includes("zkteco")) {
-    imports.zkteco = await importZktecoFromDeviceRange(request.from, request.to);
+    imports.zkteco = await importZktecoFromDeviceRange(request.from, request.to, false);
   }
 
   if (request.sources.includes("etime")) {
@@ -153,6 +191,7 @@ export async function runAttendanceSyncJob(request: {
   if (request.ensureSheets !== false) {
     for (const date of dates) {
       ensureResults.push(await ensureMosqueAttendanceSheets(date, { preview }));
+      ensureResults.push(await ensureCouncilAttendanceSheets(date, { preview }));
     }
   }
 
@@ -161,6 +200,7 @@ export async function runAttendanceSyncJob(request: {
       reconcileResults.push(
         await reconcileMosqueAttendanceDate(date, undefined, { preview }),
       );
+      reconcileResults.push(await reconcileCouncilAttendanceDate(date, { preview }));
     }
   }
 

@@ -32,6 +32,7 @@ type EmployeeDoc = {
   address?: string;
   addressDv?: string;
   recordCardNumber?: string;
+  idCardNumber?: string;
   deviceUserId?: string;
   sickLeave?: number;
   certificateSickLeave?: number;
@@ -120,6 +121,7 @@ export function toEmployeeFormValues(raw: unknown): EmployeeFormData {
     addressDv: str(r.addressDv),
     section: str(r.section),
     recordCardNumber: str(r.recordCardNumber),
+    idCardNumber: str(r.idCardNumber),
     deviceUserId: str(r.deviceUserId),
     sickLeave: num(r.sickLeave),
     certificateSickLeave: num(r.certificateSickLeave),

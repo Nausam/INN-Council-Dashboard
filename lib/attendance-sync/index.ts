@@ -15,6 +15,11 @@ export {
   markManualPrayerOverrides,
 } from "@/lib/attendance-sync/reconcile";
 export {
+  ensureCouncilAttendanceSheets,
+  reconcileCouncilAttendanceDate,
+  resumeCouncilAttendanceAutomation,
+} from "@/lib/attendance-sync/council";
+export {
   getAttendanceSyncDashboardStatus,
   runAttendanceSyncJob,
   updateReconcileStatus,

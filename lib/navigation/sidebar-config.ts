@@ -47,7 +47,7 @@ export const councilSidebarNav: SidebarNavItem[] = [
     icon: Users,
     items: [
       { title: "All Employees", url: "/employees" },
-      { title: "Employee Details", url: "/employees/details" },
+      { title: "Employee Profile", url: "/employees/details" },
       { title: "Add Employee", url: "/employees/add", adminOnly: true },
     ],
   },
@@ -78,6 +78,7 @@ export const councilSidebarNav: SidebarNavItem[] = [
     icon: Calendar,
     items: [
       { title: "Leave", url: "/requests/leave", adminOnly: true },
+      { title: "Annual leave", url: "/requests/annual-leave", adminOnly: true },
       { title: "Overtime", url: "/requests/overtime" },
     ],
   },

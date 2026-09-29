@@ -1,9 +1,14 @@
 "use client";
 
 import {
-  submitEmployeeAnnualLeaveRequest,
   submitEmployeeOvertimeRequest,
 } from "@/lib/actions/employee-portal-requests.actions";
+import {
+  listAnnualLeaveEmployeeOptions,
+  submitAnnualLeaveRequest,
+  type AnnualLeaveEmployeeOption,
+} from "@/lib/actions/annual-leave.actions";
+import { parseLeaveDateRange } from "@/lib/leave/date-range";
 import { maldivesDateTime } from "@/lib/dates/maldives";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2 } from "lucide-react";
@@ -19,16 +24,19 @@ export function EmployeeRequestDialog({
   mode,
   open,
   onOpenChange,
+  onSubmitted,
 }: {
   employeeId: string;
   mode: Mode;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onSubmitted?: () => void;
 }) {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [totalDays, setTotalDays] = useState("");
-  const [reason, setReason] = useState("");
+  const [annualReason, setAnnualReason] = useState("");
+  const [takeoverEmployeeId, setTakeoverEmployeeId] = useState("");
+  const [employees, setEmployees] = useState<AnnualLeaveEmployeeOption[]>([]);
   const [workDate, setWorkDate] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
@@ -41,8 +49,8 @@ export function EmployeeRequestDialog({
     if (!open) return;
     setStartDate("");
     setEndDate("");
-    setTotalDays("");
-    setReason("");
+    setAnnualReason("");
+    setTakeoverEmployeeId("");
     setWorkDate(maldivesDateTime().date);
     setStartTime("");
     setEndTime("");
@@ -50,6 +58,15 @@ export function EmployeeRequestDialog({
     setSuccess(false);
     setError("");
   }, [open, mode]);
+
+  useEffect(() => {
+    if (!open || mode !== "annual") return;
+    let active = true;
+    void listAnnualLeaveEmployeeOptions()
+      .then((options) => { if (active) setEmployees(options.filter((option) => option.employeeId !== employeeId)); })
+      .catch(() => { if (active) setError("Could not load employees for handover."); });
+    return () => { active = false; };
+  }, [open, mode, employeeId]);
 
   function changeOpen(next: boolean) {
     if (!pending) onOpenChange(next);
@@ -62,12 +79,12 @@ export function EmployeeRequestDialog({
     setPending(true);
     try {
       if (mode === "annual") {
-        await submitEmployeeAnnualLeaveRequest({
+        await submitAnnualLeaveRequest({
           employeeId,
           startDate,
           endDate,
-          totalDays: Number(totalDays),
-          reason,
+          reason: annualReason,
+          takeoverEmployeeId,
         });
       } else {
         await submitEmployeeOvertimeRequest({
@@ -79,14 +96,19 @@ export function EmployeeRequestDialog({
         });
       }
       setSuccess(true);
-    } catch {
-      setError("Could not submit this request. Check the dates and details, then try again.");
+      onSubmitted?.();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not submit this request.");
     } finally {
       setPending(false);
     }
   }
 
   const annual = mode === "annual";
+  let totalDays = "";
+  if (startDate && endDate) {
+    try { totalDays = String(parseLeaveDateRange(startDate, endDate).durationDays); } catch { /* dates are still being chosen */ }
+  }
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-[28px] border border-white bg-[#fcfafd] p-6 shadow-2xl" overlayClassName="bg-black/40">
@@ -117,11 +139,18 @@ export function EmployeeRequestDialog({
                 </label>
                 <label className="text-sm font-bold text-slate-700">
                   Total days
-                  <input className={fieldClass} type="number" min="1" max="366" step="1" value={totalDays} onChange={(event) => setTotalDays(event.target.value)} required />
+                  <input className={fieldClass} type="text" value={totalDays} placeholder="Calculated from the dates" readOnly aria-readonly="true" />
                 </label>
                 <label className="text-sm font-bold text-slate-700">
-                  Reason
-                  <textarea className={fieldClass} rows={3} maxLength={500} minLength={2} value={reason} onChange={(event) => setReason(event.target.value)} required />
+                  Reason for leave
+                  <textarea className={fieldClass} rows={3} maxLength={500} minLength={2} dir="auto" value={annualReason} onChange={(event) => setAnnualReason(event.target.value)} required />
+                </label>
+                <label className="text-sm font-bold text-slate-700">
+                  Who will take over your responsibilities?
+                  <select className={fieldClass} value={takeoverEmployeeId} onChange={(event) => setTakeoverEmployeeId(event.target.value)} required>
+                    <option value="">Select an employee</option>
+                    {employees.map((employee) => <option key={employee.employeeId} value={employee.employeeId}>{employee.name}</option>)}
+                  </select>
                 </label>
               </>
             ) : (

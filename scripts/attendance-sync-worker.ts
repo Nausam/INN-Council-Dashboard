@@ -18,13 +18,16 @@ async function main() {
   const { reconcileMosqueAttendanceDate } = await import(
     "../lib/attendance-sync/reconcile"
   );
+  const { ensureCouncilAttendanceSheets, reconcileCouncilAttendanceDate } =
+    await import("../lib/attendance-sync/council");
   const {
     tryAcquireWorkerLease,
     renewWorkerLease,
     releaseWorkerLease,
     WORKER_LEASE_RENEW_MS,
   } = await import("../lib/attendance-sync/lease");
-  const { updateReconcileStatus, updateSheetsStatus } = await import(
+  const { getCouncilSheetsLastDate, getSheetsLastDate, updateCouncilSheetsStatus,
+    updateReconcileStatus, updateSheetsStatus } = await import(
     "../lib/attendance-sync/status"
   );
   const { updateZkStatus } = await import("../lib/zk/punch-repository");
@@ -50,11 +53,17 @@ async function main() {
     stopping = true;
   });
 
-  const hasLease = await tryAcquireWorkerLease();
-  if (!hasLease) {
-    console.error("Another attendance-sync worker holds the lease. Exiting.");
-    process.exit(1);
+  let hasLease = false;
+  while (!stopping && !hasLease) {
+    try {
+      hasLease = await tryAcquireWorkerLease();
+      if (!hasLease) console.warn("Waiting for the attendance-sync worker lease");
+    } catch (error) {
+      console.error("Could not acquire worker lease; retrying:", error);
+    }
+    if (!hasLease && !stopping) await sleep(15_000);
   }
+  if (stopping) return;
 
   console.log("Attendance sync worker starting");
   let lastSheetDate = todayMaldivesIso();
@@ -62,16 +71,34 @@ async function main() {
   let lastEtimeTodayPoll = 0;
   let lastEtimeHistoryPoll = 0;
   let recoveredEtimeHistory = false;
+  let nextEtimeHistoryDate = "";
   let etimeRetryMs = 60_000;
 
   const catchUpSheets = async () => {
     const today = todayMaldivesIso();
-    const from = mosqueRecoveryStartDate(today);
+    const lastMosqueDate = await getSheetsLastDate();
+    const from = lastMosqueDate && lastMosqueDate <= today
+      ? lastMosqueDate < today ? addDaysIso(lastMosqueDate, 1) : today
+      : mosqueRecoveryStartDate(today);
     console.log(`Recovering mosque sheets and stored punches: ${from} through ${today}`);
     await ensureMissingDates(from, today, { preview: false });
+    const lastCouncilDate = await getCouncilSheetsLastDate();
+    const councilFrom = lastCouncilDate && lastCouncilDate < today
+      ? addDaysIso(lastCouncilDate, 1)
+      : today;
+    for (const date of enumerateIsoDates(councilFrom, today)) {
+      await ensureCouncilAttendanceSheets(date, { preview: false });
+      await reconcileCouncilAttendanceDate(date, { preview: false });
+    }
+    await updateCouncilSheetsStatus({
+      lastSuccessAt: new Date().toISOString(),
+      lastDate: today,
+      lastHeartbeatAt: new Date().toISOString(),
+    });
     // Sheets may have been created after their punches were already imported.
     for (const date of enumerateIsoDates(from, today)) {
       await reconcileMosqueAttendanceDate(date, undefined, { preview: false });
+      await reconcileCouncilAttendanceDate(date, { preview: false });
     }
     await updateSheetsStatus({
       lastSuccessAt: new Date().toISOString(),
@@ -79,15 +106,26 @@ async function main() {
       lastHeartbeatAt: new Date().toISOString(),
     });
     lastSheetDate = today;
-    console.log("Mosque sheet recovery complete");
+    console.log("Attendance sheet recovery complete");
   };
 
+  let renewingLease = false;
   const renewLoop = setInterval(() => {
-    void renewWorkerLease()
-      .then((ok) => {
-        if (!ok) console.warn("Failed to renew worker lease");
-      })
-      .catch((error) => console.error("Worker lease renewal failed:", error));
+    if (renewingLease) return;
+    renewingLease = true;
+    void (async () => {
+      try {
+        const renewed = await renewWorkerLease();
+        if (!renewed && !(await tryAcquireWorkerLease())) {
+          console.error("Attendance sync worker lease belongs to another process. Exiting.");
+          process.exit(1);
+        }
+      } catch (error) {
+        console.error("Worker lease renewal failed:", error);
+      } finally {
+        renewingLease = false;
+      }
+    })();
   }, WORKER_LEASE_RENEW_MS);
 
   // Recovery can take longer than the lease TTL; renew throughout startup.
@@ -116,7 +154,6 @@ async function main() {
       const message = error instanceof Error ? error.message : String(error);
       console.error("eTime poll failed:", message);
       etimeRetryMs = Math.min(etimeRetryMs * 2, config.maxRetryMs);
-      await sleep(etimeRetryMs);
       return false;
     }
   };
@@ -147,6 +184,19 @@ async function main() {
 
       const catchupCount = Math.min(lastLogCount, zkConfig.startupCatchupRecords);
       if (catchupCount > 0) {
+        const recentCount = Math.min(catchupCount, 75);
+        console.log(`Importing ${recentCount} newest device records first`);
+        const recentRecords = await client.getRecentAttendances(recentCount);
+        const recent = await importLatestZktecoRecords(
+          recentRecords,
+          serial,
+          zkConfig.timezone,
+        );
+        console.log(
+          `ZK recent: written=${recent.written}, skipped=${recent.skipped}, unmatched=${recent.unmatched}`,
+        );
+      }
+      if (catchupCount > 75) {
         console.log(`Reading and importing ${catchupCount} recent device records; startup may take several minutes`);
         const records = await client.getRecentAttendances(Math.max(catchupCount + 25, 50));
         const catchup = await importLatestZktecoRecords(
@@ -164,7 +214,16 @@ async function main() {
         const today = todayMaldivesIso();
 
         if (isPastDailyCreationTime() && lastSheetDate !== today) {
-          await ensureMosqueAttendanceSheets(today, { preview: false });
+          for (const date of enumerateIsoDates(addDaysIso(lastSheetDate, 1), today)) {
+            await ensureMosqueAttendanceSheets(date, { preview: false });
+            await ensureCouncilAttendanceSheets(date, { preview: false });
+            await reconcileCouncilAttendanceDate(date, { preview: false });
+          }
+          await updateCouncilSheetsStatus({
+            lastSuccessAt: new Date().toISOString(),
+            lastDate: today,
+            lastHeartbeatAt: new Date().toISOString(),
+          });
           await updateSheetsStatus({
             lastSuccessAt: new Date().toISOString(),
             lastDate: today,
@@ -178,6 +237,7 @@ async function main() {
           await reconcileMosqueAttendanceDate(yesterday, undefined, {
             preview: false,
           });
+          await reconcileCouncilAttendanceDate(yesterday, { preview: false });
           await updateReconcileStatus({
             lastSuccessAt: new Date().toISOString(),
             lastDate: yesterday,
@@ -191,14 +251,6 @@ async function main() {
           if (now - lastEtimeTodayPoll >= etimeConfig.pollTodayMs) {
             await runEtimePoll(today, today);
             lastEtimeTodayPoll = now;
-          }
-          if (now - lastEtimeHistoryPoll >= etimeConfig.pollHistoryMs) {
-            const recovered = await runEtimePoll(
-              recoveredEtimeHistory ? addDaysIso(today, -2) : mosqueRecoveryStartDate(today),
-              yesterday,
-            );
-            if (recovered) recoveredEtimeHistory = true;
-            lastEtimeHistoryPoll = now;
           }
         }
 
@@ -238,7 +290,28 @@ async function main() {
           lastError: logCountReset ? "Device log count reset detected" : null,
         });
 
-        await renewWorkerLease();
+        // Recover eTime history one day at a time so ZK device polling keeps running.
+        if (isEtimeEnabled()) {
+          const etimeConfig = getEtimeConfig();
+          if (!recoveredEtimeHistory) {
+            if (!nextEtimeHistoryDate) nextEtimeHistoryDate = mosqueRecoveryStartDate(today);
+            if (nextEtimeHistoryDate > yesterday) {
+              recoveredEtimeHistory = true;
+              lastEtimeHistoryPoll = Date.now();
+            } else if (Date.now() - lastEtimeHistoryPoll >= etimeRetryMs) {
+              const historyDate = nextEtimeHistoryDate;
+              const recovered = await runEtimePoll(historyDate, historyDate);
+              nextEtimeHistoryDate = recovered
+                ? addDaysIso(historyDate, 1)
+                : historyDate;
+              lastEtimeHistoryPoll = recovered ? 0 : Date.now();
+            }
+          } else if (now - lastEtimeHistoryPoll >= etimeConfig.pollHistoryMs) {
+            await runEtimePoll(addDaysIso(today, -2), yesterday);
+            lastEtimeHistoryPoll = Date.now();
+          }
+        }
+
         await sleep(zkConfig.pollMs);
       }
 

@@ -30,24 +30,29 @@ ZK_TIMEZONE=Indian/Maldives
 FIRESTORE_DATABASE_ID=council-hr-dashboard
 ```
 
-Start the web app and worker on the same local network machine:
+Start the web app and the attendance worker on a local network machine:
 
 ```bash
 npm run dev
-npm run zk:worker
+npm run attendance-sync:worker
 ```
 
-### Mosque daily attendance
+### Daily attendance from the machines
 
-Use `npm run attendance-sync:worker` for mosque sheet creation and prayer-punch
-updates. Run one worker on a computer that can reach the fingerprint device and
+Use `npm run attendance-sync:worker` for mosque prayer attendance and council
+sign-ins. Run one worker on a computer that can reach the fingerprint device and
 keep that computer awake. The web server alone does not run this worker.
 
 With `ATTENDANCE_SYNC_AUTO_WRITE=1` and `ETIME_ENABLED=1`, startup recovers
 mosque sheets from the first day of the previous calendar month through today,
 reconciles stored punches, imports recent device records, and refreshes eTime
-history for that period. Existing punches are reconciled on repeated imports too.
-Leave records and manually overridden prayer entries remain protected.
+history for that period. Council sheets start with today on first rollout; after
+that the worker creates missed dates from its last successful council sheet date.
+Council sign-ins use the earliest eligible machine punch from 06:00 through 08:59
+Maldives time. A council employee's Machine ID maps ZKTeco punches automatically;
+eTime requires an explicit `attendanceSync.etime` employee mapping. Existing
+punches are reconciled on repeated imports too. Leave records and manual sign-ins
+remain protected.
 
 Startup can take several minutes while device history is imported. The console
 logs its phases. After startup, the worker creates today's sheets after 00:05,
@@ -57,8 +62,21 @@ loop. Restart the running worker after updating its code.
 
 Check status with `npx tsx scripts/attendance-sync-status.ts`. Check heartbeat
 timestamps and lease expiry, because saved `running`/`connected` flags alone do
-not prove that polling is current. This worker's attendance automation is for
-mosque employees.
+not prove that polling is current. The same worker handles mosque and council
+attendance.
+
+On a Windows office computer, run the installer once from an Administrator
+PowerShell window to make the worker start at boot, even before sign-in:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-attendance-sync-startup-task.ps1
+```
+
+This registers one `HR Dashboard Attendance Sync` scheduled task under SYSTEM.
+Task Scheduler restarts it after failures and ignores duplicate starts. Its log
+is `.attendance-sync\worker.log`. Keep the computer powered, connected to the
+ZKTeco network, and awake. The task launches Node directly; the web app does not
+need to run on this computer for attendance synchronization.
 
 Manual backfill is available from the admin page, or by CLI:
 
@@ -67,7 +85,8 @@ npm run zk:sync -- --from=2026-06-22 --to=2026-06-22
 ```
 
 Punches are written to Firestore `punch_logs`; council attendance generation
-and Search & sync continue to create attendance rows from that collection.
+and Search & sync use the same daily creation and reconciliation service as the
+worker.
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 

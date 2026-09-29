@@ -1,21 +1,12 @@
 "use server";
 
-import { isCouncilAttendanceEmployee } from "@/lib/attendance/council-attendance";
 import {
   fetchAllEmployees,
   submitCouncilAttendanceUpdates,
   type CouncilAttendanceSubmitItem,
 } from "@/lib/firebase/hr";
 import { fetchEnrichedAttendanceForDate, fetchEnrichedMosqueAttendanceForDate } from "@/lib/attendance/enrich-attendance";
-import { COLLECTIONS } from "@/lib/firebase/admin";
-import { withTimestamps } from "@/lib/firebase/adapters";
-import { getFirestoreDb } from "@/lib/firebase/admin";
-import { newDocId } from "@/lib/firebase/query";
-import type { AttendanceDoc, EmployeeDoc } from "@/lib/firebase/types";
-import {
-  getFirstPunchByDeviceUserId,
-  getFirstPunchByEmployeeName,
-} from "@/lib/attendance/punch-lookup";
+import type { EmployeeDoc } from "@/lib/firebase/types";
 
 export const fetchAttendanceForDateAction = async (date: string) => {
   try {
@@ -50,40 +41,12 @@ export const createAttendanceForEmployeesAction = async (
   employees: EmployeeDoc[],
 ) => {
   try {
-    const filteredEmployees = employees.filter(isCouncilAttendanceEmployee);
-
-    const db = getFirestoreDb();
-    const attendanceEntries: Array<
-      Omit<AttendanceDoc, "$id" | "$createdAt" | "$updatedAt">
-    > = await Promise.all(
-      filteredEmployees.map(async (employee) => {
-        const firstPunch = employee.deviceUserId?.trim()
-          ? await getFirstPunchByDeviceUserId(date, employee.deviceUserId.trim())
-          : await getFirstPunchByEmployeeName(date, employee.name);
-
-        return {
-          employeeId: employee.$id,
-          date,
-          signInTime: firstPunch,
-          leaveType: null,
-          minutesLate: 0,
-          previousLeaveType: null,
-          leaveDeducted: false,
-        };
-      }),
-    );
-
-    await Promise.all(
-      attendanceEntries.map(async (entry) => {
-        const id = newDocId();
-        await db
-          .collection(COLLECTIONS.attendance)
-          .doc(id)
-          .set(withTimestamps(entry as Record<string, unknown>, true));
-      }),
-    );
-
-    return { success: true, data: attendanceEntries };
+    void employees;
+    const { ensureCouncilAttendanceSheets, reconcileCouncilAttendanceDate } =
+      await import("@/lib/attendance-sync/council");
+    const ensured = await ensureCouncilAttendanceSheets(date, { preview: false });
+    const reconciled = await reconcileCouncilAttendanceDate(date, { preview: false });
+    return { success: true, data: { ensured, reconciled } };
   } catch (error: unknown) {
     console.error("Error creating attendance:", error);
     return {
@@ -114,6 +77,16 @@ export const submitCouncilAttendanceAction = async (
           ? error.message
           : "Failed to update attendance",
     };
+  }
+};
+
+export const resumeCouncilAttendanceAutomationAction = async (attendanceId: string) => {
+  try {
+    const { resumeCouncilAttendanceAutomation } = await import("@/lib/attendance-sync/council");
+    const row = await resumeCouncilAttendanceAutomation(attendanceId);
+    return { success: true as const, data: row };
+  } catch (error: unknown) {
+    return { success: false as const, error: error instanceof Error ? error.message : "Failed to resume automatic sync" };
   }
 };
 

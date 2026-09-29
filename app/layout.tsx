@@ -2,6 +2,7 @@ import { QueryProvider } from "@/Providers/QueryProvider";
 import { UserProvider } from "@/Providers/UserProvider";
 import { ClerkProvider } from "@clerk/nextjs";
 import { PwaRegister } from "@/components/PwaRegister";
+import { EmployeePwaScope } from "@/components/employee-portal/EmployeePwaScope";
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
@@ -17,9 +18,9 @@ const plusJakarta = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: { default: "Council HR", template: "%s · Council HR" },
   description: "Innamaadhoo Council employee attendance, leave, and pay.",
-  applicationName: "Innamaadhoo Council HR",
+  applicationName: "Employee Profile",
   manifest: "/manifest.webmanifest",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "Council HR" },
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "Employee Profile" },
   icons: {
     icon: [{ url: "/pwa/icon-192.png", sizes: "192x192", type: "image/png" }],
     apple: [{ url: "/pwa/icon-192.png", sizes: "192x192", type: "image/png" }],
@@ -45,7 +46,7 @@ export default function RootLayout({
         <ClerkProvider>
           <QueryProvider>
             <UserProvider>
-              <main>{children}</main>
+              <EmployeePwaScope><main>{children}</main></EmployeePwaScope>
             </UserProvider>
           </QueryProvider>
         </ClerkProvider>

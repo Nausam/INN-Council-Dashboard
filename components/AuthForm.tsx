@@ -34,7 +34,7 @@ function AuthWave() {
   );
 }
 
-const AuthForm = ({ unauthorized = false }: { unauthorized?: boolean }) => {
+const AuthForm = ({ unauthorized = false, forceRedirectUrl, employeeProfile = false }: { unauthorized?: boolean; forceRedirectUrl?: string; employeeProfile?: boolean }) => {
   return (
     <div className="w-full">
       <div className="rounded-[1.75rem] bg-white shadow-[0_24px_60px_-12px_rgba(13,148,136,0.18)] ring-1 ring-teal-900/5">
@@ -57,13 +57,13 @@ const AuthForm = ({ unauthorized = false }: { unauthorized?: boolean }) => {
             Innamaadhoo Council
           </p>
           <h1 className="mt-2 text-[1.65rem] font-bold tracking-tight">
-            HR Dashboard
+            {employeeProfile ? "Employee Profile" : "HR Dashboard"}
           </h1>
           <p className="mx-auto mt-2 max-w-[280px] text-sm leading-relaxed text-teal-50/85">
-            Staff portal for attendance, payroll, and council services
+            {employeeProfile ? "Your attendance, leave, requests, and pay" : "Staff portal for attendance, payroll, and council services"}
           </p>
 
-          <div className="mx-auto mt-6 flex max-w-[320px] justify-center gap-2">
+          {!employeeProfile ? <div className="mx-auto mt-6 flex max-w-[320px] justify-center gap-2">
             {modules.map(({ icon: Icon, label }) => (
               <span
                 key={label}
@@ -73,7 +73,7 @@ const AuthForm = ({ unauthorized = false }: { unauthorized?: boolean }) => {
                 {label}
               </span>
             ))}
-          </div>
+          </div> : null}
 
           <AuthWave />
         </header>
@@ -82,7 +82,7 @@ const AuthForm = ({ unauthorized = false }: { unauthorized?: boolean }) => {
           <div className="mb-7 text-center">
             <h2 className="text-xl font-semibold text-slate-900">Sign in</h2>
             <p className="mt-1.5 text-sm text-slate-500">
-              Use your council email to access the dashboard.
+              {employeeProfile ? "Use your council email to open your profile." : "Use your council email to access the dashboard."}
             </p>
           </div>
 
@@ -97,7 +97,7 @@ const AuthForm = ({ unauthorized = false }: { unauthorized?: boolean }) => {
           ) : null}
 
           <div className="clerk-auth-root">
-            <SignIn routing="hash" appearance={councilClerkAppearance} />
+            <SignIn routing="hash" appearance={councilClerkAppearance} forceRedirectUrl={forceRedirectUrl} />
           </div>
 
           <div className="mt-8 border-t border-slate-100 pt-6">

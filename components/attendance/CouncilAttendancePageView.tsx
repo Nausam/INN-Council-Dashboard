@@ -34,6 +34,7 @@ type Row = {
   leaveUsedAfter?: number | null;
   leaveRemainingAfter?: number | null;
   changed: boolean;
+  automation?: EnrichedAttendanceRow["automation"];
 };
 
 const normalize = (docs: EnrichedAttendanceRow[]): Row[] =>
@@ -48,6 +49,7 @@ const normalize = (docs: EnrichedAttendanceRow[]): Row[] =>
     leaveUsedAfter: d.leaveUsedAfter ?? null,
     leaveRemainingAfter: d.leaveRemainingAfter ?? null,
     changed: false,
+    automation: d.automation,
   }));
 
 export function CouncilAttendancePageView({

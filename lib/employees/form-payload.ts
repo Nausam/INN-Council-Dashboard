@@ -10,6 +10,7 @@ export function employeeFormDataForFirestore(formData: EmployeeFormData) {
     addressDv: rest.addressDv.trim(),
     designationDv: rest.designationDv.trim(),
     sectionDv: rest.sectionDv.trim(),
+    idCardNumber: rest.idCardNumber.trim(),
     retirementPension: computeRetirementPension(
       rest.basicSalary,
       rest.retirementPensionApplies,

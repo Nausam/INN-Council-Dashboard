@@ -14,6 +14,7 @@ import {
   writeCanonicalPunchIfNew,
 } from "@/lib/attendance-sync/punch-store";
 import { reconcileMosqueAttendanceDate } from "@/lib/attendance-sync/reconcile";
+import { reconcileCouncilAttendanceDate } from "@/lib/attendance-sync/council";
 import { isAttendanceSyncAutoWriteEnabled } from "@/lib/attendance-sync/runtime";
 import { assertIsoDate, utcToMaldivesParts } from "@/lib/attendance-sync/time";
 import type { AttendancePunchDoc, ImportResult } from "@/lib/attendance-sync/types";
@@ -202,6 +203,7 @@ export async function importEtimePunches(options: {
   if (options.reconcile !== false && isAttendanceSyncAutoWriteEnabled()) {
     for (const date of Array.from(affectedDates)) {
       await reconcileMosqueAttendanceDate(date, undefined, { preview: false });
+      await reconcileCouncilAttendanceDate(date, { preview: false, ensureToday: true });
     }
   }
 

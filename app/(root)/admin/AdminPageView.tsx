@@ -143,6 +143,7 @@ export function AdminPageView({
                 endDate={req.endDate}
                 status={req.approvalStatus as "Approved" | "Rejected" | "Pending"}
                 actionBy={req.actionBy}
+                managedInForms
                 onApprove={(id) => handleLeaveApproval(id, "Approved")}
                 onReject={(id) => handleLeaveApproval(id, "Rejected")}
               />

@@ -14,6 +14,7 @@ interface AdminOvertimeRequestCardProps {
   employees: OvertimeRequestEmployee[];
   status: "Approved" | "Rejected" | "Pending";
   actionBy?: string;
+  busy?: boolean;
   onApprove: (requestId: string) => void;
   onReject: (requestId: string) => void;
 }
@@ -42,6 +43,7 @@ const AdminOvertimeRequestCard: React.FC<AdminOvertimeRequestCardProps> = ({
   employees,
   status,
   actionBy,
+  busy = false,
   onApprove,
   onReject,
 }) => {
@@ -139,26 +141,28 @@ const AdminOvertimeRequestCard: React.FC<AdminOvertimeRequestCardProps> = ({
       )}
 
       <div className="flex mt-6 justify-end">
-        {(actionBy && status === "Approved") || status === "Rejected" ? (
+        {status !== "Pending" ? (
           <p className="text-sm text-gray-600">
             <span className="font-medium text-gray-800">
               {status === "Approved" ? "Approved By:" : "Rejected By:"}
             </span>{" "}
-            {actionBy}
+            {actionBy || "—"}
           </p>
         ) : (
           <div className="flex gap-4">
             <button
               type="button"
               onClick={() => onApprove(requestId)}
-              className="px-4 py-2 bg-green-500 text-white text-sm font-semibold rounded-lg shadow hover:bg-green-600 transition"
+              disabled={busy}
+              className="px-4 py-2 bg-green-500 text-white text-sm font-semibold rounded-lg shadow hover:bg-green-600 transition disabled:opacity-50"
             >
               Approve
             </button>
             <button
               type="button"
               onClick={() => onReject(requestId)}
-              className="px-4 py-2 bg-red-500 text-white text-sm font-semibold rounded-lg shadow hover:bg-red-600 transition"
+              disabled={busy}
+              className="px-4 py-2 bg-red-500 text-white text-sm font-semibold rounded-lg shadow hover:bg-red-600 transition disabled:opacity-50"
             >
               Reject
             </button>

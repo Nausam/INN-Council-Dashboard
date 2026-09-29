@@ -2,6 +2,7 @@
 
 import { submitFamilyLeaveRequest } from "@/lib/actions/family-leave.actions";
 import { maldivesDateTime } from "@/lib/dates/maldives";
+import { parseLeaveDateRange } from "@/lib/leave/date-range";
 import {
   SALAAM_FAMILY_LEAVE_TYPES,
   type SalaamFamilyLeaveType,
@@ -22,14 +23,18 @@ export function FamilyLeaveRequestDialog({
   presetLeaveType,
   open,
   onOpenChange,
+  onSubmitted,
 }: {
   employeeId: string;
   presetLeaveType?: SalaamFamilyLeaveType;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onSubmitted?: () => void;
 }) {
-  const [clock, setClock] = useState({ displayDate: "—", time: "—" });
+  const [clock, setClock] = useState({ time: "—" });
   const [leaveType, setLeaveType] = useState<SalaamFamilyLeaveType | "">("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [reason, setReason] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -46,7 +51,10 @@ export function FamilyLeaveRequestDialog({
 
   useEffect(() => {
     if (!open) return;
-    const updateClock = () => setClock(maldivesDateTime());
+    const today = maldivesDateTime();
+    setStartDate((current) => current || today.date);
+    setEndDate((current) => current || today.date);
+    const updateClock = () => setClock({ time: maldivesDateTime().time });
     updateClock();
     const timer = window.setInterval(updateClock, 30_000);
     return () => window.clearInterval(timer);
@@ -59,6 +67,12 @@ export function FamilyLeaveRequestDialog({
       setError("ސަބަބު ދިވެހިން ލިޔުއްވާ.");
       return;
     }
+    try {
+      parseLeaveDateRange(startDate, endDate);
+    } catch {
+      setError("ފެށޭ ތާރީޚާއި ނިމޭ ތާރީޚު ރަނގަޅަށް ހޮވާ. 365 ދުވަހަށްވުރެ ދިގު ނުކުރައްވާ.");
+      return;
+    }
     setError("");
     setPending(true);
     try {
@@ -66,17 +80,19 @@ export function FamilyLeaveRequestDialog({
         employeeId,
         leaveType: presetLeaveType ?? leaveType,
         reason,
+        startDate,
+        endDate,
       });
       if (!result.ok) {
         setError("މުވައްޒަފުގެ ނަން، އެޑްރެސް އަދި މަގާމް ދިވެހިން އެޑިޓް ފޯމުން ފުރަމަ ޖެހޭ.");
         return;
       }
-      setClock({
-        displayDate: result.requestDate.split("-").reverse().join("/"),
-        time: result.reportedTime,
-      });
+      setClock({ time: result.reportedTime });
       setSubmitted(true);
+      onSubmitted?.();
       setLeaveType("");
+      setStartDate("");
+      setEndDate("");
       setReason("");
     } catch {
       setError("ފޯމު ފޮނުވަން ނުކުޅުނު. އަލުން ކޮށްލައްވާ.");
@@ -130,12 +146,28 @@ export function FamilyLeaveRequestDialog({
               </>
             ) : null}
 
-            <label htmlFor="family-leave-date">ތާރީޚު</label>
+            <label htmlFor="family-leave-start-date">ފެށޭ ތާރީޚު</label>
             <input
-              id="family-leave-date"
-              type="text"
-              value={clock.displayDate}
-              readOnly
+              id="family-leave-start-date"
+              type="date"
+              value={startDate}
+              onChange={(event) => {
+                const nextStart = event.target.value;
+                setStartDate(nextStart);
+                setEndDate((current) => !current || current < nextStart ? nextStart : current);
+              }}
+              required
+              dir="ltr"
+            />
+
+            <label htmlFor="family-leave-end-date">ނިމޭ ތާރީޚު</label>
+            <input
+              id="family-leave-end-date"
+              type="date"
+              min={startDate}
+              value={endDate}
+              onChange={(event) => setEndDate(event.target.value)}
+              required
               dir="ltr"
             />
 

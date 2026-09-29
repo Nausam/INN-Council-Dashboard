@@ -26,12 +26,29 @@ function maldivesDayUtcBounds(localDate: string): { startUtc: string; endUtc: st
   };
 }
 
+export function coercePunchTimestampUtc(value: unknown): string | null {
+  let candidate: unknown = value;
+  if (candidate && typeof candidate === "object" && "toDate" in candidate &&
+      typeof candidate.toDate === "function") {
+    try {
+      candidate = candidate.toDate();
+    } catch {
+      return null;
+    }
+  }
+  if (!(candidate instanceof Date) && typeof candidate !== "string") return null;
+  const date = candidate instanceof Date ? candidate : new Date(candidate);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 function normalizeStoredPunch(
   id: string,
   data: Record<string, unknown>,
   employeeId: string,
 ): (AttendancePunchDoc & { $id: string }) | null {
-  const timestampUtc = String(data.timestampUtc ?? data.timestamp ?? "");
+  const timestampUtc =
+    coercePunchTimestampUtc(data.timestampUtc) ??
+    coercePunchTimestampUtc(data.timestamp);
   if (!timestampUtc) return null;
 
   const parts = utcToMaldivesParts(timestampUtc);

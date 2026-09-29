@@ -106,6 +106,7 @@ export type EmployeeDoc = LegacyDocument & {
   section?: string;
   deviceUserId?: string;
   recordCardNumber?: string;
+  idCardNumber?: string;
   attendanceSync?: EmployeeAttendanceSyncConfig;
   joinedDate?: string;
   address?: string;
@@ -154,6 +155,16 @@ export type AttendanceDoc = LegacyDocument & {
   leaveDeducted?: boolean;
   leaveUsedAfter?: number | null;
   leaveRemainingAfter?: number | null;
+  automation?: {
+    version: 1;
+    lastReconciledAt: string | null;
+    manualOverride: boolean;
+    punchRef: {
+      punchLogId: string;
+      source: "zkteco" | "etime";
+      timestampUtc: string;
+    } | null;
+  };
 };
 
 export type MosqueAttendanceDoc = LegacyDocument & {

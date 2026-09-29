@@ -28,7 +28,7 @@ export function takePwaInstallPrompt() {
 
 export function capturePwaInstallPrompt() {
   const onBeforeInstallPrompt = (event: Event) => {
-    if (window.location.pathname.replace(/\/$/, "") !== "/employees/details") return;
+    if (!window.location.pathname.startsWith("/employees/details")) return;
     event.preventDefault();
     pendingPrompt = event as PwaInstallPromptEvent;
     notifySubscribers();

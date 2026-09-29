@@ -126,7 +126,7 @@ function EmployeeInfoCard({ employee }: { employee: EmployeeDoc }) {
   );
 }
 
-export function OvertimeRequestForm() {
+export function OvertimeRequestForm({ onSubmitted }: { onSubmitted?: () => void } = {}) {
   const { data: employees = [], isLoading } = useEmployeesQuery();
   const { invalidateOvertimeRequests } = useQueryInvalidation();
   const [search, setSearch] = useState("");
@@ -247,6 +247,7 @@ export function OvertimeRequestForm() {
       });
       setForm({ details: "", startTime: "", endTime: "" });
       clearSelection();
+      onSubmitted?.();
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Could not submit the overtime request.";

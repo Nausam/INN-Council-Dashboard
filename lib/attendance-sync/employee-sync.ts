@@ -101,6 +101,36 @@ export function listSyncEligibleEmployees(
   return results.sort((a, b) => a.employee.name.localeCompare(b.employee.name));
 }
 
+/** Council rows are created for every non-mosque employee, even without a machine ID. */
+export function listCouncilEmployees(employees: EmployeeDoc[]): EmployeeDoc[] {
+  return employees.filter((employee) =>
+    employee.section?.trim().toLowerCase() !== "mosque",
+  );
+}
+
+function councilSyncConfig(employee: EmployeeDoc): EmployeeAttendanceSyncConfig | null {
+  const stored = employee.attendanceSync;
+  if (stored) return stored.enabled ? stored : null;
+  const userId = employee.deviceUserId?.trim();
+  return userId
+    ? { enabled: true, effectiveFrom: "2020-01-01", zkteco: { enabled: true, userId } }
+    : null;
+}
+
+export function listMachineEligibleEmployees(
+  employees: EmployeeDoc[],
+  date: string,
+): SyncEligibleEmployee[] {
+  const mosque = listSyncEligibleEmployees(employees, date);
+  const council = listCouncilEmployees(employees).flatMap((employee) => {
+    const config = councilSyncConfig(employee);
+    if (!config || !isIsoDate(date) || date < config.effectiveFrom ||
+        (config.effectiveTo && date > config.effectiveTo)) return [];
+    return [{ employee, config }];
+  });
+  return [...mosque, ...council].sort((a, b) => a.employee.name.localeCompare(b.employee.name));
+}
+
 export type SourceEmployeeMaps = {
   zkByUserId: Map<string, SyncEligibleEmployee>;
   etimeByCode: Map<string, SyncEligibleEmployee>;
@@ -113,7 +143,7 @@ export function buildSourceEmployeeMaps(
   employees: EmployeeDoc[],
   date: string,
 ): SourceEmployeeMaps {
-  const eligible = listSyncEligibleEmployees(employees, date);
+  const eligible = listMachineEligibleEmployees(employees, date);
   const zkByUserId = new Map<string, SyncEligibleEmployee>();
   const etimeByCode = new Map<string, SyncEligibleEmployee>();
   const byEmployeeId = new Map<string, SyncEligibleEmployee>();
@@ -127,16 +157,20 @@ export function buildSourceEmployeeMaps(
       ? entry.config.zkteco.userId.trim()
       : "";
     if (zkId) {
-      if (zkByUserId.has(zkId)) duplicateZkIds.push(zkId);
-      else zkByUserId.set(zkId, entry);
+      if (zkByUserId.has(zkId) || duplicateZkIds.includes(zkId)) {
+        duplicateZkIds.push(zkId);
+        zkByUserId.delete(zkId);
+      } else zkByUserId.set(zkId, entry);
     }
 
     const etimeCode = entry.config.etime?.enabled
       ? entry.config.etime.employeeCode.trim()
       : "";
     if (etimeCode) {
-      if (etimeByCode.has(etimeCode)) duplicateEtimeCodes.push(etimeCode);
-      else etimeByCode.set(etimeCode, entry);
+      if (etimeByCode.has(etimeCode) || duplicateEtimeCodes.includes(etimeCode)) {
+        duplicateEtimeCodes.push(etimeCode);
+        etimeByCode.delete(etimeCode);
+      } else etimeByCode.set(etimeCode, entry);
     }
   }
 

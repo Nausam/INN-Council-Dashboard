@@ -1,10 +1,15 @@
 "use client";
 
+import {
+  EMPLOYEE_PROFILE_HOME,
+  LAST_EMPLOYEE_PROFILE_KEY,
+  isStandaloneApp,
+} from "@/lib/employee-profile-pwa";
 import { useEmployeesQuery } from "@/hooks/queries";
 import { ArrowRight, IdCard, Loader2 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { EmployeePwaInstallPrompt } from "./EmployeePwaInstallPrompt";
 import styles from "./employee-login.module.css";
 
@@ -68,6 +73,18 @@ export default function EmployeeDetailsLoginPage() {
     [data],
   );
 
+  useEffect(() => {
+    if (!isStandaloneApp()) return;
+    try {
+      const employeeId = window.localStorage.getItem(LAST_EMPLOYEE_PROFILE_KEY);
+      if (employeeId && /^[\w-]{1,128}$/.test(employeeId)) {
+        router.replace(`${EMPLOYEE_PROFILE_HOME}/${employeeId}`);
+      }
+    } catch {
+      // The lookup form remains available if local storage is disabled.
+    }
+  }, [router]);
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
@@ -99,7 +116,12 @@ export default function EmployeeDetailsLoginPage() {
       return;
     }
 
-    router.push(`/employees/details/${match.id}`);
+    try {
+      window.localStorage.setItem(LAST_EMPLOYEE_PROFILE_KEY, match.id);
+    } catch {
+      // Continue to the profile when browser storage is unavailable.
+    }
+    router.push(`${EMPLOYEE_PROFILE_HOME}/${match.id}`);
   };
 
   const loading = isPending || submitting;
@@ -115,7 +137,7 @@ export default function EmployeeDetailsLoginPage() {
         </div>
 
         <section className={styles.panel} aria-labelledby="employee-portal-title">
-          <h1 id="employee-portal-title">Employee Portal</h1>
+          <h1 id="employee-portal-title">Employee Profile</h1>
           <form onSubmit={handleSubmit} className={styles.form}>
             <label htmlFor="employee-identifier" className={styles.fieldLabel}>
               ID card or record card number

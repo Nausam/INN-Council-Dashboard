@@ -1,13 +1,11 @@
 "use client";
 
-import { FamilyLeaveRequestDialog } from "@/components/Leave/FamilyLeaveRequestDialog";
-import { EmployeeRequestDialog } from "@/components/employee-portal/EmployeeRequestDialog";
 import type { EmployeeDoc } from "@/lib/firebase/types";
+import { EmployeeRequestHistory } from "@/components/employee-portal/EmployeeRequestHistory";
 import {
   ArrowLeft,
   ArrowUpRight,
   Banknote,
-  CalendarDays,
   CalendarRange,
   Clock3,
   FileText,
@@ -18,10 +16,34 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useState } from "react";
 import styles from "./requests-page.module.css";
 
 type RequestKind = "salaam" | "family" | "annual" | "ot";
+type DashboardTab = "overview" | "attendance" | "leave" | "pay" | "requests";
+
+const FamilyLeaveRequestDialog = dynamic(() =>
+  import("@/components/Leave/FamilyLeaveRequestDialog").then(
+    (module) => module.FamilyLeaveRequestDialog,
+  ),
+);
+const EmployeeRequestDialog = dynamic(() =>
+  import("@/components/employee-portal/EmployeeRequestDialog").then(
+    (module) => module.EmployeeRequestDialog,
+  ),
+);
+
+const portalSections: Array<{
+  id: Exclude<DashboardTab, "requests">;
+  label: string;
+  icon: LucideIcon;
+}> = [
+  { id: "overview", label: "Overview", icon: LayoutGrid },
+  { id: "attendance", label: "Attend", icon: Clock3 },
+  { id: "leave", label: "Leave", icon: WalletCards },
+  { id: "pay", label: "Pay", icon: Banknote },
+];
 
 const requestChoices: Array<{
   kind: RequestKind;
@@ -38,12 +60,26 @@ const requestChoices: Array<{
 export function EmployeeRequestsPageView({
   employee,
   employeeId,
+  onTabChange,
 }: {
   employee: EmployeeDoc | null;
   employeeId: string;
+  onTabChange?: (tab: DashboardTab) => void;
 }) {
   const [activeRequest, setActiveRequest] = useState<RequestKind | null>(null);
+  const [historyRevision, setHistoryRevision] = useState(0);
   const dashboard = `/employees/details/${employeeId}`;
+  const renderPortalSection = (
+    { id, label, icon: Icon }: (typeof portalSections)[number],
+    mobile: boolean,
+  ) => {
+    const content = <><Icon size={mobile ? undefined : 17} />{mobile ? <span>{label}</span> : label}</>;
+    return onTabChange ? (
+      <button key={id} type="button" onClick={() => onTabChange(id)}>{content}</button>
+    ) : (
+      <Link key={id} href={`${dashboard}?tab=${id}`}>{content}</Link>
+    );
+  };
 
   if (!employee) {
     return (
@@ -70,10 +106,7 @@ export function EmployeeRequestsPageView({
       <style>{`@media (max-width: 767px){[data-council-mobile-header]{display:none !important;}}`}</style>
       <div className={styles.wrap}>
         <header className={styles.topbar}>
-          <Link href={dashboard} className={styles.back} aria-label="Back to employee profile">
-            <ArrowLeft size={18} />
-          </Link>
-          <span className={styles.topTitle}>Employee portal</span>
+          <span className={styles.topTitle}>Employee Profile</span>
         </header>
 
         <section className={styles.hero}>
@@ -82,11 +115,8 @@ export function EmployeeRequestsPageView({
           <p>{employee.name}</p>
         </section>
 
-        <nav className={styles.desktopNav} aria-label="Employee portal sections">
-          <Link href={`${dashboard}?tab=overview`}><LayoutGrid size={17} />Overview</Link>
-          <Link href={`${dashboard}?tab=attendance`}><Clock3 size={17} />Attend</Link>
-          <Link href={`${dashboard}?tab=leave`}><WalletCards size={17} />Leave</Link>
-          <Link href={`${dashboard}?tab=pay`}><Banknote size={17} />Pay</Link>
+        <nav className={styles.desktopNav} aria-label="Employee profile sections">
+          {portalSections.map((section) => renderPortalSection(section, false))}
           <span aria-current="page"><FileText size={17} />Requests</span>
         </nav>
 
@@ -116,32 +146,32 @@ export function EmployeeRequestsPageView({
           ))}
         </div>
 
-        <Link href={`/employees/${employeeId}/leaves`} className={styles.calendarLink}>
-          <span><CalendarDays size={18} /> Leave calendar</span>
-          <ArrowUpRight size={18} />
-        </Link>
+        <EmployeeRequestHistory employeeId={employeeId} revision={historyRevision} />
       </div>
 
-      <nav className={styles.mobileNav} aria-label="Employee portal sections">
-        <Link href={`${dashboard}?tab=overview`}><LayoutGrid /><span>Overview</span></Link>
-        <Link href={`${dashboard}?tab=attendance`}><Clock3 /><span>Attend</span></Link>
-        <Link href={`${dashboard}?tab=leave`}><WalletCards /><span>Leave</span></Link>
-        <Link href={`${dashboard}?tab=pay`}><Banknote /><span>Pay</span></Link>
+      <nav className={styles.mobileNav} aria-label="Employee profile sections">
+        {portalSections.map((section) => renderPortalSection(section, true))}
         <span className={styles.mobileActive} aria-current="page"><FileText /><span>Requests</span></span>
       </nav>
 
-      <FamilyLeaveRequestDialog
-        employeeId={employeeId}
-        presetLeaveType={activeRequest === "family" ? "family" : "salaam"}
-        open={activeRequest === "salaam" || activeRequest === "family"}
-        onOpenChange={(open) => { if (!open) setActiveRequest(null); }}
-      />
-      <EmployeeRequestDialog
-        employeeId={employeeId}
-        mode={activeRequest === "ot" ? "ot" : "annual"}
-        open={activeRequest === "annual" || activeRequest === "ot"}
-        onOpenChange={(open) => { if (!open) setActiveRequest(null); }}
-      />
+      {activeRequest === "salaam" || activeRequest === "family" ? (
+        <FamilyLeaveRequestDialog
+          employeeId={employeeId}
+          presetLeaveType={activeRequest}
+          open
+          onSubmitted={() => setHistoryRevision((value) => value + 1)}
+          onOpenChange={(open) => { if (!open) setActiveRequest(null); }}
+        />
+      ) : null}
+      {activeRequest === "annual" || activeRequest === "ot" ? (
+        <EmployeeRequestDialog
+          employeeId={employeeId}
+          mode={activeRequest}
+          open
+          onSubmitted={() => setHistoryRevision((value) => value + 1)}
+          onOpenChange={(open) => { if (!open) setActiveRequest(null); }}
+        />
+      ) : null}
     </div>
   );
 }

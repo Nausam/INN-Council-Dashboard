@@ -11,6 +11,11 @@ import {
 } from "../lib/attendance-sync/prayer-classifier";
 import { utcToMaldivesParts, mosqueRecoveryStartDate, enumerateIsoDates } from "../lib/attendance-sync/time";
 import { parseEtimeHtmlSnapshot } from "../lib/etime/parser";
+import { buildSourceEmployeeMaps, listCouncilEmployees } from "../lib/attendance-sync/employee-sync";
+import { canAutomateCouncilRow, isCouncilPunchFromEnabledSource, selectCouncilFirstPunch } from "../lib/attendance-sync/council";
+import type { EmployeeDoc } from "../lib/firebase/types";
+import type { AttendancePunchDoc } from "../lib/attendance-sync/types";
+import { coercePunchTimestampUtc } from "../lib/attendance-sync/punch-store";
 
 function testMaldivesConversion() {
   const parts = utcToMaldivesParts("2026-06-15T18:30:00.000Z");
@@ -77,6 +82,57 @@ function testEtimeParser() {
   assert.equal(snapshot.rows[1]?.ignored, true);
 }
 
+function testCouncilMachineAttendance() {
+  const date = "2026-09-27";
+  const makeEmployee = (id: string, section: string, deviceUserId?: string): EmployeeDoc =>
+    ({ $id: id, name: id, section, deviceUserId });
+  const employees = [
+    makeEmployee("office", "Administration", "42"),
+    makeEmployee("unmapped", "Finance"),
+    makeEmployee("mosque", "Mosque", "18"),
+  ];
+  assert.deepEqual(listCouncilEmployees(employees).map((e) => e.$id), ["office", "unmapped"]);
+  const maps = buildSourceEmployeeMaps(employees, date);
+  assert.equal(maps.zkByUserId.get("42")?.employee.$id, "office");
+  assert.equal(maps.zkByUserId.has("18"), false);
+  const duplicate = buildSourceEmployeeMaps([...employees, makeEmployee("other", "Finance", "42")], date);
+  assert.deepEqual(duplicate.duplicateZkIds, ["42"]);
+  assert.equal(duplicate.zkByUserId.has("42"), false);
+
+  const makePunch = (id: string, source: "zkteco" | "etime", timestampUtc: string) =>
+    ({ $id: id, source, timestampUtc, eligible: true, voidedAt: null } as AttendancePunchDoc & { $id: string });
+  const punches = [
+    makePunch("late", "zkteco", "2026-09-27T03:20:00.000Z"),
+    makePunch("etime", "etime", "2026-09-27T02:05:00.000Z"),
+    makePunch("zk", "zkteco", "2026-09-27T02:05:00.000Z"),
+    makePunch("outside", "zkteco", "2026-09-27T04:00:00.000Z"),
+  ];
+  assert.equal(selectCouncilFirstPunch(date, punches)?.$id, "zk");
+  assert.equal(selectCouncilFirstPunch(date, [punches[1]!])?.$id, "etime");
+  assert.equal(selectCouncilFirstPunch(date, [punches[3]!]), null);
+  assert.equal(isCouncilPunchFromEnabledSource(
+    { ...punches[2]!, sourceEmployeeId: "42" },
+    maps.byEmployeeId.get("office")!,
+  ), true);
+  assert.equal(isCouncilPunchFromEnabledSource(
+    { ...punches[1]!, sourceEmployeeId: "42" },
+    maps.byEmployeeId.get("office")!,
+  ), false);
+  assert.equal(canAutomateCouncilRow({ signInTime: null, leaveType: null }), true);
+  assert.equal(canAutomateCouncilRow({ signInTime: punches[1]!.timestampUtc, leaveType: null }), false);
+  assert.equal(canAutomateCouncilRow({ signInTime: null, leaveType: "annualLeave" }), false);
+  assert.equal(canAutomateCouncilRow({ signInTime: null, leaveType: null,
+    automation: { version: 1, lastReconciledAt: null, manualOverride: true, punchRef: null } }), false);
+}
+
+function testStoredPunchTimestamps() {
+  const iso = "2026-09-27T02:05:00.000Z";
+  assert.equal(coercePunchTimestampUtc(iso), iso);
+  assert.equal(coercePunchTimestampUtc(new Date(iso)), iso);
+  assert.equal(coercePunchTimestampUtc({ toDate: () => new Date(iso) }), iso);
+  assert.equal(coercePunchTimestampUtc({ invalid: true }), null);
+}
+
 function run() {
   assert.equal(mosqueRecoveryStartDate("2026-09-21"), "2026-08-01");
   assert.equal(mosqueRecoveryStartDate("2027-01-01"), "2026-12-01");
@@ -87,6 +143,8 @@ function run() {
   testLateness();
   testEarliestPunchSelection();
   testEtimeParser();
+  testCouncilMachineAttendance();
+  testStoredPunchTimestamps();
   console.log("attendance-sync tests passed");
 }
 

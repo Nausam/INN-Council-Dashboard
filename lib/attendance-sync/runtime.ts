@@ -17,10 +17,11 @@ export function isEtimeEnabled(): boolean {
 }
 
 export function getWorkerInstanceId(): string {
-  return (
+  const hostId = (
     process.env.ATTENDANCE_SYNC_WORKER_ID?.trim() ||
     process.env.COMPUTERNAME?.trim() ||
     process.env.HOSTNAME?.trim() ||
     "local-worker"
   );
+  return `${hostId}:${process.pid}`;
 }

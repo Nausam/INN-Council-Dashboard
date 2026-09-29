@@ -6,6 +6,8 @@ export const SALAAM_FAMILY_LEAVE_TYPES = [
 export type SalaamFamilyLeaveType =
   (typeof SALAAM_FAMILY_LEAVE_TYPES)[number]["value"];
 
+export type LeaveDayDetails = { date: string; time: string; reason: string };
+
 export function isSalaamFamilyLeaveType(
   value: unknown,
 ): value is SalaamFamilyLeaveType {

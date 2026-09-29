@@ -28,15 +28,7 @@ import {
 } from "@/lib/salary-slips/pay-period";
 import type { MosqueAttendanceRecord } from "@/types";
 import { LEAVE_TOTAL_ALLOWANCE } from "@/lib/employees/leave-usage";
-import {
-  buildCouncilAttendanceEntry,
-  isCouncilAttendanceEmployee,
-  type CouncilAttendanceSyncResult,
-} from "@/lib/attendance/council-attendance";
-import {
-  getFirstPunchByDeviceUserId,
-  getFirstPunchByEmployeeName,
-} from "@/lib/attendance/punch-lookup";
+import type { CouncilAttendanceSyncResult } from "@/lib/attendance/council-attendance";
 import {
   getPrefilledMosqueSignInTimes,
   type MosquePrayerTimes,
@@ -632,25 +624,12 @@ export async function createAttendanceForEmployees(
   date: string,
   employees: EmployeeDoc[],
 ): Promise<Array<Omit<AttendanceDoc, "$id" | "$createdAt" | "$updatedAt">>> {
-  const filteredEmployees = employees.filter(isCouncilAttendanceEmployee);
-
-  const db = getFirestoreDb();
-  const entries: Array<Omit<AttendanceDoc, "$id" | "$createdAt" | "$updatedAt">> =
-    await Promise.all(
-      filteredEmployees.map((employee) => buildCouncilAttendanceEntry(date, employee)),
-    );
-
-  await Promise.all(
-    entries.map(async (entry) => {
-      const id = newDocId();
-      await db
-        .collection(COLLECTIONS.attendance)
-        .doc(id)
-        .set(withTimestamps(entry as Record<string, unknown>, true));
-    }),
-  );
-
-  return entries;
+  void employees;
+  const { ensureCouncilAttendanceSheets, reconcileCouncilAttendanceDate } =
+    await import("@/lib/attendance-sync/council");
+  await ensureCouncilAttendanceSheets(date, { preview: false });
+  await reconcileCouncilAttendanceDate(date, { preview: false });
+  return (await fetchAttendanceForDate(date)).map(({ $id, $createdAt, $updatedAt, ...row }) => row);
 }
 
 export async function updateAttendanceRecord(
@@ -841,6 +820,18 @@ export async function submitCouncilAttendanceUpdates(
       leaveRemainingAfter: item.leaveType
         ? currentAttendance?.leaveRemainingAfter ?? null
         : null,
+      ...(currentAttendance &&
+      !item.leaveType &&
+      currentAttendance.signInTime !== item.signInTime
+        ? {
+            automation: {
+              version: 1,
+              lastReconciledAt: currentAttendance.automation?.lastReconciledAt ?? null,
+              manualOverride: true,
+              punchRef: null,
+            },
+          }
+        : {}),
     });
   }
 
@@ -1027,64 +1018,11 @@ export async function deleteAttendancesByDate(date: string): Promise<void> {
 export async function syncAttendanceForDate(
   date: string,
 ): Promise<CouncilAttendanceSyncResult> {
-  const rows = await fetchAttendanceForDate(date);
-  const employees = await fetchAllEmployees();
-  const councilEmployees = employees.filter(isCouncilAttendanceEmployee);
-  const existingIds = new Set(rows.map((row) => row.employeeId));
-  const missingEmployees = councilEmployees.filter(
-    (employee) => !existingIds.has(employee.$id),
-  );
-
-  const db = getFirestoreDb();
-  let added = 0;
-
-  await Promise.all(
-    missingEmployees.map(async (employee) => {
-      const entry = await buildCouncilAttendanceEntry(date, employee);
-      const id = newDocId();
-      await db
-        .collection(COLLECTIONS.attendance)
-        .doc(id)
-        .set(withTimestamps(entry as Record<string, unknown>, true));
-      added += 1;
-    }),
-  );
-
-  const rowsToSync =
-    missingEmployees.length > 0 ? await fetchAttendanceForDate(date) : rows;
-
-  const nameById = new Map<string, string>();
-  const deviceUserIdById = new Map<string, string>();
-  for (const employee of employees) {
-    nameById.set(employee.$id, employee.name);
-    if (employee.deviceUserId?.trim()) {
-      deviceUserIdById.set(employee.$id, employee.deviceUserId.trim());
-    }
-  }
-
-  let synced = 0;
-  await Promise.all(
-    rowsToSync.map(async (row) => {
-      const deviceUserId = deviceUserIdById.get(row.employeeId);
-      const empName = nameById.get(row.employeeId);
-      const earliest = deviceUserId
-        ? await getFirstPunchByDeviceUserId(date, deviceUserId)
-        : null;
-      const earliestByName =
-        earliest ??
-        (empName ? await getFirstPunchByEmployeeName(date, empName) : null);
-      if (!earliestByName) return;
-
-      const current = row.signInTime ? new Date(row.signInTime).getTime() : null;
-      const earliestMs = new Date(earliestByName).getTime();
-      if (current === null || earliestMs < current) {
-        await updateAttendanceRecord(row.$id, { signInTime: earliestByName });
-        synced += 1;
-      }
-    }),
-  );
-
-  return { synced, added };
+  const { ensureCouncilAttendanceSheets, reconcileCouncilAttendanceDate } =
+    await import("@/lib/attendance-sync/council");
+  const ensured = await ensureCouncilAttendanceSheets(date, { preview: false });
+  const reconciled = await reconcileCouncilAttendanceDate(date, { preview: false });
+  return { synced: reconciled.updated, added: ensured.created };
 }
 
 export async function fetchMosqueAttendanceForDate(

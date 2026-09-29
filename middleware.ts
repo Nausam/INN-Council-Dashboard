@@ -13,6 +13,7 @@ import {
 
 const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
+  "/employees/details/sign-in(.*)",
   "/salary-slips(.*)",
   "/api/salary-slips(.*)",
   "/api/files/r2(.*)",
@@ -46,8 +47,9 @@ export default clerkMiddleware(async (auth, request) => {
         await client.sessions.revokeSession(sessionId);
       }
 
-      if (!pathname.startsWith("/sign-in")) {
-        const url = new URL("/sign-in", request.url);
+      if (!pathname.startsWith("/sign-in") && !pathname.startsWith("/employees/details/sign-in")) {
+        const signInPath = pathname.startsWith("/employees/details") ? "/employees/details/sign-in" : "/sign-in";
+        const url = new URL(signInPath, request.url);
         url.searchParams.set("error", "unauthorized");
         return NextResponse.redirect(url);
       }
@@ -55,7 +57,8 @@ export default clerkMiddleware(async (auth, request) => {
   }
 
   if (!isPublicRoute(request) && !isServerAction && !userId) {
-    return NextResponse.redirect(new URL("/sign-in", request.url));
+    const signInPath = pathname.startsWith("/employees/details") ? "/employees/details/sign-in" : "/sign-in";
+    return NextResponse.redirect(new URL(signInPath, request.url));
   }
 });
 

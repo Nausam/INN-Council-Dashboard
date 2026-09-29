@@ -1,0 +1,51 @@
+.section { margin-top: 2rem; }
+.sectionHeader { display: flex; align-items: end; justify-content: space-between; gap: 1rem; }
+.eyebrow { color: #718b7b; font-size: .63rem; font-weight: 850; letter-spacing: .14em; text-transform: uppercase; }
+.sectionHeader h2 { margin-top: .3rem; color: #18231f; font-size: clamp(1.45rem, 3vw, 1.8rem); font-weight: 850; letter-spacing: -.045em; }
+.refreshButton { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border: 1px solid #e6ebe7; border-radius: 50%; background: #fff; color: #487a65; cursor: pointer; }
+.refreshButton:disabled { opacity: .4; cursor: wait; }
+.tabs { display: flex; gap: .5rem; margin-top: 1.15rem; padding-bottom: .5rem; overflow-x: auto; }
+.tab { display: inline-flex; align-items: center; gap: .4rem; flex: none; min-height: 34px; padding: .45rem .8rem; border: 1px solid #e7ebe8; border-radius: 999px; background: #fff; color: #64746a; font-size: .7rem; font-weight: 800; white-space: nowrap; cursor: pointer; }
+.tab span { color: #97a79c; font-size: .65rem; }
+.tab[aria-selected="true"] { border-color: #193d34; background: #193d34; color: #fff; }
+.tab[aria-selected="true"] span { color: #b9d7ca; }
+.cards { display: grid; gap: .65rem; margin-top: .65rem; }
+.card { min-width: 0; padding: 1rem; border: 1px solid #e7ebe8; border-radius: 19px; background: #fff; box-shadow: 0 5px 18px rgba(27, 58, 46, .035); }
+.cardHeader { display: flex; align-items: center; justify-content: space-between; gap: .7rem; min-width: 0; }
+.cardTitleGroup { min-width: 0; }
+.cardTitleGroup h3 { overflow: hidden; color: #17221d; font-size: .88rem; font-weight: 850; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.statusBadge { display: inline-flex; align-items: center; gap: .35rem; flex: none; padding: .35rem .55rem; border-radius: 999px; background: #fff5e7; color: #946029; font-size: .64rem; font-weight: 850; }
+.statusDot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.card[data-status="Approved"] .statusBadge { background: #e2f5ec; color: #187958; }
+.card[data-status="Rejected"] .statusBadge { background: #fff0f1; color: #b64758; }
+.dateLine { display: flex; align-items: center; flex-wrap: wrap; gap: .3rem .5rem; margin-top: .8rem; color: #496b59; font-size: .75rem; font-weight: 750; line-height: 1.4; }
+.dateLine svg { flex: none; color: #54a583; }
+.dateLine > span:first-of-type { min-width: 0; }
+.duration { margin-left: auto; padding: .2rem .4rem; border-radius: 7px; background: #f2f7f3; color: #47745b; font-size: .63rem; font-weight: 800; white-space: nowrap; }
+.reasonLine { display: grid; grid-template-columns: 46px minmax(0, 1fr); align-items: baseline; gap: .4rem; margin-top: .65rem; }
+.reasonLabel { color: #8b9890; font-size: .63rem; font-weight: 800; }
+.reason, .dhivehiReason { min-width: 0; color: #3c5145; overflow-wrap: anywhere; white-space: pre-wrap; }
+.reason { font-size: .75rem; line-height: 1.45; }
+.dhivehiReason { font-family: "Faruma", sans-serif; font-size: 1.1rem; font-weight: 400; line-height: 1.55; text-align: right; }
+.progress { display: grid; grid-template-columns: minmax(0, 1fr) 15px minmax(0, 1fr); align-items: start; gap: .45rem; margin-top: .85rem; padding-top: .7rem; border-top: 1px solid #eef1ee; }
+.progressStep { display: flex; align-items: start; gap: .45rem; min-width: 0; }
+.progressMarker { flex: none; width: 8px; height: 8px; margin-top: .25rem; border-radius: 50%; background: #24a77c; }
+.progressStep[data-step-status="Pending"] .progressMarker { background: #bfc9c1; }
+.progressStep[data-step-status="Rejected"] .progressMarker { background: #cd6672; }
+.progressCopy { display: grid; gap: .1rem; min-width: 0; }
+.progressCopy strong { color: #315341; font-size: .66rem; font-weight: 850; line-height: 1.25; }
+.progressCopy span { color: #8a9890; font-size: .61rem; line-height: 1.3; overflow-wrap: anywhere; }
+.progressStep[data-step-status="Pending"] .progressCopy strong { color: #68786d; }
+.progressStep[data-step-status="Rejected"] .progressCopy strong { color: #b64758; }
+.progressArrow { margin-top: .12rem; color: #b2c0b5; }
+.chitLink { display: inline-flex; align-items: center; gap: .4rem; min-height: 34px; margin-top: .75rem; padding: .45rem .7rem; border: 1px solid #cfe5d8; border-radius: 10px; background: #f2faf5; color: #246348; font-size: .68rem; font-weight: 850; text-decoration: none; }
+.chitLink:hover { background: #e5f5eb; }
+.chitPending { margin-top: .65rem; color: #946029; font-size: .68rem; font-weight: 750; }
+.error { margin-top: 1rem; padding: 1rem; border-radius: 14px; background: #fff0f1; color: #a83b4b; font-size: .8rem; }
+.skeleton { height: 165px; border-radius: 19px; background: #f3f6f3; animation: pulse 1.5s ease-in-out infinite; }
+.empty { margin-top: .8rem; padding: 2rem; border: 1px dashed #dfe7df; border-radius: 19px; background: #fff; color: #7c8a80; font-size: .82rem; font-weight: 700; text-align: center; }
+.showMore { width: 100%; margin-top: 1rem; padding: .8rem 1rem; border: 1px solid #dfe8e0; border-radius: 13px; background: #fff; color: #3a6650; font-size: .82rem; font-weight: 800; cursor: pointer; }
+.refreshButton:focus-visible, .tab:focus-visible, .chitLink:focus-visible, .showMore:focus-visible { outline: 3px solid #94c9ad; outline-offset: 3px; }
+@keyframes pulse { 50% { opacity: .55; } }
+@media (min-width: 720px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; } }
+@media (max-width: 360px) { .card { padding: .85rem; } .reasonLine { grid-template-columns: 40px minmax(0, 1fr); } }

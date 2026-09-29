@@ -67,6 +67,7 @@ export type EmployeeFormData = {
   addressDv: string;
   section: string;
   recordCardNumber: string;
+  idCardNumber: string;
   deviceUserId: string;
   sickLeave: number;
   certificateSickLeave: number;
@@ -150,6 +151,7 @@ function buildInitialFormData(
     addressDv: initialData?.addressDv ?? "",
     section: initialData?.section ?? "",
     recordCardNumber: initialData?.recordCardNumber ?? "",
+    idCardNumber: initialData?.idCardNumber ?? "",
     deviceUserId: initialData?.deviceUserId ?? "",
     sickLeave: initialData?.sickLeave ?? 0,
     certificateSickLeave: initialData?.certificateSickLeave ?? 0,
@@ -454,6 +456,14 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                 onChange={handleInputChange}
                 icon={<CreditCard className="h-4 w-4" />}
                 required
+              />
+
+              <InputField
+                id="idCardNumber"
+                label="ID Card Number"
+                value={formData.idCardNumber}
+                onChange={handleInputChange}
+                icon={<CreditCard className="h-4 w-4" />}
               />
 
               <InputField

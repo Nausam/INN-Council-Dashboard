@@ -29,6 +29,7 @@ import {
 } from "@/lib/employees/details-dashboard";
 import { formatMvr } from "@/lib/salary-slips/format";
 import { cn } from "@/lib/utils";
+import { LAST_EMPLOYEE_PROFILE_KEY, isStandaloneApp } from "@/lib/employee-profile-pwa";
 import {
   AlarmClock,
   ArrowLeft,
@@ -54,11 +55,13 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { EmployeeRequestsPageView } from "../../[id]/requests/EmployeeRequestsPageView";
 import styles from "./employee-details.module.css";
 
-type TabId = "overview" | "attendance" | "leave" | "pay";
+type TabId = "overview" | "attendance" | "leave" | "pay" | "requests";
 
 const tabs: Array<{ id: TabId; label: string; icon: LucideIcon }> = [
   { id: "overview", label: "Overview", icon: LayoutGrid },
@@ -111,6 +114,15 @@ export function EmployeeDetailsDashboardView({
   const [editOpen, setEditOpen] = useState(false);
   const [tab, setTab] = useState<TabId>(initialTab);
   const id = Array.isArray(params?.id) ? params.id[0] : params?.id;
+  useEffect(() => {
+    if (!id || !isStandaloneApp()) return;
+    try {
+      if (data) window.localStorage.setItem(LAST_EMPLOYEE_PROFILE_KEY, id);
+      else window.localStorage.removeItem(LAST_EMPLOYEE_PROFILE_KEY);
+    } catch {
+      // The profile remains usable when browser storage is unavailable.
+    }
+  }, [data, id]);
   const currentMonth = monthKey();
   const isPending = false;
   const isError = !data;
@@ -180,24 +192,31 @@ export function EmployeeDetailsDashboardView({
 
   const annualRemaining = currentLimitedLeaveRemaining(employee, "annualLeave");
 
+  if (tab === "requests") {
+    return (
+      <EmployeeRequestsPageView
+        employee={data}
+        employeeId={id}
+        onTabChange={setTab}
+      />
+    );
+  }
+
   return (
     <div className={styles.page}>
       <style>{`@media (max-width: 767px){[data-council-mobile-header]{display:none !important;}}`}</style>
 
       <header className={cn(styles.topbar, styles.wrap)}>
         <div className={styles.breadcrumb}>
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className={styles.back}
-            aria-label="Back"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          <div className={styles.crumbCopy}>
-            <span className={styles.eyebrow}>Employee portal</span>
-            <span className={styles.crumbTitle}>Profile overview</span>
-          </div>
+          <Image
+            src="/council-logo.png"
+            alt="Raa Innamaadhoo Council"
+            width={90}
+            height={51}
+            className={styles.headerLogo}
+            priority
+            unoptimized
+          />
         </div>
           <div className={styles.topActions}>
             {isAdmin ? (
@@ -212,7 +231,7 @@ export function EmployeeDetailsDashboardView({
               </button>
             ) : null}
             <Link
-              href={`/employees/${id}/leaves`}
+              href={`/employees/details/${id}/leaves`}
               className={styles.primaryAction}
               aria-label="View leave calendar"
             >
@@ -247,10 +266,10 @@ export function EmployeeDetailsDashboardView({
               {t.label}
             </button>
           ))}
-          <Link href={`/employees/${id}/requests`} className={styles.tab}>
+          <button type="button" onClick={() => setTab("requests")} className={styles.tab}>
             <FileText className="h-4 w-4" />
             Requests
-          </Link>
+          </button>
         </nav>
 
         <div className={styles.content}>
@@ -302,10 +321,10 @@ export function EmployeeDetailsDashboardView({
               </button>
             );
           })}
-          <Link href={`/employees/${id}/requests`} className={styles.mobileTab}>
+          <button type="button" onClick={() => setTab("requests")} className={styles.mobileTab}>
             <FileText />
             <span>Requests</span>
-          </Link>
+          </button>
         </div>
       </nav>
 
@@ -678,7 +697,7 @@ function LeaveSection({
 }) {
   return (
     <div className={styles.stack}>
-      <Link href={`/employees/${employeeId}/leaves`} className={styles.featureLink}>
+      <Link href={`/employees/details/${employeeId}/leaves`} className={styles.featureLink}>
         <span className="flex items-center gap-3">
           <CalendarDays className="h-5 w-5" />
           <span>
@@ -737,7 +756,7 @@ function PaySection({
         {/* Net pay + salary slips */}
         <div className={styles.payHero}>
           <p className={styles.eyebrow}>
-            Net pay{periodTitle ? ` ┬À ${periodTitle}` : " ┬À this month"}
+            Net pay{periodTitle ? ` \u00B7 ${periodTitle}` : " \u00B7 this month"}
           </p>
           {slipLoading ? (
             <div className="mt-2 h-9 w-40 animate-pulse rounded-lg bg-slate-200" />
@@ -755,7 +774,7 @@ function PaySection({
             </p>
           )}
           <Link
-            href={`/employees/${employeeId}/salary-slips`}
+            href={`/employees/details/${employeeId}/salary-slips`}
             className={styles.payLink}
           >
             <FileText className="h-4 w-4" />
@@ -813,7 +832,7 @@ function PaySection({
                       </span>
                     </div>
                     <p className={styles.paySchemeDate}>
-                      {formatDateLabel(scheme.startDate)} ÔåÆ{" "}
+                      {formatDateLabel(scheme.startDate)} {"\u2192"}{" "}
                       {formatDateLabel(scheme.endDate)}
                     </p>
                     <div className={styles.paySchemeAmounts}>

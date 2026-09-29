@@ -55,8 +55,6 @@ export async function renewWorkerLease(): Promise<boolean> {
     const snap = await tx.get(ref);
     const current = snap.data() as WorkerLease | undefined;
     if (!current || current.ownerId !== ownerId) return false;
-    if (current.expiresAt <= nowIso) return false;
-
     tx.set(
       ref,
       {

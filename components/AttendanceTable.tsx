@@ -29,7 +29,7 @@ import {
 import { useEmployeesQuery, useQueryInvalidation } from "@/hooks/queries";
 import { useToast } from "@/hooks/use-toast";
 import { computeCouncilMinutesLate } from "@/lib/attendance/council-lateness";
-import { submitCouncilAttendanceAction } from "@/lib/attendance/attendance.actions";
+import { resumeCouncilAttendanceAutomationAction, submitCouncilAttendanceAction } from "@/lib/attendance/attendance.actions";
 import {
   ADDITIVE_LEAVE_KEYS,
   getLeaveUsageSummary,
@@ -39,6 +39,7 @@ import {
   fetchEmployeeLeaveCalendar,
 } from "@/lib/actions/hr.actions";
 import type {
+  AttendanceDoc,
   EmployeeDoc,
   EmployeeLeaveCalendarEntry,
 } from "@/lib/firebase/types";
@@ -79,6 +80,7 @@ interface AttendanceRecord {
   leaveUsedAfter?: number | null;
   leaveRemainingAfter?: number | null;
   changed: boolean;
+  automation?: AttendanceDoc["automation"];
 }
 
 interface AttendanceTableProps {
@@ -198,6 +200,9 @@ const leaveSnapshotBalance = (
 const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
   const [attendanceUpdates, setAttendanceUpdates] =
     useState<AttendanceRecord[]>(data);
+  useEffect(() => {
+    setAttendanceUpdates(data);
+  }, [data]);
   const [submitting, setSubmitting] = useState(false);
   const { isAdmin } = useUser();
   const { toast } = useToast();
@@ -567,6 +572,21 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     );
   };
 
+  const handleResumeAutomation = async (attendanceId: string) => {
+    const result = await resumeCouncilAttendanceAutomationAction(attendanceId);
+    if (!result.success) {
+      toast({ title: "Error", description: result.error, variant: "destructive" });
+      return;
+    }
+    if (result.data) {
+      setAttendanceUpdates((prev) => prev.map((row) => row.$id === attendanceId
+        ? { ...row, signInTime: result.data!.signInTime,
+            minutesLate: result.data!.minutesLate, automation: result.data!.automation, changed: false }
+        : row));
+      await invalidateCouncilAttendance(date, monthKey);
+    }
+  };
+
   const handleLeaveChange = (attendanceId: string, leaveTypeLabel: string) => {
     void refetchEmployees();
     const leaveTypeValue =
@@ -766,12 +786,18 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
 
               <TableCell className="px-4 py-3">
                 {!record.leaveType ? (
-                  <AttendanceTimeInput
-                    value={formatTimeForInput(record.signInTime)}
-                    onChange={(value) =>
-                      handleSignInChange(record.$id, value)
-                    }
-                  />
+                  <div>
+                    <AttendanceTimeInput
+                      value={formatTimeForInput(record.signInTime)}
+                      onChange={(value) => handleSignInChange(record.$id, value)}
+                    />
+                    {record.automation?.manualOverride && (
+                      <button type="button" className="mt-1 text-xs text-teal-700 underline"
+                        onClick={() => void handleResumeAutomation(record.$id)}>
+                        Resume automatic sync
+                      </button>
+                    )}
+                  </div>
                 ) : leaveUsage ? (
                   <AttendanceLeaveUsage usage={leaveUsage} />
                 ) : (

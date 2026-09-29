@@ -3,7 +3,6 @@
 import { getSessionAuthProfile } from "@/lib/auth/session-profile";
 import { recordCardLabelForEmployee } from "@/lib/employees/record-card-label";
 import {
-  createAnnualLeaveRequest,
   createOvertimeRequest,
   fetchEmployeeById,
 } from "@/lib/firebase/hr";
@@ -25,38 +24,6 @@ async function employeeForRequest(employeeId: string) {
   if (!profile) throw new Error("Unauthorized");
   if (!/^[\w-]{1,128}$/.test(employeeId)) throw new Error("Invalid employee");
   return fetchEmployeeById(employeeId);
-}
-
-export async function submitEmployeeAnnualLeaveRequest(input: {
-  employeeId: string;
-  startDate: string;
-  endDate: string;
-  totalDays: number;
-  reason: string;
-}): Promise<void> {
-  const employeeId = String(input.employeeId ?? "").trim();
-  const employee = await employeeForRequest(employeeId);
-  const startDate = String(input.startDate ?? "");
-  const endDate = String(input.endDate ?? "");
-  const reason = String(input.reason ?? "").trim();
-  const totalDays = Number(input.totalDays);
-  if (!validDate(startDate) || !validDate(endDate)) throw new Error("Invalid dates");
-  const span =
-    (Date.parse(`${endDate}T00:00:00.000Z`) - Date.parse(`${startDate}T00:00:00.000Z`)) /
-      86_400_000 +
-    1;
-  if (span < 1 || span > 366 || !Number.isInteger(totalDays) || totalDays < 1 || totalDays > span) {
-    throw new Error("Invalid number of leave days");
-  }
-  if (reason.length < 2 || reason.length > 500) throw new Error("Invalid reason");
-
-  await createAnnualLeaveRequest({
-    fullName: employee.name,
-    reason,
-    totalDays,
-    startDate,
-    endDate,
-  });
 }
 
 export async function submitEmployeeOvertimeRequest(input: {

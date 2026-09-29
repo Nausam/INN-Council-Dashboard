@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+@media (display-mode: standalone) {
+  .council-sidebar-shell, .council-mobile-drawer, .council-sidebar-backdrop, [data-council-mobile-header] { display: none !important; }
+  .council-main-frame { padding-left: 0 !important; }
+}
+
+html.employee-profile-app .council-sidebar-shell,
+html.employee-profile-app .council-mobile-drawer,
+html.employee-profile-app .council-sidebar-backdrop,
+html.employee-profile-app [data-council-mobile-header] { display: none !important; }
+html.employee-profile-app .council-main-frame { padding-left: 0 !important; }
+
 @font-face {
   font-family: "Faruma";
   src: url("/fonts/Faruma.ttf") format("truetype");

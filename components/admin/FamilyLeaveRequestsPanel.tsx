@@ -1,12 +1,16 @@
 "use client";
 
 import {
+  assignFamilyLeaveAcceptor,
   assignFamilyLeaveSupervisor,
   deleteFamilyLeaveRequest,
   listFamilyLeaveRequests,
+  listLeaveAcceptors,
   listLeaveSupervisors,
+  reviewFamilyLeaveRequest,
   type FamilyLeaveRequestPage,
   type FamilyLeaveRequestSummary,
+  type LeaveAcceptorOption,
   type LeaveSupervisorOption,
 } from "@/lib/actions/family-leave.actions";
 import { SALAAM_FAMILY_LEAVE_TYPES } from "@/lib/leave/salaam-family-types";
@@ -26,7 +30,6 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import Link from "next/link";
 import { useEffect, useState } from "react";
 
 const PAGE_SIZE = 12;
@@ -34,6 +37,11 @@ const dhivehiFont = { fontFamily: "Faruma, sans-serif" };
 
 function typeLabel(request: FamilyLeaveRequestSummary) {
   return SALAAM_FAMILY_LEAVE_TYPES.find((type) => type.value === request.leaveType)?.labelEn ?? "Leave";
+}
+
+function reasonLabel(request: FamilyLeaveRequestSummary, reason: string) {
+  const leaveType = SALAAM_FAMILY_LEAVE_TYPES.find((type) => type.value === request.leaveType)?.labelDv;
+  return leaveType ? `${leaveType} - ${reason}` : reason;
 }
 
 function dateLabel(value: string) {
@@ -45,6 +53,13 @@ function dateLabel(value: string) {
     year: "numeric",
     timeZone: "UTC",
   }).format(date);
+}
+
+function leaveRangeLabel(request: FamilyLeaveRequestSummary) {
+  if (!request.leaveStartDate || !request.leaveEndDate) return dateLabel(request.requestDate);
+  const start = dateLabel(request.leaveStartDate);
+  const end = dateLabel(request.leaveEndDate);
+  return start === end ? start : `${start} – ${end}`;
 }
 
 function FormCard({
@@ -70,7 +85,10 @@ function FormCard({
       <span className={cn("absolute -right-10 -top-12 h-40 w-40 rounded-full opacity-70", salaam ? "bg-[#dff4e8]" : "bg-[#f0e6f8]")} />
       <span className="relative flex w-full items-center justify-between gap-2">
         <span className="text-xs font-bold tracking-[0.16em] text-[#7a8987]">{String(number).padStart(2, "0")}</span>
-        <span className={cn("rounded-full bg-white/80 px-3 py-1 text-[11px] font-extrabold", salaam ? "text-[#167a67]" : "text-[#8059a2]")}>{typeLabel(request)}</span>
+        <span className="flex items-center gap-1.5">
+          <span className={cn("rounded-full bg-white/80 px-3 py-1 text-[11px] font-extrabold", salaam ? "text-[#167a67]" : "text-[#8059a2]")}>{typeLabel(request)}</span>
+          <span className={cn("rounded-full px-3 py-1 text-[11px] font-extrabold", request.approvalStatus === "Approved" ? "bg-[#e0f2e9] text-[#167a67]" : request.approvalStatus === "Rejected" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-800")}>{request.approvalStatus || "Pending"}</span>
+        </span>
       </span>
 
       <span className="relative mt-8 flex min-w-0 items-center gap-3">
@@ -79,7 +97,7 @@ function FormCard({
         </span>
         <span className="min-w-0">
           <span className="block truncate text-lg font-black tracking-tight text-[#1c2d2e]">{request.employeeName}</span>
-          <span className="mt-0.5 block text-xs font-medium text-[#7b8a8b]">{dateLabel(request.requestDate)} · {request.reportedTime}</span>
+          <span className="mt-0.5 block text-xs font-medium text-[#7b8a8b]">{leaveRangeLabel(request)}{request.durationDays && request.durationDays > 1 ? ` · ${request.durationDays} days` : ""}</span>
         </span>
       </span>
 
@@ -97,21 +115,28 @@ function FormCard({
 function FormDrawer({
   request,
   supervisors,
+  acceptors,
   busy,
-  pendingSelection,
+  pendingSupervisorSelection,
+  pendingAcceptorSelection,
   error,
-  onAssign,
+  onAssignSupervisor,
+  onAssignAcceptor,
+  onReview,
   onDelete,
 }: {
   request: FamilyLeaveRequestSummary;
   supervisors: LeaveSupervisorOption[];
+  acceptors: LeaveAcceptorOption[];
   busy: boolean;
-  pendingSelection: string | null;
+  pendingSupervisorSelection: string | null;
+  pendingAcceptorSelection: string | null;
   error: string;
-  onAssign: (supervisorKey: string) => void;
+  onAssignSupervisor: (supervisorKey: string) => void;
+  onAssignAcceptor: (employeeId: string) => void;
+  onReview: (status: "Approved" | "Rejected") => void;
   onDelete: () => void;
 }) {
-  const incomplete = supervisors.filter((supervisor) => !supervisor.ready);
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[#102c2a]/45 backdrop-blur-[4px]" />
@@ -132,51 +157,78 @@ function FormDrawer({
           {error ? <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div> : null}
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="flex items-center gap-3 rounded-2xl border border-[#e7efea] bg-[#fafcfb] p-3.5"><CalendarDays size={18} className="shrink-0 text-[#398c7a]" /><span className="min-w-0"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#82918d]">Date</span><strong className="block text-sm text-[#263d39]">{dateLabel(request.requestDate)}</strong></span></div>
-            <div className="flex items-center gap-3 rounded-2xl border border-[#e7efea] bg-[#fafcfb] p-3.5"><Clock3 size={18} className="shrink-0 text-[#398c7a]" /><span className="min-w-0"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#82918d]">Time</span><strong className="block text-sm text-[#263d39]">{request.reportedTime} MVT</strong></span></div>
+            <div className="flex items-center gap-3 rounded-2xl border border-[#e7efea] bg-[#fafcfb] p-3.5"><CalendarDays size={18} className="shrink-0 text-[#398c7a]" /><span className="min-w-0"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#82918d]">{request.leaveStartDate ? "Leave dates" : "Date"}</span><strong className="block text-sm text-[#263d39]">{leaveRangeLabel(request)}</strong></span></div>
+            <div className="flex items-center gap-3 rounded-2xl border border-[#e7efea] bg-[#fafcfb] p-3.5"><Clock3 size={18} className="shrink-0 text-[#398c7a]" /><span className="min-w-0"><span className="block text-[10px] font-bold uppercase tracking-wide text-[#82918d]">Reported time</span><strong className="block text-sm text-[#263d39]">{request.reportedTime} MVT</strong></span></div>
           </div>
 
           {request.employeeNameDv ? <p dir="rtl" lang="dv" style={dhivehiFont} className="rounded-2xl border border-[#e7ede9] px-4 py-3 text-right text-xl leading-relaxed text-[#314c46]">{request.employeeNameDv}</p> : null}
 
           <section>
             <h3 className="mb-2 text-xs font-extrabold uppercase tracking-[0.14em] text-[#778b85]">Reason</h3>
-            <p dir="rtl" lang="dv" style={dhivehiFont} className="min-h-[76px] whitespace-pre-wrap break-words rounded-2xl border border-[#e7ede9] bg-white px-5 py-4 text-right text-xl leading-loose text-[#243c38]">{request.reason}</p>
+            <p dir="rtl" lang="dv" style={dhivehiFont} className="min-h-[76px] whitespace-pre-wrap break-words rounded-2xl border border-[#e7ede9] bg-white px-5 py-4 text-right text-xl leading-loose text-[#243c38]">{reasonLabel(request, request.reason)}</p>
           </section>
 
-          <section className="border-t border-[#e8eeea] pt-5">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h3 className="flex items-center gap-2 text-base font-extrabold text-[#203b35]"><UserRound size={19} className="text-[#458e7a]" /> Supervisor</h3>
-              <span className={cn("rounded-full px-3 py-1 text-[11px] font-bold", request.supervisor ? "bg-[#e6f5ed] text-[#1e8066]" : "bg-[#fff3df] text-[#a66a29]")}>{request.supervisor ? "Assigned" : "Pending"}</span>
-            </div>
-            <div className="relative">
-              <select
-                aria-label="Select supervisor"
-                value={busy && pendingSelection ? pendingSelection : request.supervisor?.key ?? ""}
-                onChange={(event) => onAssign(event.target.value)}
-                disabled={busy}
-                className="h-12 w-full appearance-none rounded-xl border border-[#d9e4dd] bg-white px-4 pr-10 text-sm font-semibold text-[#25423a] outline-none focus:border-[#5aa48a] focus:ring-2 focus:ring-[#e2f4e9] disabled:opacity-50"
-              >
-                <option value="">Choose a supervisor</option>
-                {supervisors.map((supervisor) => <option key={supervisor.key} value={supervisor.key} disabled={!supervisor.ready}>{supervisor.label}{supervisor.ready ? "" : " · Dhivehi details needed"}</option>)}
-              </select>
-              <ChevronDown size={17} className="pointer-events-none absolute right-4 top-4 text-[#78958a]" />
-            </div>
-            {request.supervisor ? (
-              <div className="mt-4 space-y-2 rounded-2xl bg-[#f5faf7] p-4 text-sm">
-                <div className="flex justify-between gap-3"><span className="text-[#769087]">Name</span><strong className="text-right text-[#28463c]">{request.supervisor.name}</strong></div>
-                <p dir="rtl" lang="dv" style={dhivehiFont} className="text-right text-lg leading-relaxed text-[#3e6959]">{request.supervisor.nameDv}</p>
-                <div className="flex justify-between gap-3"><span className="text-[#769087]">Informed</span><strong className="text-right text-[#28463c]">{request.supervisor.reportedDate} · {request.supervisor.reportedTime}</strong></div>
-                <p dir="rtl" lang="dv" style={dhivehiFont} className="border-t border-[#e1ece5] pt-2 text-right text-lg leading-relaxed text-[#3e6959]">{request.supervisor.designationDv} · {request.supervisor.sectionDv}</p>
+          {!request.leaveStartDate && request.secondDay ? (
+            <section>
+              <h3 className="mb-2 text-xs font-extrabold uppercase tracking-[0.14em] text-[#778b85]">Day 2 · {dateLabel(request.secondDay.date)} · {request.secondDay.time}</h3>
+              <p dir="rtl" lang="dv" style={dhivehiFont} className="whitespace-pre-wrap break-words rounded-2xl border border-[#e7ede9] bg-white px-5 py-4 text-right text-xl leading-loose text-[#243c38]">{reasonLabel(request, request.secondDay.reason)}</p>
+            </section>
+          ) : null}
+
+          {!request.leaveStartDate && request.additionalDetails ? (
+            <section>
+              <h3 className="mb-2 text-xs font-extrabold uppercase tracking-[0.14em] text-[#778b85]">More than 2 days · {dateLabel(request.additionalDetails.date)} · {request.additionalDetails.time}</h3>
+              <p dir="rtl" lang="dv" style={dhivehiFont} className="whitespace-pre-wrap break-words rounded-2xl border border-[#e7ede9] bg-white px-5 py-4 text-right text-xl leading-loose text-[#243c38]">{reasonLabel(request, request.additionalDetails.reason)}</p>
+            </section>
+          ) : null}
+
+          <div className="grid grid-cols-2 gap-3 border-t border-[#e8eeea] pt-5">
+            <section className="min-w-0">
+              <div className="mb-3 flex min-h-10 items-center justify-between gap-2">
+                <h3 className="flex items-center gap-2 text-sm font-extrabold text-[#203b35] sm:text-base"><UserRound size={19} className="hidden shrink-0 text-[#458e7a] sm:block" /> Supervisor</h3>
+                <span className={cn("hidden rounded-full px-3 py-1 text-[11px] font-bold sm:inline-flex", request.supervisor ? "bg-[#e6f5ed] text-[#1e8066]" : "bg-[#fff3df] text-[#a66a29]")}>{request.supervisor ? "Assigned" : "Pending"}</span>
               </div>
-            ) : null}
-            {incomplete.length > 0 ? (
-              <details className="mt-4 text-xs text-[#6b8278]">
-                <summary className="cursor-pointer font-semibold">{incomplete.length} supervisor profiles need Dhivehi details</summary>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {incomplete.map((supervisor) => <Link key={supervisor.key} href={`/employees/${supervisor.employeeId}/edit`} className="rounded-full bg-[#f1f7f2] px-3 py-1.5 font-semibold text-[#24765f] hover:bg-[#e4f1e6]">Edit {supervisor.label}</Link>)}
-                </div>
-              </details>
-            ) : null}
+              <div className="relative">
+                <select
+                  aria-label="Select supervisor"
+                  value={busy && pendingSupervisorSelection ? pendingSupervisorSelection : request.supervisor?.key ?? ""}
+                  onChange={(event) => onAssignSupervisor(event.target.value)}
+                  disabled={busy}
+                  className="h-12 w-full appearance-none rounded-xl border border-[#d9e4dd] bg-white px-3 pr-8 text-sm font-semibold text-[#25423a] outline-none focus:border-[#5aa48a] focus:ring-2 focus:ring-[#e2f4e9] disabled:opacity-50 sm:px-4 sm:pr-10"
+                >
+                  <option value="">Choose a supervisor</option>
+                  {supervisors.map((supervisor) => <option key={supervisor.key} value={supervisor.key} disabled={!supervisor.ready}>{supervisor.label}{supervisor.ready ? "" : " · Dhivehi details needed"}</option>)}
+                </select>
+                <ChevronDown size={17} className="pointer-events-none absolute right-3 top-4 text-[#78958a] sm:right-4" />
+              </div>
+            </section>
+
+            <section className="min-w-0">
+              <div className="mb-3 flex min-h-10 items-center justify-between gap-2">
+                <h3 className="flex items-center gap-2 text-sm font-extrabold text-[#203b35] sm:text-base"><UserRound size={19} className="hidden shrink-0 text-[#458e7a] sm:block" /> Form received by</h3>
+                <span className={cn("hidden rounded-full px-3 py-1 text-[11px] font-bold sm:inline-flex", request.acceptor ? "bg-[#e6f5ed] text-[#1e8066]" : "bg-[#fff3df] text-[#a66a29]")}>{request.acceptor ? "Assigned" : "Pending"}</span>
+              </div>
+              <div className="relative">
+                <select
+                  aria-label="Select employee who receives the form"
+                  value={busy && pendingAcceptorSelection ? pendingAcceptorSelection : request.acceptor?.employeeId ?? ""}
+                  onChange={(event) => onAssignAcceptor(event.target.value)}
+                  disabled={busy}
+                  className="h-12 w-full appearance-none rounded-xl border border-[#d9e4dd] bg-white px-3 pr-8 text-sm font-semibold text-[#25423a] outline-none focus:border-[#5aa48a] focus:ring-2 focus:ring-[#e2f4e9] disabled:opacity-50 sm:px-4 sm:pr-10"
+                >
+                  <option value="">Choose an employee</option>
+                  {acceptors.map((acceptor) => <option key={acceptor.employeeId} value={acceptor.employeeId} disabled={!acceptor.ready}>{acceptor.name}{acceptor.ready ? "" : " · Dhivehi details needed"}</option>)}
+                </select>
+                <ChevronDown size={17} className="pointer-events-none absolute right-3 top-4 text-[#78958a] sm:right-4" />
+              </div>
+            </section>
+          </div>
+          <section className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e8eeea] pt-5">
+            <div><h3 className="text-sm font-extrabold text-[#203b35]">Approval</h3><p className="mt-1 text-xs text-[#70857b]">{request.approvalStatus || "Pending"}{request.reviewedAt ? ` · ${dateLabel(request.reviewedAt.slice(0, 10))}` : ""}</p></div>
+            <div className="flex gap-2">
+              {request.approvalStatus !== "Approved" ? <button type="button" onClick={() => onReview("Approved")} disabled={busy || !request.supervisor} className="rounded-xl bg-[#1e8066] px-4 py-2 text-sm font-bold text-white disabled:opacity-40">Approve</button> : null}
+              {request.approvalStatus !== "Rejected" ? <button type="button" onClick={() => onReview("Rejected")} disabled={busy} className="rounded-xl border border-rose-200 px-4 py-2 text-sm font-bold text-rose-700 disabled:opacity-40">Reject</button> : null}
+            </div>
           </section>
         </div>
 
@@ -198,9 +250,11 @@ export function FamilyLeaveRequestsPanel() {
   const [pageIndex, setPageIndex] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [supervisors, setSupervisors] = useState<LeaveSupervisorOption[]>([]);
+  const [acceptors, setAcceptors] = useState<LeaveAcceptorOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [pendingSelection, setPendingSelection] = useState<string | null>(null);
+  const [pendingSupervisorSelection, setPendingSupervisorSelection] = useState<string | null>(null);
+  const [pendingAcceptorSelection, setPendingAcceptorSelection] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
 
@@ -208,11 +262,12 @@ export function FamilyLeaveRequestsPanel() {
     let active = true;
     setLoading(true);
     setError("");
-    void Promise.all([listFamilyLeaveRequests(cursors[pageIndex]), listLeaveSupervisors()])
-      .then(([nextPage, roster]) => {
+    void Promise.all([listFamilyLeaveRequests(cursors[pageIndex]), listLeaveSupervisors(), listLeaveAcceptors()])
+      .then(([nextPage, roster, employeeRoster]) => {
         if (!active) return;
         setPage(nextPage);
         setSupervisors(roster);
+        setAcceptors(employeeRoster);
         setSelectedId((current) =>
           nextPage.requests.some((request) => request.id === current) ? current : null,
         );
@@ -243,7 +298,7 @@ export function FamilyLeaveRequestsPanel() {
       return;
     }
     setBusyId(requestId);
-    setPendingSelection(supervisorKey);
+    setPendingSupervisorSelection(supervisorKey);
     setError("");
     try {
       await assignFamilyLeaveSupervisor(requestId, supervisorKey);
@@ -252,7 +307,28 @@ export function FamilyLeaveRequestsPanel() {
       setError(cause instanceof Error ? cause.message : "Could not assign supervisor.");
     } finally {
       setBusyId(null);
-      setPendingSelection(null);
+      setPendingSupervisorSelection(null);
+    }
+  };
+
+  const assignAcceptor = async (requestId: string, employeeId: string) => {
+    if (!employeeId) return;
+    const choice = acceptors.find((acceptor) => acceptor.employeeId === employeeId);
+    if (!choice?.ready) {
+      setError(`Add ${choice?.name ?? "the employee"}'s Dhivehi name and designation in the employee edit form first.`);
+      return;
+    }
+    setBusyId(requestId);
+    setPendingAcceptorSelection(employeeId);
+    setError("");
+    try {
+      await assignFamilyLeaveAcceptor(requestId, employeeId);
+      refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not assign the receiving employee.");
+    } finally {
+      setBusyId(null);
+      setPendingAcceptorSelection(null);
     }
   };
 
@@ -267,6 +343,19 @@ export function FamilyLeaveRequestsPanel() {
       else refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not delete leave form.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const reviewRequest = async (requestId: string, status: "Approved" | "Rejected") => {
+    setBusyId(requestId);
+    setError("");
+    try {
+      await reviewFamilyLeaveRequest(requestId, status);
+      refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not review leave request.");
     } finally {
       setBusyId(null);
     }
@@ -320,7 +409,7 @@ export function FamilyLeaveRequestsPanel() {
       </div>
 
       <DialogPrimitive.Root open={Boolean(selected)} onOpenChange={(open) => { if (!open) setSelectedId(null); }}>
-        {selected ? <FormDrawer request={selected} supervisors={supervisors} busy={busyId === selected.id} pendingSelection={pendingSelection} error={error} onAssign={(key) => void assignSupervisor(selected.id, key)} onDelete={() => void deleteRequest(selected)} /> : null}
+        {selected ? <FormDrawer request={selected} supervisors={supervisors} acceptors={acceptors} busy={busyId === selected.id} pendingSupervisorSelection={pendingSupervisorSelection} pendingAcceptorSelection={pendingAcceptorSelection} error={error} onAssignSupervisor={(key) => void assignSupervisor(selected.id, key)} onAssignAcceptor={(employeeId) => void assignAcceptor(selected.id, employeeId)} onReview={(status) => void reviewRequest(selected.id, status)} onDelete={() => void deleteRequest(selected)} /> : null}
       </DialogPrimitive.Root>
     </div>
   );

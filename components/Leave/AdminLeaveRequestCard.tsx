@@ -17,6 +17,7 @@ interface LeaveRequestCardProps {
   endDate: string;
   status: "Approved" | "Rejected" | "Pending";
   actionBy?: string;
+  managedInForms?: boolean;
   onApprove: (requestId: string) => void;
   onReject: (requestId: string) => void;
 }
@@ -43,6 +44,7 @@ const AdminLeaveRequestCard: React.FC<LeaveRequestCardProps> = ({
   endDate,
   status,
   actionBy,
+  managedInForms,
   onApprove,
   onReject,
 }) => {
@@ -114,7 +116,9 @@ const AdminLeaveRequestCard: React.FC<LeaveRequestCardProps> = ({
         </div>
       </div>
       <div className="flex mt-6 justify-end">
-        {(actionBy && status === "Approved") || status === "Rejected" ? (
+        {managedInForms ? (
+          <a href="/requests/annual-leave" className="rounded-lg bg-[#182b29] px-4 py-2 text-sm font-semibold text-white">Open annual leave form</a>
+        ) : (actionBy && status === "Approved") || status === "Rejected" ? (
           <p className="text-sm text-gray-600">
             <span className="font-medium text-gray-800">
               {status === "Approved" ? "Approved By:" : "Rejected By:"}
