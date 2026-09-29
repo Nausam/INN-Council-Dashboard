@@ -4,9 +4,12 @@ import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
 import {
   clearPendingEmployeeProfileId,
-  getEmployeeProfileSessionId,
+  clearEmployeeProfileIdentity,
+  clearEmployeeProfileSession,
+  getEmployeeProfileIdentityId,
   getPendingEmployeeProfileId,
   setEmployeeProfileSession,
+  setEmployeeProfileIdentity,
   setPendingEmployeeProfileId,
 } from "@/lib/auth/employee-profile-session";
 import { COLLECTIONS, getFirestoreDb } from "@/lib/firebase/admin";
@@ -53,8 +56,18 @@ function pendingEmployeeId(): string {
   return employeeId;
 }
 
-export async function currentEmployeeProfileSession(): Promise<string | null> {
-  return getEmployeeProfileSessionId();
+export async function currentEmployeeProfileIdentity(): Promise<string | null> {
+  return getEmployeeProfileIdentityId();
+}
+
+export async function lockEmployeeProfile(): Promise<void> {
+  clearEmployeeProfileSession();
+}
+
+export async function forgetEmployeeProfileIdentity(): Promise<void> {
+  clearEmployeeProfileSession();
+  clearPendingEmployeeProfileId();
+  clearEmployeeProfileIdentity();
 }
 
 export async function beginEmployeeProfileSignIn(
@@ -118,12 +131,14 @@ export async function completeEmployeeProfilePinSetup(
   if (!created) throw new Error("A PIN has already been set for this employee. Sign in with that PIN.");
 
   clearPendingEmployeeProfileId();
+  setEmployeeProfileIdentity(employeeId);
   setEmployeeProfileSession(employeeId);
   return employeeId;
 }
 
 export async function signInEmployeeProfileWithPin(pin: string): Promise<string> {
-  const employeeId = pendingEmployeeId();
+  const employeeId = getPendingEmployeeProfileId() || getEmployeeProfileIdentityId();
+  if (!employeeId) throw new Error("Enter your ID or record card number again.");
   if (!PIN_PATTERN.test(pin)) throw new Error("Enter your four-digit PIN.");
 
   const db = getFirestoreDb();
@@ -158,6 +173,7 @@ export async function signInEmployeeProfileWithPin(pin: string): Promise<string>
   if (result === "incorrect") throw new Error("Incorrect PIN. Try again.");
 
   clearPendingEmployeeProfileId();
+  setEmployeeProfileIdentity(employeeId);
   setEmployeeProfileSession(employeeId);
   return employeeId;
 }

@@ -23,13 +23,29 @@ const isPublicRoute = createRouteMatcher([
 
 export default clerkMiddleware(async (auth, request) => {
   const { pathname } = request.nextUrl;
+  const isServerAction = request.headers.has("next-action");
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(request.headers.get("user-agent") ?? "");
+
+  // Existing home-screen shortcuts may still launch at / or /sign-in rather
+  // than the current manifest start URL. Send mobile entry to Employee Profile.
+  if (
+    !isServerAction && isMobile &&
+    (pathname === "/" || pathname === "/sign-in" || pathname === "/sign-up" || pathname === "/employees/details/sign-in") &&
+    request.nextUrl.searchParams.get("staff") !== "1"
+  ) {
+    return NextResponse.redirect(new URL("/employees/details", request.url));
+  }
+
+  // Employee Profile uses its own PIN session, even when Clerk is signed out.
+  if (pathname === "/employees/details" || pathname.startsWith("/employees/details/")) {
+    return NextResponse.next();
+  }
 
   if (pathname.startsWith("/sign-up")) {
     return NextResponse.redirect(new URL("/sign-in", request.url));
   }
 
   // Server Actions POST to the current URL; auth redirects break action forwarding.
-  const isServerAction = request.headers.has("next-action");
   const { userId, sessionId, sessionClaims } = await auth();
 
   if (userId && !isServerAction) {

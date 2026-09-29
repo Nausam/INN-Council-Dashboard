@@ -51,6 +51,8 @@
 .fieldLabel { margin-bottom: 10px; color: #575761; font-size: .76rem; font-weight: 700; }
 .nextLabel { margin-top: 18px; }
 .helper { margin: -14px 0 24px; color: #575761; font-size: .83rem; line-height: 1.55; }
+.loading { display: flex; align-items: center; gap: 10px; color: #575761; font-size: .86rem; font-weight: 700; }
+.loading svg { width: 18px; height: 18px; }
 .back { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 18px; padding: 0; border: 0; background: none; color: #575761; font: inherit; font-size: .78rem; font-weight: 700; cursor: pointer; }
 .back svg { width: 16px; height: 16px; }
 .back:hover { color: #17191d; }

@@ -2,12 +2,12 @@
 
 import {
   EMPLOYEE_PROFILE_HOME,
-  isStandaloneApp,
 } from "@/lib/employee-profile-pwa";
 import {
   beginEmployeeProfileSignIn,
   completeEmployeeProfilePinSetup,
-  currentEmployeeProfileSession,
+  currentEmployeeProfileIdentity,
+  forgetEmployeeProfileIdentity,
   signInEmployeeProfileWithPin,
 } from "@/lib/actions/employee-profile.actions";
 import { ArrowLeft, ArrowRight, IdCard, KeyRound, Loader2 } from "lucide-react";
@@ -21,20 +21,21 @@ export default function EmployeeDetailsLoginPage() {
   const router = useRouter();
   const [identifier, setIdentifier] = useState("");
   const [step, setStep] = useState<"identifier" | "setup" | "pin">("identifier");
+  const [identityLoading, setIdentityLoading] = useState(true);
   const [pin, setPin] = useState("");
   const [pinConfirmation, setPinConfirmation] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   useEffect(() => {
-    if (!isStandaloneApp()) return;
-    void currentEmployeeProfileSession()
+    void currentEmployeeProfileIdentity()
       .then((employeeId) => {
-        if (employeeId) router.replace(`${EMPLOYEE_PROFILE_HOME}/${employeeId}`);
+        if (employeeId) setStep("pin");
       })
       .catch(() => {
-        // Keep the sign-in form available when a saved session cannot be read.
-      });
-  }, [router]);
+        // Keep identifier entry available if the remembered identity cannot be read.
+      })
+      .finally(() => setIdentityLoading(false));
+  }, []);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -81,11 +82,19 @@ export default function EmployeeDetailsLoginPage() {
             <button
               type="button"
               className={styles.back}
-              onClick={() => {
-                setStep("identifier");
-                setPin("");
-                setPinConfirmation("");
-                setError("");
+              onClick={async () => {
+                setSubmitting(true);
+                try {
+                  await forgetEmployeeProfileIdentity();
+                  setStep("identifier");
+                  setPin("");
+                  setPinConfirmation("");
+                  setError("");
+                } catch {
+                  setError("Could not change employee. Try again.");
+                } finally {
+                  setSubmitting(false);
+                }
               }}
               disabled={loading}
             >
@@ -95,7 +104,9 @@ export default function EmployeeDetailsLoginPage() {
           <h1 id="employee-portal-title">
             {step === "identifier" ? "Employee Profile" : step === "setup" ? "Create your PIN" : "Enter your PIN"}
           </h1>
-          <form onSubmit={handleSubmit} className={styles.form}>
+          {identityLoading ? (
+            <div className={styles.loading}><Loader2 className="animate-spin" aria-hidden="true" /> Opening sign-in…</div>
+          ) : <form onSubmit={handleSubmit} className={styles.form}>
             {step === "identifier" ? (
               <>
                 <label htmlFor="employee-identifier" className={styles.fieldLabel}>
@@ -187,7 +198,7 @@ export default function EmployeeDetailsLoginPage() {
               <span>{submitting ? "Please wait…" : step === "setup" ? "Create PIN and continue" : step === "pin" ? "Unlock profile" : "Continue"}</span>
               {loading ? <Loader2 className="animate-spin" aria-hidden="true" /> : <ArrowRight aria-hidden="true" />}
             </button>
-          </form>
+          </form>}
         </section>
         <EmployeePwaInstallPrompt />
       </div>

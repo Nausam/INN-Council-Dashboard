@@ -9,8 +9,10 @@ import { EMPLOYEE_PROFILE_HOME } from "@/lib/employee-profile-pwa";
 
 const COOKIE_NAME = "employee_profile_session";
 const PENDING_COOKIE_NAME = "employee_profile_pending";
+const IDENTITY_COOKIE_NAME = "employee_profile_identity";
 const SESSION_AGE_SECONDS = 30 * 24 * 60 * 60;
 const PENDING_AGE_SECONDS = 10 * 60;
+const IDENTITY_AGE_SECONDS = 365 * 24 * 60 * 60;
 const EMPLOYEE_ID_PATTERN = /^[\w-]{1,128}$/;
 
 function signingKey(): string {
@@ -19,13 +21,13 @@ function signingKey(): string {
   return key;
 }
 
-function signature(purpose: "session" | "pending", employeeId: string, expiresAt: number): string {
+function signature(purpose: "session" | "pending" | "identity", employeeId: string, expiresAt: number): string {
   return createHmac("sha256", signingKey())
     .update(`employee-profile:${purpose}:v1:${employeeId}:${expiresAt}`)
     .digest("hex");
 }
 
-function readSignedCookie(name: string, purpose: "session" | "pending"): string | null {
+function readSignedCookie(name: string, purpose: "session" | "pending" | "identity"): string | null {
   const value = cookies().get(name)?.value;
   if (!value) return null;
   const parts = value.split(".");
@@ -43,7 +45,7 @@ function readSignedCookie(name: string, purpose: "session" | "pending"): string 
 
 function setSignedCookie(
   name: string,
-  purpose: "session" | "pending",
+  purpose: "session" | "pending" | "identity",
   employeeId: string,
   ageSeconds: number,
 ): void {
@@ -64,6 +66,22 @@ export function getEmployeeProfileSessionId(): string | null {
 
 export function setEmployeeProfileSession(employeeId: string): void {
   setSignedCookie(COOKIE_NAME, "session", employeeId, SESSION_AGE_SECONDS);
+}
+
+export function clearEmployeeProfileSession(): void {
+  cookies().delete(COOKIE_NAME);
+}
+
+export function getEmployeeProfileIdentityId(): string | null {
+  return readSignedCookie(IDENTITY_COOKIE_NAME, "identity");
+}
+
+export function setEmployeeProfileIdentity(employeeId: string): void {
+  setSignedCookie(IDENTITY_COOKIE_NAME, "identity", employeeId, IDENTITY_AGE_SECONDS);
+}
+
+export function clearEmployeeProfileIdentity(): void {
+  cookies().delete(IDENTITY_COOKIE_NAME);
 }
 
 export function getPendingEmployeeProfileId(): string | null {
