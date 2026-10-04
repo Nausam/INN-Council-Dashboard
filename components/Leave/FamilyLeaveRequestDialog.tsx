@@ -1,6 +1,6 @@
 "use client";
 
-import { submitFamilyLeaveRequest } from "@/lib/actions/family-leave.actions";
+import { submitFamilyLeaveRequest, updateFamilyLeaveRequest } from "@/lib/actions/family-leave.actions";
 import { maldivesDateTime } from "@/lib/dates/maldives";
 import { parseLeaveDateRange } from "@/lib/leave/date-range";
 import {
@@ -14,23 +14,40 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2 } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import styles from "./family-leave-request.module.css";
+import motifs from "@/components/employee-portal/portal-motifs.module.css";
+import { LeaveRangePreview } from "@/components/employee-portal/LeaveRangePreview";
+import { REQUEST_VISUALS } from "@/lib/employees/request-visuals";
+import { cn } from "@/lib/utils";
+
+/** A pending request being changed instead of a new one being submitted. */
+export type FamilyLeaveEdit = {
+  id: string;
+  startDate: string;
+  endDate: string;
+  reason: string;
+};
 
 export function FamilyLeaveRequestDialog({
   employeeId,
   presetLeaveType,
+  editRequest,
   open,
   onOpenChange,
   onSubmitted,
 }: {
   employeeId: string;
   presetLeaveType?: SalaamFamilyLeaveType;
+  editRequest?: FamilyLeaveEdit;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmitted?: () => void;
 }) {
+  const editing = Boolean(editRequest);
+  const visual = REQUEST_VISUALS[presetLeaveType === "salaam" ? "salaam" : "family"];
+  const HeaderIcon = visual.icon;
   const [clock, setClock] = useState({ time: "—" });
   const [leaveType, setLeaveType] = useState<SalaamFamilyLeaveType | "">("");
   const [startDate, setStartDate] = useState("");
@@ -50,7 +67,16 @@ export function FamilyLeaveRequestDialog({
   }
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !editRequest) return;
+    setStartDate(editRequest.startDate);
+    setEndDate(editRequest.endDate);
+    setReason(editRequest.reason);
+    setSubmitted(false);
+    setError("");
+  }, [open, editRequest]);
+
+  useEffect(() => {
+    if (!open || editRequest) return;
     const today = maldivesDateTime();
     setStartDate((current) => current || today.date);
     setEndDate((current) => current || today.date);
@@ -58,7 +84,7 @@ export function FamilyLeaveRequestDialog({
     updateClock();
     const timer = window.setInterval(updateClock, 30_000);
     return () => window.clearInterval(timer);
-  }, [open]);
+  }, [open, editRequest]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -75,6 +101,28 @@ export function FamilyLeaveRequestDialog({
     }
     setError("");
     setPending(true);
+    if (editRequest) {
+      try {
+        const result = await updateFamilyLeaveRequest({
+          employeeId,
+          requestId: editRequest.id,
+          reason,
+          startDate,
+          endDate,
+        });
+        if (!result.ok) {
+          setError("މި ފޯމު ރިވިއު ކުރެވިފައިވާތީ ބަދަލެއް ނުގެނެވޭނެ.");
+          return;
+        }
+        setSubmitted(true);
+        onSubmitted?.();
+      } catch {
+        setError("ބަދަލުތައް ރައްކާ ނުކުރެވުނު. އަލުން ކޮށްލައްވާ.");
+      } finally {
+        setPending(false);
+      }
+      return;
+    }
     try {
       const result = await submitFamilyLeaveRequest({
         employeeId,
@@ -113,16 +161,24 @@ export function FamilyLeaveRequestDialog({
         overlayClassName="bg-black/40"
       >
         <DialogHeader className={styles.header}>
+          <div className={styles.headRow}>
+          <span className={cn(motifs.glossIcon, styles.headIcon)} data-tone={visual.tone} aria-hidden="true">
+            <HeaderIcon />
+          </span>
           <DialogTitle className={styles.title}>
             {presetLeaveType
               ? `${SALAAM_FAMILY_LEAVE_TYPES.find((type) => type.value === presetLeaveType)?.labelDv} ޗުއްޓީ`
               : "ޗުއްޓީ އެދޭ ފޯމު"}
           </DialogTitle>
+          </div>
         </DialogHeader>
 
         {submitted ? (
           <div className={styles.success} role="status">
-            <p>ފޯމު ފޮނުވުނު.</p>
+            <span className={cn(motifs.glossIcon, styles.successIcon)} data-tone="present" aria-hidden="true">
+              <Check />
+            </span>
+            <p>{editing ? "ބަދަލުތައް ރައްކާކުރެވިއްޖެ." : "ފޯމު ފޮނުވުނު."}</p>
             <button type="button" onClick={() => changeOpen(false)}>
               ނިންމާ
             </button>
@@ -130,7 +186,7 @@ export function FamilyLeaveRequestDialog({
         ) : (
           <form onSubmit={handleSubmit} className={styles.form}>
             {!presetLeaveType ? (
-              <>
+              <div className={styles.field}>
                 <label htmlFor="family-leave-type">ޗުއްޓީގެ ބާވަތް</label>
                 <select
                   id="family-leave-type"
@@ -143,59 +199,72 @@ export function FamilyLeaveRequestDialog({
                     <option key={type.value} value={type.value}>{type.labelDv}</option>
                   ))}
                 </select>
-              </>
+              </div>
             ) : null}
 
-            <label htmlFor="family-leave-start-date">ފެށޭ ތާރީޚު</label>
-            <input
-              id="family-leave-start-date"
-              type="date"
-              value={startDate}
-              onChange={(event) => {
-                const nextStart = event.target.value;
-                setStartDate(nextStart);
-                setEndDate((current) => !current || current < nextStart ? nextStart : current);
-              }}
-              required
-              dir="ltr"
-            />
+            <div className={styles.row}>
+              <div className={styles.field}>
+                <label htmlFor="family-leave-start-date">ފެށޭ ތާރީޚު</label>
+                <input
+                  id="family-leave-start-date"
+                  type="date"
+                  value={startDate}
+                  onChange={(event) => {
+                    const nextStart = event.target.value;
+                    setStartDate(nextStart);
+                    setEndDate((current) => !current || current < nextStart ? nextStart : current);
+                  }}
+                  required
+                  dir="ltr"
+                />
+              </div>
+              <div className={styles.field}>
+                <label htmlFor="family-leave-end-date">ނިމޭ ތާރީޚު</label>
+                <input
+                  id="family-leave-end-date"
+                  type="date"
+                  min={startDate}
+                  value={endDate}
+                  onChange={(event) => setEndDate(event.target.value)}
+                  required
+                  dir="ltr"
+                />
+              </div>
+            </div>
 
-            <label htmlFor="family-leave-end-date">ނިމޭ ތާރީޚު</label>
-            <input
-              id="family-leave-end-date"
-              type="date"
-              min={startDate}
-              value={endDate}
-              onChange={(event) => setEndDate(event.target.value)}
-              required
-              dir="ltr"
-            />
+            <LeaveRangePreview startDate={startDate} endDate={endDate} tone={visual.tone} />
 
-            <label htmlFor="family-leave-time">އެންގި ގަޑި</label>
-            <input
-              id="family-leave-time"
-              type="text"
-              value={clock.time}
-              readOnly
-              dir="ltr"
-            />
+            {!editing ? (
+              <div className={styles.field}>
+                <label htmlFor="family-leave-time">އެންގި ގަޑި</label>
+                <input
+                  id="family-leave-time"
+                  type="text"
+                  value={clock.time}
+                  readOnly
+                  dir="ltr"
+                />
+              </div>
+            ) : null}
 
-            <label htmlFor="family-leave-reason">ސަބަބު</label>
-            <textarea
-              id="family-leave-reason"
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              required
-              minLength={2}
-              maxLength={300}
-              rows={4}
-              dir="rtl"
-            />
+            <div className={styles.field}>
+              <label htmlFor="family-leave-reason">ސަބަބު</label>
+              <textarea
+                id="family-leave-reason"
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                required
+                minLength={2}
+                maxLength={300}
+                rows={4}
+                dir="rtl"
+              />
+            </div>
 
             {error ? <p className={styles.error} role="alert">{error}</p> : null}
             <button className={styles.submit} type="submit" disabled={pending}>
               {pending ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> : null}
-              ފޮނުވާ
+              {editing ? "ސޭވް" : "ސަބްމިޓް"}
             </button>
           </form>
         )}

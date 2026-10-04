@@ -2,29 +2,37 @@
 
 import { AvatarGlow, EmptyState } from "@/components/design-system";
 import { EmployeePortalMobileNav } from "@/components/employee-portal/EmployeePortalMobileNav";
+import { EmployeePortalHeader } from "@/components/employee-portal/EmployeePortalHeader";
 import mobileNavStyles from "@/components/employee-portal/EmployeePortalMobileNav.module.css";
+import motifs from "@/components/employee-portal/portal-motifs.module.css";
 import { SalarySlipDocument } from "@/components/salary-slips/SalarySlipDocument";
 import {
   useEmployeeQuery,
   useGeneratedSlipForEmployeeQuery,
   useSalarySlipsByRecordQuery,
 } from "@/hooks/queries";
+import { employeePhotoUrl } from "@/lib/employees/photo";
 import { formatMvr } from "@/lib/salary-slips/format";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeft,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   Download,
   ExternalLink,
   FileText,
   Loader2,
+  Minus,
+  Plus,
   User,
   Wallet,
+  type LucideIcon,
 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import surface from "../employee-portal-surface.module.css";
+import styles from "./salary-slips.module.css";
 
 type UploadedSlip = {
   periodLabel: string;
@@ -63,6 +71,21 @@ function formatPeriodDisplay(periodLabel: string): string {
   if (!m) return periodLabel;
   const idx = parseInt(m[2], 10) - 1;
   return `${MONTH_NAMES[idx] ?? m[2]} ${m[1]}`;
+}
+
+/** "2026-08" → "Aug 2026" */
+function formatPeriodShort(periodLabel: string): string {
+  const display = formatPeriodDisplay(periodLabel);
+  const [month, year] = display.split(" ");
+  return year ? `${month.slice(0, 3)} ${year}` : display;
+}
+
+const MONTH_TONES = ["annual", "present", "late", "leave"] as const;
+
+/** Rotates the calendar-page colors month by month so the history list varies. */
+function monthTone(periodLabel: string): (typeof MONTH_TONES)[number] {
+  const month = parseInt(periodLabel.slice(5, 7), 10);
+  return MONTH_TONES[(Number.isFinite(month) ? month - 1 : 0) % MONTH_TONES.length];
 }
 
 function asString(value: unknown): string {
@@ -200,57 +223,83 @@ export default function EmployeeSalarySlipsPage() {
     );
   }
 
+  const photoUrl = employee ? employeePhotoUrl(id, employee.photoKey) : undefined;
+  const [currentYear] = currentPeriod.split("-");
+  const latestPeriod = uploadedCurrent.length || (slip && hasAttendance) ? currentPeriod : history[0]?.periodLabel;
+
+  // Group the visible page of history by year for the year dividers.
+  const historyByYear = pageItems.reduce<Array<{ year: string; slips: UploadedSlip[] }>>((groups, item) => {
+    const year = item.periodLabel.slice(0, 4);
+    const last = groups[groups.length - 1];
+    if (last && last.year === year) last.slips.push(item);
+    else groups.push({ year, slips: [item] });
+    return groups;
+  }, []);
+
   return (
-    <div className={cn(surface.page, mobileNavStyles.pageWithMobileNav, "px-4 pt-6")}>
+    <div className={cn(surface.page, mobileNavStyles.pageWithMobileNav, "px-4")}>
       {/* Hide the app's mobile header on this page only */}
       <style>{`@media (max-width: 767px){[data-council-mobile-header]{display:none !important;}}`}</style>
 
       <div className={cn(surface.shell, "max-w-3xl space-y-5")}>
-        <BackButton onClick={() => router.push(`/employees/details/${id}?tab=pay`)} />
+        <EmployeePortalHeader backHref={`/employees/details/${id}?tab=pay`} />
 
         {/* Hero */}
-        <section className={surface.hero}>
-          <div className="px-6 py-7 text-slate-900">
-            <p className={cn(surface.eyebrow, "flex items-center gap-1.5 text-xs font-black uppercase tracking-wide")}>
-              <Wallet className="h-4 w-4" />
-              Salary slips
-            </p>
-            <div className="mt-3 flex items-center gap-4">
-              {employee ? (
-                <AvatarGlow
-                  name={employee.name}
-                  size="lg"
-                  className={cn(surface.avatar, "h-16 w-16 text-2xl")}
-                />
-              ) : (
-                <div className="h-16 w-16 animate-pulse rounded-[22px] bg-slate-100" />
-              )}
-              <div className="min-w-0">
-                <h1 className="truncate text-2xl font-black tracking-tight">
-                  {employee?.name ?? "Loading"}
-                </h1>
-                <p className="truncate text-sm font-bold text-slate-500">
-                  {recordCard ? `Record card #${recordCard}` : ""}
-                </p>
-              </div>
+        <section className={cn(surface.hero, styles.hero)}>
+          <p className={styles.eyebrow}>
+            <Wallet className="h-4 w-4" />
+            Salary slips
+          </p>
+          <div className={styles.heroMain}>
+            {employee ? (
+              <AvatarGlow
+                name={employee.name}
+                size="lg"
+                src={photoUrl}
+                className={cn(surface.avatar, styles.heroAvatar)}
+              />
+            ) : (
+              <div className={cn(styles.heroAvatar, "animate-pulse rounded-full bg-white/70")} />
+            )}
+            <div className="min-w-0">
+              <h1 className={styles.heroName}>{employee?.name ?? "Loading"}</h1>
+              {recordCard ? <span className={styles.recordPill}>Record card #{recordCard}</span> : null}
+            </div>
+          </div>
+          <div className={styles.heroStats}>
+            <div className={cn(surface.softTile, styles.heroStat)}>
+              <span className={cn(motifs.glossIcon, styles.heroStatIcon)} data-tone="annual">
+                <FileText />
+              </span>
+              <strong>{allUploaded.length}</strong>
+              <small>Slips on file</small>
+            </div>
+            <div className={cn(surface.softTile, styles.heroStat)}>
+              <span className={cn(motifs.glossIcon, styles.heroStatIcon)} data-tone="leave">
+                <CalendarDays />
+              </span>
+              <strong>{latestPeriod ? formatPeriodShort(latestPeriod) : "—"}</strong>
+              <small>Latest slip</small>
             </div>
           </div>
         </section>
 
         {/* Pinned: current month slip */}
-        <section className={cn(surface.surface, "p-5")}>
-          <div className="mb-4 flex items-center gap-2">
-            <span className={cn(surface.tag, "px-2.5 py-1 text-[10px] font-black uppercase tracking-wide")}>
-              This month
-            </span>
-            <h2 className="text-lg font-black tracking-tight text-slate-900">
-              {currentMonthTitle}
-            </h2>
+        <section className={cn(surface.surface, styles.panel)}>
+          <div className={styles.monthHead}>
+            <div className={cn(motifs.calendarPage, styles.monthPage)} data-tone="present" aria-hidden="true">
+              <span className={motifs.calendarPageTop}>{currentYear}</span>
+              <strong>{MONTH_NAMES[now.getMonth()]?.slice(0, 3)}</strong>
+            </div>
+            <div className="min-w-0">
+              <span className={styles.thisMonthTag}>This month</span>
+              <h2 className={styles.panelTitle}>{currentMonthTitle}</h2>
+            </div>
           </div>
 
           {/* Uploaded PDF for current month, if any */}
           {uploadedCurrent.length > 0 ? (
-            <div className="mb-3 space-y-2">
+            <div className={styles.uploadedList}>
               {uploadedCurrent.map((u, index) => (
                 <UploadedRow key={`${u.periodLabel}-${u.fileName ?? index}`} slip={u} />
               ))}
@@ -259,55 +308,45 @@ export default function EmployeeSalarySlipsPage() {
 
           {slipPending ? (
             <div className="space-y-3">
-              <div className="h-20 animate-pulse rounded-2xl bg-slate-100" />
-              <div className="h-11 animate-pulse rounded-2xl bg-slate-100" />
+              <div className="h-24 animate-pulse rounded-3xl bg-slate-100" />
+              <div className="h-11 animate-pulse rounded-full bg-slate-100" />
             </div>
           ) : slip && hasAttendance ? (
             <>
-              <div className="mb-4 grid grid-cols-3 gap-2">
-                <SummaryTile
-                  label="Allowances"
-                  value={slip.totalAllowances}
-                  tone="text-emerald-600"
-                />
-                <SummaryTile
-                  label="Deductions"
-                  value={slip.totalDeductions}
-                  tone="text-rose-600"
-                />
-                <SummaryTile
-                  label="Net pay"
-                  value={slip.netIncome}
-                  tone="text-slate-900"
-                  strong
-                />
+              <div className={styles.netTile}>
+                <span className={cn(motifs.glossIcon, styles.netIcon)} data-tone="present">
+                  <Wallet />
+                </span>
+                <div className="min-w-0">
+                  <small>Net pay</small>
+                  <p className={styles.netAmount}>
+                    <span>MVR</span>
+                    {formatMvr(slip.netIncome)}
+                  </p>
+                </div>
+              </div>
+              <div className={styles.summaryTiles}>
+                <SummaryTile icon={Plus} tone="leave" label="Allowances" value={slip.totalAllowances} />
+                <SummaryTile icon={Minus} tone="late" label="Deductions" value={slip.totalDeductions} />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className={styles.actions}>
                 <button
                   type="button"
                   onClick={handleView}
                   disabled={busy !== null}
-                  className={cn(surface.pill, "flex h-11 items-center justify-center gap-1.5 text-sm font-bold text-slate-700 transition active:scale-[0.98] disabled:opacity-60")}
+                  className={styles.viewButton}
                 >
-                  {busy === "view" ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ExternalLink className="h-4 w-4" />
-                  )}
+                  {busy === "view" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
                   View
                 </button>
                 <button
                   type="button"
                   onClick={handleDownload}
                   disabled={busy !== null}
-                  className={cn(surface.blackButton, "flex h-11 items-center justify-center gap-1.5 text-sm font-bold transition active:scale-[0.98] disabled:opacity-60")}
+                  className={styles.downloadButton}
                 >
-                  {busy === "download" ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Download className="h-4 w-4" />
-                  )}
+                  {busy === "download" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                   Download
                 </button>
               </div>
@@ -323,101 +362,75 @@ export default function EmployeeSalarySlipsPage() {
               </div>
             </>
           ) : uploadedCurrent.length === 0 ? (
-            <div className="rounded-2xl bg-slate-50 p-6 text-center">
-              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
-                <FileText className="h-6 w-6" />
-              </div>
-              <p className="text-sm font-black text-slate-700">
-                No slip for {currentMonthTitle}
-              </p>
-              <p className="mt-1 text-xs font-bold text-slate-400">
-                Attendance for this month hasn&apos;t been added yet. The slip
-                will appear here once attendance is recorded.
-              </p>
+            <div className={styles.emptyState}>
+              <span className={cn(motifs.glossIcon, styles.emptyIcon)} data-tone="pending">
+                <FileText />
+              </span>
+              <p>No slip for {currentMonthTitle} yet</p>
+              <small>
+                Attendance for this month hasn&apos;t been added yet. The slip will appear here once
+                attendance is recorded.
+              </small>
             </div>
           ) : null}
         </section>
 
         {/* History */}
-        <section className={cn(surface.surface, "p-5")}>
-          <h2 className="mb-4 text-lg font-black tracking-tight text-slate-900">
-            Slip history
-          </h2>
+        <section className={cn(surface.surface, styles.panel)}>
+          <div className={styles.historyHead}>
+            <h2 className={styles.panelTitle}>Slip history</h2>
+            {history.length ? (
+              <span className={styles.countPill}>
+                {history.length} {history.length === 1 ? "slip" : "slips"}
+              </span>
+            ) : null}
+          </div>
 
           {history.length > 0 ? (
             <>
-              <div className="space-y-2">
-                {pageItems.map((u, index) => (
-                  <div
-                    key={`${u.periodLabel}-${u.fileName ?? index}`}
-                    className={cn(surface.pill, "flex items-center justify-between gap-3 p-3")}
-                  >
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-slate-800">
-                        <FileText className="h-5 w-5" />
-                      </span>
-                      <div className="min-w-0">
-                        <p className="text-sm font-black text-slate-900">
-                          {formatPeriodDisplay(u.periodLabel)}
-                        </p>
-                        {u.fileName ? (
-                          <p className="truncate text-xs font-bold text-slate-400">
-                            {u.fileName}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 gap-2">
-                      {u.viewUrl ? (
-                        <a
-                          href={u.viewUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-700 ring-1 ring-slate-200 transition active:scale-95"
-                          aria-label="View slip"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </a>
-                      ) : null}
-                      {u.downloadUrl ? (
-                        <a
-                          href={u.downloadUrl}
-                          download
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={cn(surface.blackButton, "flex h-9 w-9 items-center justify-center transition active:scale-95")}
-                          aria-label="Download slip"
-                        >
-                          <Download className="h-4 w-4" />
-                        </a>
-                      ) : null}
+              <div className={styles.historyGroups}>
+                {historyByYear.map((group) => (
+                  <div key={group.year}>
+                    <p className={styles.yearLabel}>{group.year}</p>
+                    <div className={styles.historyList}>
+                      {group.slips.map((u, index) => (
+                        <div key={`${u.periodLabel}-${u.fileName ?? index}`} className={styles.historyRow}>
+                          <div className={cn(motifs.calendarPage, styles.historyPage)} data-tone={monthTone(u.periodLabel)}>
+                            <span className={motifs.calendarPageTop}>{u.periodLabel.slice(0, 4)}</span>
+                            <strong>{formatPeriodDisplay(u.periodLabel).slice(0, 3)}</strong>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className={styles.historyTitle}>{formatPeriodDisplay(u.periodLabel)}</p>
+                            {u.fileName ? <p className={styles.historyFile}>{u.fileName}</p> : null}
+                          </div>
+                          <SlipActions slip={u} />
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ))}
               </div>
 
               {pageCount > 1 ? (
-                <div className="mt-4 flex items-center justify-between gap-2">
+                <div className={styles.pager}>
                   <button
                     type="button"
                     aria-label="Previous page"
                     disabled={safePage === 0}
                     onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
-                    className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-600 ring-1 ring-slate-200 transition active:scale-95 disabled:opacity-30"
+                    className={styles.pagerButton}
                   >
                     <ChevronLeft className="h-5 w-5" />
                   </button>
-                  <p className="text-xs font-bold text-slate-400">
+                  <p className={styles.pagerLabel}>
                     Page {safePage + 1} of {pageCount}
                   </p>
                   <button
                     type="button"
                     aria-label="Next page"
                     disabled={safePage >= pageCount - 1}
-                    onClick={() =>
-                      setHistoryPage((p) => Math.min(pageCount - 1, p + 1))
-                    }
-                    className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-600 ring-1 ring-slate-200 transition active:scale-95 disabled:opacity-30"
+                    onClick={() => setHistoryPage((p) => Math.min(pageCount - 1, p + 1))}
+                    className={styles.pagerButton}
                   >
                     <ChevronRight className="h-5 w-5" />
                   </button>
@@ -425,9 +438,7 @@ export default function EmployeeSalarySlipsPage() {
               ) : null}
             </>
           ) : (
-            <p className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-400">
-              No earlier slips available yet.
-            </p>
+            <p className={styles.emptyHistory}>No earlier slips available yet.</p>
           )}
         </section>
       </div>
@@ -436,75 +447,71 @@ export default function EmployeeSalarySlipsPage() {
   );
 }
 
+function SlipActions({ slip }: { slip: UploadedSlip }) {
+  return (
+    <div className={styles.rowActions}>
+      {slip.viewUrl ? (
+        <a
+          href={slip.viewUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={styles.circleButton}
+          aria-label="View slip"
+        >
+          <ExternalLink className="h-4 w-4" />
+        </a>
+      ) : null}
+      {slip.downloadUrl ? (
+        <a
+          href={slip.downloadUrl}
+          download
+          target="_blank"
+          rel="noopener noreferrer"
+          className={cn(styles.circleButton, styles.circleButtonDark)}
+          aria-label="Download slip"
+        >
+          <Download className="h-4 w-4" />
+        </a>
+      ) : null}
+    </div>
+  );
+}
+
 function UploadedRow({ slip }: { slip: UploadedSlip }) {
   return (
-    <div className={cn(surface.pill, "flex items-center justify-between gap-3 p-3")}>
-      <div className="flex min-w-0 items-center gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-slate-800">
-          <FileText className="h-5 w-5" />
-        </span>
-        <div className="min-w-0">
-          <p className="text-sm font-black text-slate-900">Uploaded PDF</p>
-          {slip.fileName ? (
-            <p className="truncate text-xs font-bold text-slate-400">
-              {slip.fileName}
-            </p>
-          ) : null}
-        </div>
+    <div className={styles.historyRow}>
+      <span className={cn(motifs.glossIcon, styles.uploadedIcon)} data-tone="annual">
+        <FileText />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className={styles.historyTitle}>Uploaded PDF</p>
+        {slip.fileName ? <p className={styles.historyFile}>{slip.fileName}</p> : null}
       </div>
-      <div className="flex shrink-0 gap-2">
-        {slip.viewUrl ? (
-          <a
-            href={slip.viewUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex h-9 items-center gap-1.5 rounded-full bg-white px-3 text-sm font-bold text-slate-700 ring-1 ring-slate-200 transition active:scale-95"
-          >
-            <ExternalLink className="h-4 w-4" />
-            View
-          </a>
-        ) : null}
-        {slip.downloadUrl ? (
-          <a
-            href={slip.downloadUrl}
-            download
-            target="_blank"
-            rel="noopener noreferrer"
-            className={cn(surface.blackButton, "flex h-9 items-center gap-1.5 px-3 text-sm font-bold transition active:scale-95")}
-          >
-            <Download className="h-4 w-4" />
-            Save
-          </a>
-        ) : null}
-      </div>
+      <SlipActions slip={slip} />
     </div>
   );
 }
 
 function SummaryTile({
+  icon: Icon,
+  tone,
   label,
   value,
-  tone,
-  strong,
 }: {
+  icon: LucideIcon;
+  tone: "leave" | "late";
   label: string;
   value: number;
-  tone: string;
-  strong?: boolean;
 }) {
   return (
-    <div
-      className={cn(
-        "rounded-[20px] border border-white p-3 text-center",
-        strong ? "bg-[#e8f6ec]" : label === "Deductions" ? "bg-[#fff0ef]" : "bg-[#f1efff]",
-      )}
-    >
-      <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
-        {label}
-      </p>
-      <p className={cn("mt-1 text-sm font-black tabular-nums", tone)}>
-        {formatMvr(value)}
-      </p>
+    <div className={styles.summaryTile} data-tone={tone}>
+      <span className={cn(motifs.glossIcon, styles.summaryIcon)} data-tone={tone}>
+        <Icon />
+      </span>
+      <div className="min-w-0">
+        <small>{label}</small>
+        <strong>{formatMvr(value)}</strong>
+      </div>
     </div>
   );
 }

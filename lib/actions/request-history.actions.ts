@@ -23,6 +23,11 @@ export type RequestHistoryEntry = {
   totalDays?: number;
   reason?: string;
   chitAvailable?: boolean;
+  /** True while the employee may still change the request (pending and theirs). */
+  editable?: boolean;
+  startTime?: string;
+  endTime?: string;
+  takeoverEmployeeId?: string;
 };
 
 function statusOf(value: unknown): RequestHistoryStatus {
@@ -72,6 +77,7 @@ export async function listEmployeeRequestHistory(employeeId: string): Promise<Re
       endDate: request.leaveEndDate || request.requestDate,
       totalDays: request.durationDays,
       reason: request.reason,
+      editable: status === "Pending",
     };
   });
   const annual: RequestHistoryEntry[] = [...annualDocs.values()].map((doc) => {
@@ -89,6 +95,9 @@ export async function listEmployeeRequestHistory(employeeId: string): Promise<Re
       totalDays: request.totalDays,
       reason: request.reason,
       chitAvailable: status === "Approved" && Boolean(request.approver && request.signatureReady),
+      // Legacy requests matched only by name can't be edited from the portal.
+      editable: status === "Pending" && request.employeeId === employeeId,
+      takeoverEmployeeId: request.takeover?.employeeId,
     };
   });
   const overtime: RequestHistoryEntry[] = overtimeSnap.docs.flatMap((doc) => {
@@ -105,6 +114,10 @@ export async function listEmployeeRequestHistory(employeeId: string): Promise<Re
       startDate: request.workDate,
       endDate: request.workDate,
       reason: request.details,
+      // OT entered by an admin for several people stays read-only for each of them.
+      editable: status === "Pending" && request.employees.length === 1,
+      startTime: request.startTime,
+      endTime: request.endTime,
     }];
   });
   return [...family, ...annual, ...overtime]

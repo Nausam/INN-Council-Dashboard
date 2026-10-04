@@ -2,6 +2,10 @@
 
 import { EmployeeEditModal } from "@/components/Modals/EmployeeEditModal";
 import {
+  EmployeePortalHeader,
+  EmployeePortalHeaderButton,
+} from "@/components/employee-portal/EmployeePortalHeader";
+import {
   EmptyState,
   PageShell,
 } from "@/components/design-system";
@@ -16,10 +20,12 @@ import type {
 } from "@/lib/firebase/types";
 import {
   buildAttendanceSummary,
+  buildLastWeekAttendance,
+  WORK_WEEK_DAYS,
   currentLimitedLeaveRemaining,
   formatDateLabel,
   formatMoney,
-  isAdditiveLeave,
+  leaveLabel,
   monthKey,
   toEmployeeDetailsView,
   type AttendanceSummary,
@@ -30,6 +36,8 @@ import {
 import { formatMvr } from "@/lib/salary-slips/format";
 import { cn } from "@/lib/utils";
 import { LAST_EMPLOYEE_PROFILE_KEY, isStandaloneApp } from "@/lib/employee-profile-pwa";
+import { employeePhotoUrl } from "@/lib/employees/photo";
+import { AvatarPhoto } from "@/components/design-system/avatar-photo";
 import {
   AlarmClock,
   ArrowLeft,
@@ -37,29 +45,35 @@ import {
   Banknote,
   CircleSlash,
   BriefcaseBusiness,
-  Building2,
   CalendarCheck,
   CalendarDays,
   CheckCircle2,
   Clock3,
+  CreditCard,
   Edit3,
   FileText,
+  Home,
   IdCard,
+  Landmark,
   LayoutGrid,
   MapPin,
   MoonStar,
+  Phone,
   ShieldCheck,
+  Sun,
   TimerOff,
   User,
+  UtensilsCrossed,
   WalletCards,
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { EmployeeRequestsPageView } from "../../[id]/requests/EmployeeRequestsPageView";
 import styles from "./employee-details.module.css";
+import motifs from "@/components/employee-portal/portal-motifs.module.css";
+import { leaveVisual, type GlossTone } from "@/lib/employees/leave-visuals";
 
 type TabId = "overview" | "attendance" | "leave" | "pay" | "requests";
 
@@ -100,12 +114,17 @@ export function EmployeeDetailsDashboardView({
   leaves = [],
   councilAttendance = [],
   mosqueAttendance = [],
+  recentCouncilAttendance = [],
+  recentMosqueAttendance = [],
   initialTab = "overview",
 }: {
   employee: EmployeeDoc | null;
   leaves?: EmployeeLeaveCalendarEntry[];
   councilAttendance?: AttendanceDoc[];
   mosqueAttendance?: MosqueAttendanceDoc[];
+  /** This month and last, so last week is complete early in a month. */
+  recentCouncilAttendance?: AttendanceDoc[];
+  recentMosqueAttendance?: MosqueAttendanceDoc[];
   initialTab?: TabId;
 }) {
   const params = useParams();
@@ -160,6 +179,28 @@ export function EmployeeDetailsDashboardView({
     });
   }, [councilAttendance, id, leaves, mosqueAttendance]);
 
+  const lastWeekDays = useMemo(
+    () => id
+      ? buildLastWeekAttendance({
+        employeeId: id,
+        councilAttendance: recentCouncilAttendance,
+        mosqueAttendance: recentMosqueAttendance,
+        leaves,
+      })
+      : [],
+    [id, leaves, recentCouncilAttendance, recentMosqueAttendance],
+  );
+
+  // Leave days still ahead, earliest first, one entry per date.
+  const upcomingLeave = useMemo(() => {
+    const todayIso = localIsoDate(new Date());
+    const byDate = new Map<string, EmployeeLeaveCalendarEntry>();
+    for (const entry of leaves) {
+      if (entry.date > todayIso && !byDate.has(entry.date)) byDate.set(entry.date, entry);
+    }
+    return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+  }, [leaves]);
+
   const loading = isPending || leavesPending || councilPending || mosquePending;
 
   if (isPending && !employee) {
@@ -206,40 +247,16 @@ export function EmployeeDetailsDashboardView({
     <div className={styles.page}>
       <style>{`@media (max-width: 767px){[data-council-mobile-header]{display:none !important;}}`}</style>
 
-      <header className={cn(styles.topbar, styles.wrap)}>
-        <div className={styles.breadcrumb}>
-          <Image
-            src="/council-logo.png"
-            alt="Raa Innamaadhoo Council"
-            width={90}
-            height={51}
-            className={styles.headerLogo}
-            priority
-            unoptimized
-          />
-        </div>
-          <div className={styles.topActions}>
-            {isAdmin ? (
-              <button
-                type="button"
-                onClick={() => setEditOpen(true)}
-                className={styles.outlineAction}
-                aria-label="Edit employee"
-              >
-                <Edit3 className="h-4 w-4" />
-                <span>Edit profile</span>
-              </button>
-            ) : null}
-            <Link
-              href={`/employees/details/${id}/leaves`}
-              className={styles.primaryAction}
-              aria-label="View leave calendar"
-            >
-              <CalendarDays className="h-4 w-4" />
-              <span>Leave calendar</span>
-            </Link>
-          </div>
-      </header>
+      <EmployeePortalHeader
+        className={styles.wrap}
+        actions={
+          isAdmin ? (
+            <EmployeePortalHeaderButton label="Edit profile" onClick={() => setEditOpen(true)}>
+              <Edit3 />
+            </EmployeePortalHeaderButton>
+          ) : null
+        }
+      />
 
       <div className={styles.wrap}>
         {tab === "overview" ? (
@@ -247,6 +264,8 @@ export function EmployeeDetailsDashboardView({
             employee={employee}
             summary={attendanceSummary}
             annualRemaining={annualRemaining}
+            upcomingLeave={upcomingLeave}
+            photoUrl={employeePhotoUrl(id, data?.photoKey)}
           />
         ) : null}
 
@@ -276,8 +295,9 @@ export function EmployeeDetailsDashboardView({
           {tab === "overview" ? (
             <OverviewSection
               employee={employee}
+              employeeId={id}
               summary={attendanceSummary}
-              loading={loading}
+              upcomingLeave={upcomingLeave}
             />
           ) : null}
           {tab === "attendance" ? (
@@ -285,6 +305,7 @@ export function EmployeeDetailsDashboardView({
               employee={employee}
               summary={attendanceSummary}
               mosqueAttendance={mosqueAttendance}
+              lastWeekDays={lastWeekDays}
               loading={loading}
             />
           ) : null}
@@ -388,19 +409,66 @@ function DetailsSkeleton() {
 
 /* ---------------- Profile header ---------------- */
 
+function shortClock(value: string | null): string {
+  return (value ?? "").replace(/^0/, "");
+}
+
+/** What today looks like so far, for the pill in the hero. */
+function todayStatus(days: WeekDayAttendance[], todayIso: string): { tone: GlossTone; icon: LucideIcon; text: string } {
+  const today = days.find((day) => day.date === todayIso);
+  if (!today) return { tone: "neutral", icon: Sun, text: "Weekend" };
+  if (today.status === "leave") return { tone: "leave", icon: CalendarDays, text: today.note };
+  if (today.status === "late") {
+    return { tone: "late", icon: AlarmClock, text: `In ${shortClock(today.signInTime)} · +${today.lateMinutes}m` };
+  }
+  if (today.status === "present") {
+    return { tone: "present", icon: CheckCircle2, text: `In ${shortClock(today.signInTime)}` };
+  }
+  return { tone: "pending", icon: Clock3, text: "No sign-in yet" };
+}
+
+/** "2 yrs 6 mos" since the joining date, or null when it can't be read. */
+function tenureLabel(joinedDate: string, todayIso: string): string | null {
+  const joined = /^(\d{4})-(\d{2})-(\d{2})/.exec(joinedDate);
+  if (!joined) return null;
+  const [year, month, day] = todayIso.split("-").map(Number);
+  const months =
+    (year - Number(joined[1])) * 12 + (month - Number(joined[2])) - (day < Number(joined[3]) ? 1 : 0);
+  if (months < 0) return null;
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  const parts = [
+    years ? `${years} ${years === 1 ? "yr" : "yrs"}` : null,
+    rest ? `${rest} ${rest === 1 ? "mo" : "mos"}` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" ") : "Joined this month";
+}
+
 function ProfileHeader({
   employee,
   summary,
   annualRemaining,
+  upcomingLeave,
+  photoUrl,
 }: {
   employee: EmployeeDetailsView;
   summary: AttendanceSummary;
   annualRemaining: number;
+  upcomingLeave: EmployeeLeaveCalendarEntry[];
+  photoUrl?: string;
 }) {
+  const todayIso = localIsoDate(new Date());
+  const today = todayStatus(summary.weekDays, todayIso);
+  const TodayIcon = today.icon;
+  const lateDays = summary.weekDays.filter((day) => day.status === "late").length;
+  const annualAllowance =
+    employee.leaveBalances.find((item) => item.key === "annualLeave")?.allowance ?? null;
+  const nextLeave = upcomingLeave[0];
+
   return (
     <section className={styles.profileHeader} aria-label="Employee profile">
       <div className={styles.hero}>
-        <div className={styles.heroMain}>
+        <div className={cn(styles.heroMain, photoUrl && styles.heroMainCentered)}>
           <div className={styles.heroText}>
             <p className={cn(styles.eyebrow, styles.heroKicker)}>Employee profile</p>
             <h1 className={styles.name}>{employee.name}</h1>
@@ -408,16 +476,22 @@ function ProfileHeader({
               <BriefcaseBusiness className="h-4 w-4 shrink-0" />
               {employee.designation || "No designation"}
             </p>
-            {employee.section ? (
-              <div className={styles.heroMeta}>
-                <span className={styles.heroBadge}>
-                  <Building2 /> {employee.section}
+            <div className={styles.heroMeta}>
+              <span className={styles.todayPill}>
+                <span className={cn(motifs.glossIcon, styles.todayPillIcon)} data-tone={today.tone}>
+                  <TodayIcon />
                 </span>
-              </div>
-            ) : null}
+                <small>Today</small>
+                {today.text}
+              </span>
+            </div>
           </div>
-          <div className={styles.avatar} aria-hidden="true">
+          <div
+            className={cn(styles.avatar, photoUrl && styles.avatarPhoto)}
+            aria-hidden={photoUrl ? undefined : true}
+          >
             {employee.name.trim().charAt(0).toUpperCase() || "?"}
+            {photoUrl ? <AvatarPhoto src={photoUrl} alt={employee.name} /> : null}
           </div>
         </div>
       </div>
@@ -425,23 +499,45 @@ function ProfileHeader({
       <div className={styles.stats}>
         <MiniStat
           icon={CheckCircle2}
-          value={`${summary.presentDays}/7`}
+          tone="present"
+          value={String(summary.presentDays)}
+          unit={`/ ${WORK_WEEK_DAYS}`}
           label="Present this week"
+          note={
+            <span className={styles.statDots} aria-hidden="true">
+              {summary.weekDays.map((day) => (
+                <span key={day.date} data-status={day.date > todayIso ? "upcoming" : day.status} />
+              ))}
+            </span>
+          }
         />
         <MiniStat
           icon={TimerOff}
+          tone="late"
           value={String(summary.lateMinutes)}
-          label="Late minutes"
+          unit="min"
+          label="Late this week"
+          note={<span className={styles.statNote}>{lateDays} {lateDays === 1 ? "late day" : "late days"}</span>}
         />
         <MiniStat
           icon={CalendarDays}
+          tone="leave"
           value={String(summary.leaveDaysThisMonth)}
-          label="Leaves this month"
+          unit={summary.leaveDaysThisMonth === 1 ? "day" : "days"}
+          label="Leave this month"
+          note={
+            <span className={styles.statNote}>
+              {nextLeave ? `Next ${formatDateLabel(nextLeave.date).replace(/,? \d{4}$/, "")}` : "None planned"}
+            </span>
+          }
         />
         <MiniStat
           icon={WalletCards}
+          tone="annual"
           value={String(annualRemaining)}
+          unit={annualAllowance !== null ? `/ ${annualAllowance}` : "days"}
           label="Annual days left"
+          bar={annualAllowance ? Math.min(1, Math.max(0, annualRemaining / annualAllowance)) : undefined}
         />
       </div>
     </section>
@@ -450,21 +546,41 @@ function ProfileHeader({
 
 function MiniStat({
   icon: Icon,
+  tone,
   value,
+  unit,
   label,
+  note,
+  bar,
 }: {
   icon: LucideIcon;
+  tone: GlossTone;
   value: string;
+  unit?: string;
   label: string;
+  note?: React.ReactNode;
+  /** 0–1 share for a small progress bar under the value. */
+  bar?: number;
 }) {
   return (
-    <div className={styles.stat}>
-      <div className={styles.statIcon}>
-        <Icon className="h-5 w-5" />
+    <div className={styles.stat} data-tone={tone}>
+      <div className={styles.statTop}>
+        <div className={cn(motifs.glossIcon, styles.statIcon)} data-tone={tone}>
+          <Icon />
+        </div>
+        {note}
       </div>
-      <div>
+      <div className={styles.statBody}>
         <p className={styles.statLabel}>{label}</p>
-        <p className={styles.statValue}>{value}</p>
+        <p className={styles.statValue}>
+          {value}
+          {unit ? <small>{unit}</small> : null}
+        </p>
+        {bar !== undefined ? (
+          <div className={styles.statBar}>
+            <span style={{ width: `${bar * 100}%` }} />
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -474,92 +590,55 @@ function MiniStat({
 
 function OverviewSection({
   employee,
+  employeeId,
   summary,
-  loading,
+  upcomingLeave,
 }: {
   employee: EmployeeDetailsView;
+  employeeId: string;
   summary: AttendanceSummary;
-  loading: boolean;
+  upcomingLeave: EmployeeLeaveCalendarEntry[];
 }) {
+  const todayIso = localIsoDate(new Date());
+
   return (
     <div className={styles.overviewGrid}>
       <Panel icon={IdCard} title="Identity">
         <div className={styles.identityList}>
           <IdentityRow
             icon={IdCard}
+            tone="annual"
             label="Record card"
             value={employee.recordCardNumber}
           />
           <IdentityRow
             icon={ShieldCheck}
+            tone="present"
             label="Device ID"
             value={employee.deviceUserId}
           />
           <IdentityRow
             icon={CalendarCheck}
+            tone="late"
             label="Joined"
-            value={
-              employee.joinedDate ? formatDateLabel(employee.joinedDate) : ""
-            }
+            value={employee.joinedDate ? formatDateLabel(employee.joinedDate) : ""}
+            hint={employee.joinedDate ? tenureLabel(employee.joinedDate, todayIso) : null}
           />
           <IdentityRow
             icon={MapPin}
+            tone="leave"
             label="Address"
             value={employee.address}
           />
         </div>
       </Panel>
 
-      <Panel icon={Clock3} title="This week at a glance">
-        {loading ? (
-          <div className={styles.weekDays}>
-            {Array.from({ length: 7 }).map((_, i) => (
-              <div key={i} className={styles.weekDay}>
-                <span className="h-2.5 w-3 animate-pulse rounded bg-slate-100" />
-                <div className={cn(styles.weekCell, "animate-pulse")} />
-              </div>
-            ))}
-          </div>
-        ) : (
-        <div className={styles.weekDays}>
-          {summary.weekDays.map((day) => {
-            const dayNum = day.label.split(" ")[1] ?? day.label;
-            return (
-              <div
-                key={day.date}
-                className={styles.weekDay}
-              >
-                <span className={styles.weekDayName}>
-                  {day.day.charAt(0)}
-                </span>
-                <div
-                  className={styles.weekCell}
-                  data-status={day.status}
-                  title={`${day.day} ${day.label}: ${day.status}`}
-                >
-                  {dayNum}
-                  <span className={styles.weekDot} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        )}
+      <Panel icon={Clock3} title="This week">
+        <div className={styles.overviewWeek}>
+          <WeekStrip days={summary.weekDays} todayIso={todayIso} />
 
-        <div className={styles.legend}>
-          {(
-            [
-              ["present", "Present"],
-              ["late", "Late"],
-              ["leave", "Leave"],
-              ["absent", "Absent"],
-            ] as const
-          ).map(([status, label]) => (
-            <span key={status} className={styles.legendItem}>
-              <span className={styles.legendDot} data-status={status} />
-              <span>{label}</span>
-            </span>
-          ))}
+          <UpcomingLeave upcomingLeave={upcomingLeave} />
+          <LeaveCalendarLink employeeId={employeeId} />
         </div>
       </Panel>
     </div>
@@ -572,11 +651,13 @@ function AttendanceSection({
   employee,
   summary,
   mosqueAttendance,
+  lastWeekDays,
   loading,
 }: {
   employee: EmployeeDetailsView;
   summary: AttendanceSummary;
   mosqueAttendance: MosqueAttendanceDoc[];
+  lastWeekDays: WeekDayAttendance[];
   loading: boolean;
 }) {
   const balanceByKey = useMemo(
@@ -586,10 +667,10 @@ function AttendanceSection({
 
   return (
     <div className={styles.stack}>
-      <Panel icon={Clock3} title="This week's attendance">
+      <Panel icon={Clock3} title="This week">
         {loading ? (
           <div className="space-y-2">
-            {Array.from({ length: 7 }).map((_, i) => (
+            {Array.from({ length: WORK_WEEK_DAYS }).map((_, i) => (
               <div
                 key={i}
                 className="h-16 animate-pulse rounded-2xl bg-slate-100"
@@ -597,62 +678,15 @@ function AttendanceSection({
             ))}
           </div>
         ) : (
-          <div className={styles.attendanceList}>
-            {summary.weekDays.map((day) => {
-              const StatusIcon = statusMeta[day.status].icon;
-              const leaveBalance = day.leaveType
-                ? balanceByKey.get(day.leaveType)
-                : undefined;
-              return (
-                <div
-                  key={day.date}
-                  className={styles.attendanceItem}
-                >
-                  <div
-                    className={styles.attendanceDate}
-                    data-status={day.status}
-                  >
-                    <small>
-                      {day.day}
-                    </small>
-                    <strong>
-                      {day.label.split(" ")[1] ?? day.label}
-                    </strong>
-                  </div>
-
-                  <div className={styles.attendanceBody}>
-                    <div className={styles.attendanceNote}>
-                      <StatusIcon className="h-4 w-4 shrink-0" />
-                      <p className="truncate">
-                        {day.note}
-                      </p>
-                    </div>
-                    <p className={styles.attendanceSource}>
-                      {leaveBalance
-                        ? leaveBalance.allowance !== null
-                          ? `${leaveBalance.used} of ${leaveBalance.allowance} used this year`
-                          : `${leaveBalance.used} taken this year`
-                        : day.source}
-                    </p>
-                  </div>
-
-                  {leaveBalance ? (
-                    <span className={styles.attendanceBadge}>
-                      {leaveBalance.allowance !== null
-                        ? `${leaveBalance.used}/${leaveBalance.allowance}`
-                        : `${leaveBalance.used}`}
-                    </span>
-                  ) : day.lateMinutes > 0 ? (
-                    <span className={styles.attendanceBadge}>
-                      +{day.lateMinutes}m
-                    </span>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
+          <AttendanceWeek days={summary.weekDays} balanceByKey={balanceByKey} />
         )}
       </Panel>
+
+      {!loading && lastWeekDays.length > 0 ? (
+        <Panel icon={CalendarDays} title="Last week">
+          <AttendanceWeek days={lastWeekDays} balanceByKey={balanceByKey} />
+        </Panel>
+      ) : null}
 
       {mosqueAttendance.length > 0 ? (
         <Panel icon={MoonStar} title="Mosque prayer sign-ins">
@@ -686,6 +720,218 @@ function AttendanceSection({
   );
 }
 
+// The sign-in bar covers the usual arrival window, 6 to 10 AM.
+const RIBBON_START = 6 * 60;
+const RIBBON_END = 10 * 60;
+
+function minutesFromClock(value: string | null): number | null {
+  const match = value ? /(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(value) : null;
+  if (!match) return null;
+  const hours = (Number(match[1]) % 12) + (match[3].toUpperCase() === "PM" ? 12 : 0);
+  return hours * 60 + Number(match[2]);
+}
+
+function ribbonPercent(minutes: number): number {
+  const ratio = (minutes - RIBBON_START) / (RIBBON_END - RIBBON_START);
+  return Math.min(100, Math.max(0, ratio * 100));
+}
+
+function localIsoDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+/** Whole days from one YYYY-MM-DD date to another. */
+function daysBetween(fromIso: string, toIso: string): number {
+  const day = 24 * 60 * 60 * 1000;
+  return Math.round((Date.parse(`${toIso}T00:00:00Z`) - Date.parse(`${fromIso}T00:00:00Z`)) / day);
+}
+
+/** Short line under each day in the week strip. */
+function weekStripCaption(day: WeekDayAttendance, upcoming: boolean): string {
+  if (upcoming) return day.label.split(" ")[0] ?? "";
+  if (day.status === "leave") return "Leave";
+  const signIn = minutesFromClock(day.signInTime);
+  if (signIn === null) return "—";
+  return `${Math.floor(signIn / 60) % 12 || 12}:${String(signIn % 60).padStart(2, "0")}`;
+}
+
+function WeekStrip({ days, todayIso }: { days: WeekDayAttendance[]; todayIso: string }) {
+  return (
+    <div className={styles.weekStrip} aria-hidden="true">
+      {days.map((day) => {
+        const upcoming = day.date > todayIso;
+        const StatusIcon = statusMeta[day.status].icon;
+        return (
+          <div
+            key={day.date}
+            className={styles.weekStripDay}
+            data-status={upcoming ? "upcoming" : day.status}
+            data-today={day.date === todayIso ? "" : undefined}
+          >
+            <span className={styles.weekStripTile}>
+              {upcoming ? day.label.split(" ")[1] ?? day.label : <StatusIcon />}
+            </span>
+            <small>{day.day.charAt(0)}</small>
+            <span className={styles.weekStripMeta}>{weekStripCaption(day, upcoming)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** A tear-off calendar page: colored band with binder holes, big number, caption. */
+function CalendarPage({ top, number, caption, title }: { top: string; number: string; caption: string; title?: string }) {
+  return (
+    <div className={motifs.calendarPage} title={title}>
+      <span className={motifs.calendarPageTop}>{top}</span>
+      <strong>{number}</strong>
+      <small>{caption}</small>
+    </div>
+  );
+}
+
+function AttendanceWeek({
+  days,
+  balanceByKey,
+}: {
+  days: WeekDayAttendance[];
+  balanceByKey: Map<string, LeaveBalanceView>;
+}) {
+  const todayIso = localIsoDate(new Date());
+  // Days that haven't started can't have a record yet, so they're listed
+  // separately instead of showing as "No record". Cards run Sunday to
+  // Thursday, the same order as the strip above them.
+  const started = days.filter((day) => day.date <= todayIso);
+  const upcoming = days.filter((day) => day.date > todayIso);
+
+  return (
+    <div className={styles.attendanceWeek}>
+      <WeekStrip days={days} todayIso={todayIso} />
+
+      {started.length > 0 ? (
+        <ol className={styles.dayList}>
+          {started.map((day) => (
+            <AttendanceDay
+              key={day.date}
+              day={day}
+              isToday={day.date === todayIso}
+              leaveBalance={day.leaveType ? balanceByKey.get(day.leaveType) : undefined}
+            />
+          ))}
+        </ol>
+      ) : null}
+
+      {upcoming.length > 0 ? (
+        <div className={styles.upcoming}>
+          <div className={styles.upcomingHead}>
+            <p className={styles.upcomingLabel}>Coming up</p>
+            <span className={styles.upcomingCount}>
+              {upcoming.length} {upcoming.length === 1 ? "workday" : "workdays"} left
+            </span>
+          </div>
+          <div
+            className={styles.upcomingDays}
+            style={{ "--upcoming-count": upcoming.length } as React.CSSProperties}
+          >
+            {upcoming.map((day) => {
+              const away = daysBetween(todayIso, day.date);
+              return (
+                <CalendarPage
+                  key={day.date}
+                  top={day.day}
+                  number={day.label.split(" ")[1] ?? day.label}
+                  caption={away === 1 ? "Tomorrow" : `In ${away} days`}
+                />
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function AttendanceDay({
+  day,
+  isToday,
+  leaveBalance,
+}: {
+  day: WeekDayAttendance;
+  isToday: boolean;
+  leaveBalance?: LeaveBalanceView;
+}) {
+  const StatusIcon = statusMeta[day.status].icon;
+  // Mosque sign-ins are spread across the day, so only council sign-ins get the bar.
+  const signIn = day.source === "Council" ? minutesFromClock(day.signInTime) : null;
+  const expected = signIn !== null && day.lateMinutes > 0 ? signIn - day.lateMinutes : null;
+  const onTimeEnd = expected ?? signIn;
+
+  return (
+    <li className={styles.dayCard} data-status={day.status}>
+      <div className={styles.dayHead}>
+        <div className={styles.attendanceDate} data-status={day.status}>
+          <small>{day.day}</small>
+          <strong>{day.label.split(" ")[1] ?? day.label}</strong>
+        </div>
+        <div className={styles.attendanceBody}>
+          <div className={styles.attendanceNote}>
+            <StatusIcon className="h-4 w-4 shrink-0" />
+            <p className="truncate">{day.note}</p>
+            {isToday ? <span className={styles.todayTag}>Today</span> : null}
+          </div>
+          <p className={styles.attendanceSource}>
+            {leaveBalance
+              ? leaveBalance.allowance !== null
+                ? `${leaveBalance.used} of ${leaveBalance.allowance} used this year`
+                : `${leaveBalance.used} taken this year`
+              : day.source === "None"
+                ? "No sign-in recorded"
+                : day.source}
+          </p>
+        </div>
+        {leaveBalance ? (
+          <span className={styles.attendanceBadge}>
+            {leaveBalance.allowance !== null
+              ? `${leaveBalance.used}/${leaveBalance.allowance}`
+              : `${leaveBalance.used}`}
+          </span>
+        ) : day.lateMinutes > 0 ? (
+          <span className={styles.attendanceBadge} data-tone="late">
+            +{day.lateMinutes}m
+          </span>
+        ) : null}
+      </div>
+
+      {signIn !== null && onTimeEnd !== null ? (
+        <div className={styles.ribbon} role="img" aria-label={`Signed in at ${day.signInTime}`}>
+          <div className={styles.ribbonTrack}>
+            <span className={styles.ribbonFill} style={{ width: `${ribbonPercent(onTimeEnd)}%` }} />
+            {expected !== null ? (
+              <>
+                <span
+                  className={styles.ribbonLate}
+                  style={{
+                    left: `${ribbonPercent(expected)}%`,
+                    width: `${ribbonPercent(signIn) - ribbonPercent(expected)}%`,
+                  }}
+                />
+                <span className={styles.ribbonTick} style={{ left: `${ribbonPercent(expected)}%` }} />
+              </>
+            ) : null}
+            <span className={styles.ribbonMarker} style={{ left: `${ribbonPercent(signIn)}%` }} />
+          </div>
+          <div className={styles.ribbonScale}>
+            <span>6 AM</span>
+            <span>8 AM</span>
+            <span>10 AM</span>
+          </div>
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
 /* ---------------- Leave ---------------- */
 
 function LeaveSection({
@@ -695,42 +941,138 @@ function LeaveSection({
   employee: EmployeeDetailsView;
   employeeId: string;
 }) {
+  const withAllowance = employee.leaveBalances.filter((leave) => leave.allowance !== null);
+  const recorded = employee.leaveBalances.filter((leave) => leave.allowance === null);
+
   return (
     <div className={styles.stack}>
-      <Link href={`/employees/details/${employeeId}/leaves`} className={styles.featureLink}>
-        <span className="flex items-center gap-3">
-          <CalendarDays className="h-5 w-5" />
-          <span>
-            <strong>Leave calendar</strong>
-            <small>View all recorded leave days</small>
-          </span>
-        </span>
-        <ArrowRight className="h-5 w-5 shrink-0" />
-      </Link>
+      <LeaveCalendarLink employeeId={employeeId} />
 
       <Panel icon={WalletCards} title="Leave balances">
         <div className={styles.leaveGrid}>
-          {employee.leaveBalances.map((leave, index) => (
-            <LeaveBloom key={leave.key} leave={leave} index={index} />
+          {withAllowance.map((leave) => (
+            <LeaveBalanceCard key={leave.key} leave={leave} />
           ))}
         </div>
+
+        {recorded.length ? (
+          <>
+            <p className={styles.recordedTitle}>Recorded leave</p>
+            <div className={styles.recordedGrid}>
+              {recorded.map((leave) => {
+                const meta = leaveVisual(leave.key);
+                const Icon = meta.icon;
+                const taken = leave.used > 0;
+                return (
+                  <div key={leave.key} className={styles.recordedRow} data-empty={taken ? undefined : ""}>
+                    <span
+                      className={cn(motifs.glossIcon, styles.recordedIcon)}
+                      data-tone={taken ? meta.tone : "neutral"}
+                    >
+                      <Icon />
+                    </span>
+                    <span className={styles.recordedName}>{leave.label.replace(/ Leave$/, "")}</span>
+                    <span className={styles.recordedCount}>
+                      <strong>{leave.used}</strong>
+                      <small>{leave.used === 1 ? "day" : "days"}</small>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
       </Panel>
+    </div>
+  );
+}
+
+function LeaveCalendarLink({ employeeId }: { employeeId: string }) {
+  return (
+    <Link href={`/employees/details/${employeeId}/leaves`} className={styles.featureLink}>
+      <span className="flex items-center gap-3">
+        <span className={cn(motifs.glossIcon, styles.featureIcon)} data-tone="annual">
+          <CalendarDays />
+        </span>
+        <span>
+          <strong>Leave calendar</strong>
+          <small>View all recorded leave days</small>
+        </span>
+      </span>
+      <span className={styles.featureArrow}>
+        <ArrowRight className="h-4 w-4" />
+      </span>
+    </Link>
+  );
+}
+
+/** Booked leave days as tear-off calendar pages; nothing when none are booked. */
+function UpcomingLeave({ upcomingLeave }: { upcomingLeave: EmployeeLeaveCalendarEntry[] }) {
+  const nextLeave = upcomingLeave.slice(0, 4);
+  if (!nextLeave.length) return null;
+  return (
+    <div className={styles.upcoming}>
+      <div className={styles.upcomingHead}>
+        <p className={styles.upcomingLabel}>Upcoming leave</p>
+        <span className={styles.upcomingCount}>
+          {upcomingLeave.length} {upcomingLeave.length === 1 ? "day" : "days"} booked
+        </span>
+      </div>
+      <div
+        className={styles.upcomingDays}
+        style={{ "--upcoming-count": nextLeave.length } as React.CSSProperties}
+      >
+        {nextLeave.map((entry) => {
+          const day = entry.date.split("-")[2] ?? "";
+          const monthName = new Date(`${entry.date}T00:00:00`).toLocaleDateString("en-US", { month: "short" });
+          const type = leaveLabel(entry.leaveType);
+          return (
+            <CalendarPage
+              key={entry.date}
+              top={monthName}
+              number={String(Number(day))}
+              caption={type.split(" ")[0] || "Leave"}
+              title={`${type} · ${formatDateLabel(entry.date)}`}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 }
 
 /* ---------------- Pay ---------------- */
 
-const payDotColors = [
-  "bg-teal-500",
-  "bg-orange-500",
-  "bg-blue-500",
-  "bg-violet-500",
-  "bg-emerald-500",
-  "bg-rose-500",
-  "bg-cyan-500",
-  "bg-amber-500",
-];
+/** Icon, color and a short note for each pay field. */
+const PAY_VISUALS: Record<string, { icon: LucideIcon; tone: GlossTone; note?: string }> = {
+  basicSalary: { icon: Banknote, tone: "present", note: "Monthly" },
+  retirementPension: { icon: Landmark, tone: "late", note: "7% of basic" },
+  jobAllowance: { icon: BriefcaseBusiness, tone: "leave", note: "Monthly" },
+  attendanceBenefit: { icon: CalendarCheck, tone: "annual", note: "Per working day" },
+  temporaryZvAllowance: { icon: CalendarDays, tone: "leave", note: "Per working day" },
+  ramazanAllowance: { icon: MoonStar, tone: "annual", note: "Monthly" },
+  livingAllowance: { icon: Home, tone: "present", note: "Monthly" },
+  foodAllowance: { icon: UtensilsCrossed, tone: "late", note: "Monthly" },
+  phoneAllowance: { icon: Phone, tone: "leave", note: "Monthly" },
+};
+
+function payVisual(key: string): { icon: LucideIcon; tone: GlossTone; note?: string } {
+  return PAY_VISUALS[key] ?? { icon: Banknote, tone: "present" };
+}
+
+/** Whole months from one date to another (negative when `to` is earlier). */
+function monthsBetween(from: Date, to: Date): number {
+  return (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
+}
+
+function durationLabel(months: number): string {
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  return [
+    years ? `${years} ${years === 1 ? "yr" : "yrs"}` : null,
+    rest ? `${rest} ${rest === 1 ? "mo" : "mos"}` : null,
+  ].filter(Boolean).join(" ") || "under a month";
+}
 
 function PaySection({
   employee,
@@ -747,124 +1089,154 @@ function PaySection({
   slipLoading: boolean;
   slipError: boolean;
 }) {
-  const hasData =
-    employee.payItems.length > 0 || employee.creditSchemes.length > 0;
+  // "October 2026" → a calendar page with the year on the band and the month below.
+  const [periodMonth, periodYear] = (periodTitle ?? "").split(" ");
+  const showPeriodPage = netIncome !== null && Boolean(periodMonth && periodYear);
 
   return (
-    <Panel icon={Banknote} title="Pay & allowances">
-      <div className={styles.stack}>
-        {/* Net pay + salary slips */}
-        <div className={styles.payHero}>
-          <p className={styles.eyebrow}>
-            Net pay{periodTitle ? ` \u00B7 ${periodTitle}` : " \u00B7 this month"}
+    <div className={styles.stack}>
+      <section className={styles.payHero}>
+        <div className={styles.payHeroText}>
+          <p className={styles.payHeroHead}>
+            <span className={cn(motifs.glossIcon, styles.payHeroIcon)} data-tone="present">
+              <Banknote />
+            </span>
+            <span className={styles.eyebrow}>
+              Net pay{periodTitle ? ` · ${periodTitle}` : " · this month"}
+            </span>
           </p>
           {slipLoading ? (
-            <div className="mt-2 h-9 w-40 animate-pulse rounded-lg bg-slate-200" />
+            <div className="mt-3 h-9 w-40 animate-pulse rounded-lg bg-white/70" />
           ) : netIncome !== null ? (
             <p className={styles.payAmount}>
-              MVR {formatMvr(netIncome)}
-            </p>
-          ) : slipError ? (
-            <p className={styles.payAmount}>
-              Couldn&apos;t load this month&apos;s slip
+              <small>MVR</small>
+              {formatMvr(netIncome)}
             </p>
           ) : (
-            <p className={styles.payAmount}>
-              No slip for this month
+            <p className={cn(styles.payAmount, styles.payAmountMuted)}>
+              {slipError ? "Couldn’t load this month’s slip" : "No slip for this month yet"}
             </p>
           )}
-          <Link
-            href={`/employees/details/${employeeId}/salary-slips`}
-            className={styles.payLink}
-          >
+          <Link href={`/employees/details/${employeeId}/salary-slips`} className={styles.payLink}>
             <FileText className="h-4 w-4" />
             View salary slips
           </Link>
         </div>
+        {showPeriodPage ? (
+          <div className={cn(motifs.calendarPage, styles.payPeriodPage)} data-tone="present" aria-hidden="true">
+            <span className={motifs.calendarPageTop}>{periodYear}</span>
+            <strong>{periodMonth.slice(0, 3)}</strong>
+            <small>Pay month</small>
+          </div>
+        ) : null}
+      </section>
 
-        {hasData ? (
-          <>
-            {/* Breakdown */}
-            {employee.payItems.length > 0 ? (
-              <div className={styles.panel}>
-                <h3 className={styles.panelTitle}>Pay breakdown</h3>
-                <div className="mt-3">
-                  {employee.payItems.map((item, index) => (
-                    <div
-                      key={item.label}
-                      className={styles.payRow}
-                    >
-                      <span
-                        className={cn(
-                          "h-2.5 w-2.5 shrink-0 rounded-full",
-                          payDotColors[index % payDotColors.length],
-                        )}
-                      />
-                      <p className="min-w-0 flex-1 truncate">
-                        {item.label}
-                      </p>
-                      <p className="shrink-0 font-bold">
-                        {formatMoney(item.value)}
-                      </p>
-                    </div>
-                  ))}
+      <Panel icon={WalletCards} title="Pay breakdown">
+        {employee.payItems.length > 0 ? (
+          <div className={styles.payItems}>
+            {employee.payItems.map((item) => {
+              const visual = payVisual(item.key);
+              const Icon = visual.icon;
+              return (
+                <div key={item.key} className={styles.payItem}>
+                  <span className={cn(motifs.glossIcon, styles.payItemIcon)} data-tone={visual.tone}>
+                    <Icon />
+                  </span>
+                  <span className={styles.payItemName}>
+                    {item.label}
+                    {visual.note ? <small>{visual.note}</small> : null}
+                  </span>
+                  <span className={styles.payItemAmount}>
+                    <small>MVR</small>
+                    {formatMoney(item.value).replace(/^MVR\s*/, "")}
+                  </span>
                 </div>
-              </div>
-            ) : null}
-
-            {/* Credit schemes */}
-            {employee.creditSchemes.length > 0 ? (
-              <div className={styles.stack}>
-                <h3 className={styles.panelTitle}>
-                  Credit schemes
-                </h3>
-                {employee.creditSchemes.map((scheme, index) => (
-                  <div
-                    key={`${scheme.name}-${index}`}
-                    className={styles.payScheme}
-                  >
-                    <div className={styles.paySchemeHeader}>
-                      <p className="text-sm font-black text-slate-900">
-                        {scheme.name}
-                      </p>
-                      <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase text-slate-500">
-                        Scheme
-                      </span>
-                    </div>
-                    <p className={styles.paySchemeDate}>
-                      {formatDateLabel(scheme.startDate)} {"\u2192"}{" "}
-                      {formatDateLabel(scheme.endDate)}
-                    </p>
-                    <div className={styles.paySchemeAmounts}>
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
-                          Start
-                        </p>
-                        <p className="text-sm font-black tabular-nums text-slate-900">
-                          {formatMoney(scheme.startMonthAmount)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
-                          End
-                        </p>
-                        <p className="text-sm font-black tabular-nums text-slate-900">
-                          {formatMoney(scheme.endMonthAmount)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </>
+              );
+            })}
+          </div>
         ) : (
-          <p className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-400">
-            No pay fields are set for this employee.
-          </p>
+          <p className={styles.payEmpty}>No pay fields are set for this employee.</p>
         )}
+      </Panel>
+
+      {employee.creditSchemes.length > 0 ? (
+        <Panel icon={CreditCard} title="Credit schemes">
+          <div className={styles.schemes}>
+            {employee.creditSchemes.map((scheme, index) => (
+              <CreditSchemeCard key={`${scheme.name}-${index}`} scheme={scheme} />
+            ))}
+          </div>
+        </Panel>
+      ) : null}
+    </div>
+  );
+}
+
+function CreditSchemeCard({ scheme }: { scheme: EmployeeDetailsView["creditSchemes"][number] }) {
+  const start = new Date(`${scheme.startDate}T00:00:00`);
+  const end = new Date(`${scheme.endDate}T00:00:00`);
+  const validDates = !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end > start;
+  const now = new Date();
+  const progress = validDates
+    ? Math.min(1, Math.max(0, (now.getTime() - start.getTime()) / (end.getTime() - start.getTime())))
+    : 0;
+  const monthsLeft = validDates ? monthsBetween(now, end) : 0;
+  const status = !validDates
+    ? null
+    : now < start
+      ? `Starts in ${durationLabel(Math.max(0, monthsBetween(now, start)))}`
+      : now >= end
+        ? "Completed"
+        : `${Math.round(progress * 100)}% through · ${durationLabel(Math.max(0, monthsLeft))} left`;
+
+  const page = (date: Date, tone: GlossTone, caption: string) => (
+    <div className={cn(motifs.calendarPage, styles.schemePage)} data-tone={tone}>
+      <span className={motifs.calendarPageTop}>
+        {date.toLocaleDateString("en-US", { month: "short" })} {date.getFullYear()}
+      </span>
+      <strong>{date.getDate()}</strong>
+      <small>{caption}</small>
+    </div>
+  );
+
+  return (
+    <div className={styles.scheme}>
+      <div className={styles.schemeHead}>
+        <span className={cn(motifs.glossIcon, styles.schemeIcon)} data-tone="annual">
+          <CreditCard />
+        </span>
+        <p className={styles.schemeName}>{scheme.name}</p>
+        <span className={styles.schemeTag}>Scheme</span>
       </div>
-    </Panel>
+
+      {validDates ? (
+        <div className={styles.schemeTimeline}>
+          {page(start, "present", "Start")}
+          <div className={styles.schemeTrack}>
+            <div className={styles.schemeBar}>
+              <span style={{ width: `${progress * 100}%` }} />
+            </div>
+            {status ? <p className={styles.schemeStatus}>{status}</p> : null}
+          </div>
+          {page(end, "annual", "End")}
+        </div>
+      ) : (
+        <p className={styles.schemeStatus}>
+          {formatDateLabel(scheme.startDate)} {"→"} {formatDateLabel(scheme.endDate)}
+        </p>
+      )}
+
+      <div className={styles.schemeAmounts}>
+        <div>
+          <small>First month</small>
+          <strong>{formatMoney(scheme.startMonthAmount)}</strong>
+        </div>
+        <div>
+          <small>Last month</small>
+          <strong>{formatMoney(scheme.endMonthAmount)}</strong>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -898,15 +1270,19 @@ function IdentityRow({
   icon: Icon,
   label,
   value,
+  tone,
+  hint,
 }: {
   icon: LucideIcon;
   label: string;
   value: string;
+  tone: GlossTone;
+  hint?: string | null;
 }) {
   const empty = !value;
   return (
     <div className={styles.identityRow}>
-      <div className={styles.identityIcon}>
+      <div className={cn(motifs.glossIcon, styles.identityIcon)} data-tone={tone}>
         <Icon className="h-4 w-4" />
       </div>
       <p className={styles.identityLabel}>{label}</p>
@@ -917,57 +1293,35 @@ function IdentityRow({
         )}
       >
         {empty ? "Not set" : value}
+        {!empty && hint ? <span className={styles.identityHint}>{hint}</span> : null}
       </p>
     </div>
   );
 }
 
-const leaveAccents = ["#3e7654", "#bb7547", "#557ba2", "#806591", "#8b8c40"];
-
-function LeaveBloom({
-  leave,
-  index,
-}: {
-  leave: LeaveBalanceView;
-  index: number;
-}) {
-  const limited = leave.allowance !== null;
-  const percent =
-    limited && leave.allowance
-      ? Math.min(100, Math.round((leave.used / leave.allowance) * 100))
-      : 0;
-  const accent = leaveAccents[index % leaveAccents.length];
+function LeaveBalanceCard({ leave }: { leave: LeaveBalanceView }) {
+  const meta = leaveVisual(leave.key);
+  const Icon = meta.icon;
+  const allowance = leave.allowance ?? 0;
+  const remaining = leave.remaining ?? 0;
+  const share = allowance ? Math.min(1, Math.max(0, remaining / allowance)) : 0;
 
   return (
-    <div className={styles.leaveCard} style={{ "--leave-color": accent } as React.CSSProperties}>
-      <div className={styles.leaveName}>
-        <span className={styles.leaveColor} />
-        <p>
-          {leave.label}
-        </p>
+    <div className={styles.leaveCard} data-tone={meta.tone}>
+      <div className={styles.leaveCardTop}>
+        <span className={cn(motifs.glossIcon, styles.leaveIcon)} data-tone={meta.tone}>
+          <Icon />
+        </span>
+        <p className={styles.leaveName}>{leave.label}</p>
       </div>
-
       <div className={styles.leaveCount}>
-          <strong>
-            {limited ? leave.remaining : leave.used}
-          </strong>
-          <span>
-            {limited
-              ? "days left"
-              : isAdditiveLeave(leave.key)
-                ? "recorded"
-                : "days"}
-          </span>
+        <strong>{remaining}</strong>
+        <span>of {allowance} left</span>
       </div>
-
-      {limited ? (
-        <>
-          <div className={styles.leaveProgress}>
-            <span style={{ width: `${percent}%` }} />
-          </div>
-          <p className={styles.leaveUsed}>{leave.used} of {leave.allowance} used</p>
-        </>
-      ) : null}
+      <div className={styles.leaveMeter}>
+        <span style={{ width: `${share * 100}%` }} />
+      </div>
+      <p className={styles.leaveUsed}>{leave.used} used this year</p>
     </div>
   );
 }

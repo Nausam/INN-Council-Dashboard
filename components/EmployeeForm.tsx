@@ -17,6 +17,14 @@ import {
   updateEmployeeRecord,
 } from "@/lib/actions/hr.actions";
 import { CreditSchemesFormSection } from "@/components/employees/CreditSchemesFormSection";
+import {
+  EmployeePhotoField,
+  type EmployeePhotoChange,
+} from "@/components/employees/EmployeePhotoField";
+import {
+  removeEmployeePhoto,
+  uploadEmployeePhoto,
+} from "@/lib/actions/employee-photo.actions";
 import type { CreditSchemeEntry } from "@/lib/employees/credit-schemes";
 import {
   DESIGNATION_OPTIONS,
@@ -207,7 +215,10 @@ const SALARY_FIELD_CONFIG: {
 
 interface EmployeeFormProps {
   initialData?: Partial<EmployeeFormData>;
-  onSubmit?: (formData: EmployeeFormData) => Promise<void>;
+  /** When creating, resolve with the new employee's ID so the photo can be saved to it. */
+  onSubmit?: (formData: EmployeeFormData) => Promise<void | string>;
+  /** URL of the photo already stored for this employee. */
+  photoUrl?: string;
   isLoading?: boolean;
   variant?: "page" | "modal";
   employeeId?: string;
@@ -228,11 +239,13 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
   employeeId: employeeIdProp,
   onCancel,
   onSuccess,
+  photoUrl,
 }) => {
   const isModal = variant === "modal";
   const [formData, setFormData] = useState<EmployeeFormData>(() =>
     buildInitialFormData(initialData),
   );
+  const [photoChange, setPhotoChange] = useState<EmployeePhotoChange>({ kind: "keep" });
 
   const [loading, setLoading] = useState(false);
 
@@ -294,7 +307,35 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     }));
   };
 
-  const resetForm = () => setFormData(buildInitialFormData());
+  const resetForm = () => {
+    setFormData(buildInitialFormData());
+    setPhotoChange({ kind: "keep" });
+  };
+
+  const applyPhotoChange = async (id: string) => {
+    if (photoChange.kind === "replace") {
+      const upload = new FormData();
+      upload.append("photo", photoChange.blob, "photo.jpg");
+      await uploadEmployeePhoto(id, upload);
+    } else if (photoChange.kind === "remove") {
+      await removeEmployeePhoto(id);
+    }
+  };
+
+  // The employee already exists at this point, so a failed upload is reported
+  // without failing the whole create.
+  const savePhotoForNewEmployee = async (id: string) => {
+    if (photoChange.kind !== "replace") return;
+    try {
+      await applyPhotoChange(id);
+    } catch {
+      toast({
+        title: "Photo not saved",
+        description: `${formData.name} was added, but the photo couldn't be uploaded. Add it from Edit.`,
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -315,9 +356,33 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
     setLoading(true);
     const payload = employeeFormDataForFirestore(formData);
 
+    // When editing, save the photo first so a failed upload stops the save
+    // and nothing is half-applied.
+    const photoSaved = Boolean(employeeId) && photoChange.kind !== "keep";
+    if (employeeId && photoSaved) {
+      try {
+        // The picked preview stays until the refreshed record replaces it;
+        // repeating the upload on a retry is harmless.
+        await applyPhotoChange(employeeId);
+      } catch (error) {
+        toast({
+          title: "Photo not saved",
+          description: error instanceof Error ? error.message : "Could not save the profile photo.",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+    }
+
     try {
       if (onSubmit) {
-        await onSubmit(formData);
+        const createdId = await onSubmit(formData);
+        if (!employeeId && typeof createdId === "string") {
+          await savePhotoForNewEmployee(createdId);
+        }
+        // Refresh after the parent's save so the form isn't reloaded mid-submit.
+        if (employeeId && photoSaved) await invalidateEmployees(employeeId);
       } else if (employeeId) {
         await updateEmployeeRecord(employeeId, payload);
         await invalidateEmployees(employeeId);
@@ -327,6 +392,7 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
         });
       } else {
         const created = await createEmployeeRecord(payload);
+        await savePhotoForNewEmployee(created.$id);
         await invalidateEmployees(created.$id);
         toast({
           title: "Success",
@@ -354,6 +420,15 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
   const formBody = (
         <form onSubmit={handleSubmit} className="space-y-6">
           <FormSection icon={User} title="Personal Information">
+            <div className="mb-6 border-b border-slate-100 pb-6">
+              <EmployeePhotoField
+                name={formData.name}
+                currentUrl={photoUrl}
+                value={photoChange}
+                onChange={setPhotoChange}
+                disabled={isSubmitting}
+              />
+            </div>
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
               <InputField
                 id="name"

@@ -4,6 +4,7 @@ import EmployeeDetailsCard from "@/components/EmployeeDetailsCard";
 import { EmployeeModalShell } from "@/components/Modals/EmployeeModalShell";
 import { AvatarGlow, SectionBadge } from "@/components/design-system";
 import { useEmployeeQuery } from "@/hooks/queries";
+import { employeePhotoUrl } from "@/lib/employees/photo";
 import { toEmployeeForDetails } from "@/lib/employees/transforms";
 import { Loader2 } from "lucide-react";
 import { useMemo } from "react";
@@ -48,7 +49,7 @@ export function EmployeeDetailsModal({
       size="xl"
       header={
         <div className="flex items-start gap-4 pr-12">
-          <AvatarGlow name={displayName} size="md" />
+          <AvatarGlow name={displayName} size="md" src={employeePhotoUrl(employeeId, data?.photoKey)} />
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-xl font-bold tracking-tight text-slate-900">
               {displayName}

@@ -9,6 +9,7 @@ import {
   SECTION_OPTIONS,
 } from "@/lib/employees/field-options";
 import type { SlimEmployee } from "@/lib/firebase/types";
+import { employeePhotoUrl } from "@/lib/employees/photo";
 import { useMemo, useState } from "react";
 import { Search, Users, Filter } from "lucide-react";
 
@@ -17,6 +18,7 @@ type Employee = {
   name: string;
   designation: string;
   section: string;
+  photoKey?: string;
 };
 
 const employeeOrder = [
@@ -53,6 +55,7 @@ function toEmployee(doc: SlimEmployee): Employee {
     name: doc.name || "Unknown",
     designation: doc.designation || "",
     section: doc.section || "",
+    photoKey: doc.photoKey,
   };
 }
 
@@ -198,6 +201,7 @@ export function EmployeesPageView({ employees }: { employees: SlimEmployee[] }) 
                 designation={e.designation}
                 section={e.section}
                 employeeId={e.$id}
+                photoUrl={employeePhotoUrl(e.$id, e.photoKey)}
                 onClick={() => setDetailsEmployee(e)}
                 onEditClick={() => setEditEmployee(e)}
                 onDeleteClick={() => setDeleteEmployee(e)}

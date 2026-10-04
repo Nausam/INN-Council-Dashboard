@@ -2,32 +2,59 @@
 
 import {
   submitEmployeeOvertimeRequest,
+  updateEmployeeOvertimeRequest,
 } from "@/lib/actions/employee-portal-requests.actions";
 import {
   listAnnualLeaveEmployeeOptions,
   submitAnnualLeaveRequest,
+  updateAnnualLeaveRequest,
   type AnnualLeaveEmployeeOption,
 } from "@/lib/actions/annual-leave.actions";
 import { parseLeaveDateRange } from "@/lib/leave/date-range";
+import { isDhivehiText } from "@/lib/leave/dhivehi-text";
 import { maldivesDateTime } from "@/lib/dates/maldives";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2 } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
+import styles from "@/components/Leave/family-leave-request.module.css";
+import motifs from "./portal-motifs.module.css";
+import { LeaveRangePreview } from "./LeaveRangePreview";
+import { REQUEST_VISUALS } from "@/lib/employees/request-visuals";
+import { cn } from "@/lib/utils";
 
 type Mode = "annual" | "ot";
 
-const fieldClass =
-  "mt-2 w-full rounded-2xl border border-[#ebe8ef] bg-white px-4 py-3 text-sm text-[#17191d] outline-none focus:border-[#9f98c0] focus:ring-4 focus:ring-[#eae5f4]";
+/** A pending request being changed instead of a new one being submitted. */
+export type EmployeeRequestEdit = {
+  id: string;
+  startDate?: string;
+  endDate?: string;
+  reason?: string;
+  takeoverEmployeeId?: string;
+  startTime?: string;
+  endTime?: string;
+};
+
+const MAX_TEXT_LENGTH = 500;
+const MAX_OVERTIME_MINUTES = 16 * 60;
+
+function minutesFromTime(value: string): number | null {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
 
 export function EmployeeRequestDialog({
   employeeId,
   mode,
+  editRequest,
   open,
   onOpenChange,
   onSubmitted,
 }: {
   employeeId: string;
   mode: Mode;
+  editRequest?: EmployeeRequestEdit;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmitted?: () => void;
@@ -45,26 +72,28 @@ export function EmployeeRequestDialog({
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
 
+  const editing = Boolean(editRequest);
+
   useEffect(() => {
     if (!open) return;
-    setStartDate("");
-    setEndDate("");
-    setAnnualReason("");
-    setTakeoverEmployeeId("");
-    setWorkDate(maldivesDateTime().date);
-    setStartTime("");
-    setEndTime("");
-    setDetails("");
+    setStartDate(editRequest?.startDate ?? "");
+    setEndDate(editRequest?.endDate ?? "");
+    setAnnualReason(mode === "annual" ? editRequest?.reason ?? "" : "");
+    setTakeoverEmployeeId(editRequest?.takeoverEmployeeId ?? "");
+    setWorkDate(editRequest?.startDate ?? maldivesDateTime().date);
+    setStartTime(editRequest?.startTime ?? "");
+    setEndTime(editRequest?.endTime ?? "");
+    setDetails(mode === "ot" ? editRequest?.reason ?? "" : "");
     setSuccess(false);
     setError("");
-  }, [open, mode]);
+  }, [open, mode, editRequest]);
 
   useEffect(() => {
     if (!open || mode !== "annual") return;
     let active = true;
     void listAnnualLeaveEmployeeOptions()
       .then((options) => { if (active) setEmployees(options.filter((option) => option.employeeId !== employeeId)); })
-      .catch(() => { if (active) setError("Could not load employees for handover."); });
+      .catch(() => { if (active) setError("ޒިންމާ ހަވާލުކުރާނެ މުވައްޒަފުންގެ ލިސްޓު ލޯޑު ނުކުރެވުނު."); });
     return () => { active = false; };
   }, [open, mode, employeeId]);
 
@@ -72,13 +101,62 @@ export function EmployeeRequestDialog({
     if (!pending) onOpenChange(next);
   }
 
+  function validate(): string | null {
+    if (mode === "annual") {
+      try {
+        parseLeaveDateRange(startDate, endDate);
+      } catch {
+        return "ފެށޭ ތާރީޚާއި ނިމޭ ތާރީޚު ރަނގަޅަށް ހޮވާ. 365 ދުވަހަށްވުރެ ދިގު ނުކުރައްވާ.";
+      }
+      if (!isDhivehiText(annualReason, MAX_TEXT_LENGTH)) return "ސަބަބު ދިވެހިން ލިޔުއްވާ.";
+      if (!takeoverEmployeeId) return "ޒިންމާތައް ހަވާލުކުރާނެ މުވައްޒަފަކު ހޮވާ.";
+      return null;
+    }
+    const start = minutesFromTime(startTime);
+    const end = minutesFromTime(endTime);
+    // Matches the server: an end time earlier than the start runs past midnight.
+    const duration = start === null || end === null ? 0 : (end - start + 1_440) % 1_440;
+    if (!workDate || duration < 1 || duration > MAX_OVERTIME_MINUTES) {
+      return "ފެށި ގަޑިއާއި ނިމުނު ގަޑި ރަނގަޅަށް ހޮވާ. 16 ގަޑިއިރަށްވުރެ ދިގު ނުކުރައްވާ.";
+    }
+    if (!isDhivehiText(details, MAX_TEXT_LENGTH)) return "ކުރި މަސައްކަތް ދިވެހިން ލިޔުއްވާ.";
+    return null;
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending) return;
+    const problem = validate();
+    if (problem) {
+      setError(problem);
+      return;
+    }
     setError("");
     setPending(true);
     try {
-      if (mode === "annual") {
+      if (editRequest) {
+        const result = mode === "annual"
+          ? await updateAnnualLeaveRequest({
+            employeeId,
+            requestId: editRequest.id,
+            startDate,
+            endDate,
+            reason: annualReason,
+            takeoverEmployeeId,
+          })
+          : await updateEmployeeOvertimeRequest({
+            employeeId,
+            requestId: editRequest.id,
+            workDate,
+            startTime,
+            endTime,
+            details,
+          });
+        if (!result.ok) {
+          setError("މި ފޯމު ރިވިއު ކުރެވިފައިވާތީ ބަދަލެއް ނުގެނެވޭނެ.");
+          return;
+        }
+      } else if (mode === "annual") {
         await submitAnnualLeaveRequest({
           employeeId,
           startDate,
@@ -97,88 +175,172 @@ export function EmployeeRequestDialog({
       }
       setSuccess(true);
       onSubmitted?.();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not submit this request.");
+    } catch {
+      setError(editing ? "ބަދަލުތައް ރައްކާ ނުކުރެވުނު. އަލުން ކޮށްލައްވާ." : "ފޯމު ފޮނުވަން ނުކުޅުނު. އަލުން ކޮށްލައްވާ.");
     } finally {
       setPending(false);
     }
   }
 
   const annual = mode === "annual";
-  let totalDays = "";
-  if (startDate && endDate) {
-    try { totalDays = String(parseLeaveDateRange(startDate, endDate).durationDays); } catch { /* dates are still being chosen */ }
-  }
+  const visual = REQUEST_VISUALS[mode];
+  const HeaderIcon = visual.icon;
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-[28px] border border-white bg-[#fcfafd] p-6 shadow-2xl" overlayClassName="bg-black/40">
-        <DialogHeader>
-          <DialogTitle className="text-left text-2xl font-extrabold tracking-tight text-[#17191d]">
-            {annual ? "Annual leave" : "Overtime request"}
+      <DialogContent
+        dir="rtl"
+        lang="dv"
+        className={styles.dialog}
+        overlayClassName="bg-black/40"
+      >
+        <DialogHeader className={styles.header}>
+          <div className={styles.headRow}>
+          <span className={cn(motifs.glossIcon, styles.headIcon)} data-tone={visual.tone} aria-hidden="true">
+            <HeaderIcon />
+          </span>
+          <DialogTitle className={styles.title}>
+            {annual ? "އަހަރީ ޗުއްޓީ" : "އިތުރުގަޑީގެ މަސައްކަތް"}
           </DialogTitle>
+          </div>
         </DialogHeader>
 
         {success ? (
-          <div className="space-y-5">
-            <p className="text-sm text-slate-600">Your request has been submitted.</p>
-            <button type="button" onClick={() => changeOpen(false)} className="w-full rounded-full bg-[#17191d] px-5 py-3 text-sm font-bold text-white">
-              Done
+          <div className={styles.success} role="status">
+            <span className={cn(motifs.glossIcon, styles.successIcon)} data-tone="present" aria-hidden="true">
+              <Check />
+            </span>
+            <p>{editing ? "ބަދަލުތައް ރައްކާކުރެވިއްޖެ." : "ފޯމު ފޮނުވުނު."}</p>
+            <button type="button" onClick={() => changeOpen(false)}>
+              ނިންމާ
             </button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="grid gap-4">
+          <form onSubmit={handleSubmit} className={styles.form}>
             {annual ? (
               <>
-                <label className="text-sm font-bold text-slate-700">
-                  Start date
-                  <input className={fieldClass} type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} required />
-                </label>
-                <label className="text-sm font-bold text-slate-700">
-                  End date
-                  <input className={fieldClass} type="date" min={startDate || undefined} value={endDate} onChange={(event) => setEndDate(event.target.value)} required />
-                </label>
-                <label className="text-sm font-bold text-slate-700">
-                  Total days
-                  <input className={fieldClass} type="text" value={totalDays} placeholder="Calculated from the dates" readOnly aria-readonly="true" />
-                </label>
-                <label className="text-sm font-bold text-slate-700">
-                  Reason for leave
-                  <textarea className={fieldClass} rows={3} maxLength={500} minLength={2} dir="auto" value={annualReason} onChange={(event) => setAnnualReason(event.target.value)} required />
-                </label>
-                <label className="text-sm font-bold text-slate-700">
-                  Who will take over your responsibilities?
-                  <select className={fieldClass} value={takeoverEmployeeId} onChange={(event) => setTakeoverEmployeeId(event.target.value)} required>
-                    <option value="">Select an employee</option>
-                    {employees.map((employee) => <option key={employee.employeeId} value={employee.employeeId}>{employee.name}</option>)}
+                <div className={styles.row}>
+                  <div className={styles.field}>
+                    <label htmlFor="annual-leave-start-date">ފެށޭ ތާރީޚު</label>
+                    <input
+                      id="annual-leave-start-date"
+                      type="date"
+                      value={startDate}
+                      onChange={(event) => {
+                        const nextStart = event.target.value;
+                        setStartDate(nextStart);
+                        setEndDate((current) => !current || current < nextStart ? nextStart : current);
+                      }}
+                      required
+                      dir="ltr"
+                    />
+                  </div>
+                  <div className={styles.field}>
+                    <label htmlFor="annual-leave-end-date">ނިމޭ ތާރީޚު</label>
+                    <input
+                      id="annual-leave-end-date"
+                      type="date"
+                      min={startDate || undefined}
+                      value={endDate}
+                      onChange={(event) => setEndDate(event.target.value)}
+                      required
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+
+                {/* Shows the total days once both dates are picked. */}
+                <LeaveRangePreview startDate={startDate} endDate={endDate} tone={visual.tone} />
+
+                <div className={styles.field}>
+                  <label htmlFor="annual-leave-reason">ސަބަބު</label>
+                  <textarea
+                    id="annual-leave-reason"
+                    value={annualReason}
+                    onChange={(event) => setAnnualReason(event.target.value)}
+                    required
+                    minLength={2}
+                    maxLength={MAX_TEXT_LENGTH}
+                    rows={4}
+                    dir="rtl"
+                  />
+                </div>
+
+                <div className={styles.field}>
+                  <label htmlFor="annual-leave-takeover">ޒިންމާތައް ހަވާލުކުރާނީ ކާކަށް؟</label>
+                  <select
+                    id="annual-leave-takeover"
+                    value={takeoverEmployeeId}
+                    onChange={(event) => setTakeoverEmployeeId(event.target.value)}
+                    required
+                  >
+                    <option value="" disabled>މުވައްޒަފަކު ހޮވާ</option>
+                    {employees.map((employee) => (
+                      <option key={employee.employeeId} value={employee.employeeId}>
+                        {employee.nameDv || employee.name}
+                      </option>
+                    ))}
                   </select>
-                </label>
+                </div>
               </>
             ) : (
               <>
-                <label className="text-sm font-bold text-slate-700">
-                  Date
-                  <input className={fieldClass} type="date" value={workDate} onChange={(event) => setWorkDate(event.target.value)} required />
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="text-sm font-bold text-slate-700">
-                    Start time
-                    <input className={fieldClass} type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} required />
-                  </label>
-                  <label className="text-sm font-bold text-slate-700">
-                    End time
-                    <input className={fieldClass} type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} required />
-                  </label>
+                <div className={styles.field}>
+                  <label htmlFor="overtime-date">ތާރީޚު</label>
+                  <input
+                    id="overtime-date"
+                    type="date"
+                    value={workDate}
+                    onChange={(event) => setWorkDate(event.target.value)}
+                    required
+                    dir="ltr"
+                  />
                 </div>
-                <label className="text-sm font-bold text-slate-700">
-                  Work details
-                  <textarea className={fieldClass} rows={3} maxLength={500} minLength={2} value={details} onChange={(event) => setDetails(event.target.value)} required />
-                </label>
+
+                <div className={styles.row}>
+                  <div className={styles.field}>
+                    <label htmlFor="overtime-start-time">ފެށި ގަޑި</label>
+                    <input
+                      id="overtime-start-time"
+                      type="time"
+                      value={startTime}
+                      onChange={(event) => setStartTime(event.target.value)}
+                      required
+                      dir="ltr"
+                    />
+                  </div>
+                  <div className={styles.field}>
+                    <label htmlFor="overtime-end-time">ނިމުނު ގަޑި</label>
+                    <input
+                      id="overtime-end-time"
+                      type="time"
+                      value={endTime}
+                      onChange={(event) => setEndTime(event.target.value)}
+                      required
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+
+                <div className={styles.field}>
+                  <label htmlFor="overtime-details">ކުރި މަސައްކަތް</label>
+                  <textarea
+                    id="overtime-details"
+                    value={details}
+                    onChange={(event) => setDetails(event.target.value)}
+                    required
+                    minLength={2}
+                    maxLength={MAX_TEXT_LENGTH}
+                    rows={4}
+                    dir="rtl"
+                  />
+                </div>
               </>
             )}
-            {error ? <p className="text-sm text-rose-700" role="alert">{error}</p> : null}
-            <button type="submit" disabled={pending} className="mt-1 flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#17191d] px-5 text-sm font-bold text-white disabled:opacity-60">
-              {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-              Submit request
+
+            {error ? <p className={styles.error} role="alert">{error}</p> : null}
+            <button className={styles.submit} type="submit" disabled={pending}>
+              {pending ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> : null}
+              {editing ? "ސޭވް" : "ސަބްމިޓް"}
             </button>
           </form>
         )}

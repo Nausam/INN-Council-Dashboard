@@ -8,6 +8,7 @@ import { toast } from "@/hooks/use-toast";
 import { updateEmployeeRecord } from "@/lib/actions/hr.actions";
 import { employeeFormDataForFirestore } from "@/lib/employees/form-payload";
 import { toEmployeeFormValues } from "@/lib/employees/transforms";
+import { employeePhotoUrl } from "@/lib/employees/photo";
 import { Edit3, Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -37,6 +38,7 @@ export function EmployeeEditModal({
   );
 
   const displayName = formValues?.name ?? previewName ?? "Employee";
+  const photoUrl = employeePhotoUrl(employeeId, data?.photoKey);
 
   const handleUpdate = async (formData: EmployeeFormData) => {
     if (!employeeId) return;
@@ -73,7 +75,7 @@ export function EmployeeEditModal({
             <Edit3 className="h-6 w-6" />
           </div>
           <div className="flex min-w-0 flex-1 items-center gap-4">
-            <AvatarGlow name={displayName} size="md" />
+            <AvatarGlow name={displayName} size="md" src={photoUrl} />
             <div className="min-w-0">
               <h2 className="truncate text-xl font-bold tracking-tight text-slate-900">
                 Edit {displayName}
@@ -101,6 +103,7 @@ export function EmployeeEditModal({
               variant="modal"
               employeeId={employeeId ?? undefined}
               initialData={formValues}
+              photoUrl={photoUrl}
               onSubmit={handleUpdate}
               isLoading={submitting}
               onCancel={() => onOpenChange(false)}

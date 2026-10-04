@@ -1,0 +1,18 @@
+.header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: 1rem 0 1.1rem; }
+.start, .end { display: flex; align-items: center; gap: .55rem; min-width: 0; }
+.logo { display: block; width: 88px; height: auto; }
+.iconButton, .actionButton, .logout { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 42px; border-radius: 999px; font-size: .78rem; font-weight: 800; cursor: pointer; transition: transform .2s, background .2s; }
+.iconButton { width: 42px; border: 1px solid #fff; background: #fff; color: #17191d; box-shadow: 0 4px 18px rgba(43,38,55,.09); }
+.actionButton { padding: 0 1rem; border: 1px solid #fff; background: #fff; color: #17191d; box-shadow: 0 4px 18px rgba(43,38,55,.09); }
+.logout { padding: 0 1rem; border: 0; background: #17191d; color: #fff; box-shadow: 0 5px 14px rgba(23,25,29,.16); }
+.iconButton svg, .actionButton svg, .logout svg { width: 17px; height: 17px; }
+.iconButton:hover, .actionButton:hover, .logout:hover { transform: translateY(-2px); }
+.logout:disabled { opacity: .7; cursor: wait; transform: none; }
+.iconButton:focus-visible, .actionButton:focus-visible, .logout:focus-visible { outline: 3px solid #a9b7ff; outline-offset: 3px; }
+
+@media (max-width: 767px) {
+  .logo { width: 72px; }
+  /* Icon-only on phones to keep the bar compact. */
+  .actionButton, .logout { width: 42px; padding: 0; }
+  .actionButton span, .logout span { display: none; }
+}

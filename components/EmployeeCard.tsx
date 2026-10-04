@@ -19,6 +19,7 @@ interface EmployeeCardProps {
   designation: string;
   section?: string;
   employeeId: string;
+  photoUrl?: string;
   onClick: () => void;
   onEditClick?: () => void;
   onDeleteClick?: () => void;
@@ -29,6 +30,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
   designation,
   section,
   employeeId,
+  photoUrl,
   onClick,
   onEditClick,
   onDeleteClick,
@@ -62,7 +64,7 @@ const EmployeeCard: React.FC<EmployeeCardProps> = ({
     >
       <div className="relative mb-5 flex items-start justify-between">
         <div className="flex min-w-0 flex-1 items-center gap-4">
-          <AvatarGlow name={name} size="md" className="rounded-lg" />
+          <AvatarGlow name={name} size="md" className="rounded-lg" src={photoUrl} />
           <div className="min-w-0 flex-1">
             <h3
               className={cn(

@@ -28,6 +28,7 @@ export type AnnualLeaveRequest = LeaveRequest & AnnualLeaveFormValues & {
 export type AnnualLeaveEmployeeOption = {
   employeeId: string;
   name: string;
+  nameDv?: string;
 };
 
 function personFromEmployee(employee: Awaited<ReturnType<typeof fetchEmployeeById>>, date?: string): AnnualLeaveFormPerson {
@@ -44,7 +45,11 @@ function personFromEmployee(employee: Awaited<ReturnType<typeof fetchEmployeeByI
 export async function listAnnualLeaveEmployeeOptions(): Promise<AnnualLeaveEmployeeOption[]> {
   if (!(await getSessionAuthProfile()) && !getEmployeeProfileSessionId()) throw new Error("Unauthorized");
   const employees = await fetchAllEmployees();
-  return employees.map((employee) => ({ employeeId: employee.$id, name: employee.name }))
+  return employees.map((employee) => ({
+    employeeId: employee.$id,
+    name: employee.name,
+    ...(employee.nameDv?.trim() ? { nameDv: employee.nameDv.trim() } : {}),
+  }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -98,6 +103,57 @@ export async function submitAnnualLeaveRequest(input: {
     takeover: personFromEmployee(takeoverEmployee),
   };
   await getFirestoreDb().collection(COLLECTIONS.annualLeaveRequests).doc(randomUUID()).set(request);
+}
+
+/**
+ * Lets the employee change their own annual leave request while it is still
+ * pending. Legacy requests without an employee ID can't be proven to belong
+ * to this employee, so they stay read-only.
+ */
+export async function updateAnnualLeaveRequest(input: {
+  employeeId: string;
+  requestId: string;
+  startDate: string;
+  endDate: string;
+  reason: string;
+  takeoverEmployeeId: string;
+}): Promise<{ ok: true } | { ok: false; code: "not_editable" }> {
+  const employeeId = String(input.employeeId ?? "").trim();
+  const requestId = String(input.requestId ?? "").trim();
+  const profile = await getSessionAuthProfile();
+  if (!profile && getEmployeeProfileSessionId() !== employeeId) throw new Error("Unauthorized");
+  const takeoverEmployeeId = String(input.takeoverEmployeeId ?? "").trim();
+  if (!/^[\w-]{1,128}$/.test(requestId)) throw new Error("Invalid request");
+  if (!/^[\w-]{1,128}$/.test(employeeId) || !/^[\w-]{1,128}$/.test(takeoverEmployeeId) || employeeId === takeoverEmployeeId) {
+    throw new Error("Select another employee to take over responsibilities");
+  }
+  const range = parseLeaveDateRange(input.startDate, input.endDate);
+  const reason = String(input.reason ?? "").trim();
+  if (reason.length < 2 || reason.length > 500) throw new Error("Enter a reason for annual leave (2–500 characters)");
+  const takeoverEmployee = await fetchEmployeeById(takeoverEmployeeId);
+
+  const db = getFirestoreDb();
+  const requestRef = db.collection(COLLECTIONS.annualLeaveRequests).doc(requestId);
+  return db.runTransaction(async (transaction) => {
+    const current = (await transaction.get(requestRef)).data() as AnnualLeaveRequest | undefined;
+    if (
+      !current ||
+      current.employeeId !== employeeId ||
+      current.approvalStatus === "Approved" ||
+      current.approvalStatus === "Rejected"
+    ) {
+      return { ok: false, code: "not_editable" } as const;
+    }
+    transaction.update(requestRef, {
+      reason,
+      totalDays: range.durationDays,
+      startDate: range.startDate,
+      endDate: range.endDate,
+      takeover: personFromEmployee(takeoverEmployee),
+      updatedAt: new Date().toISOString(),
+    });
+    return { ok: true } as const;
+  });
 }
 
 export async function listAnnualLeaveRequests(offset = 0): Promise<{

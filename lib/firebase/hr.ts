@@ -421,6 +421,7 @@ export async function fetchSlimEmployees(): Promise<SlimEmployee[]> {
     designation: employee.designation,
     section: employee.section,
     recordCardNumber: employee.recordCardNumber,
+    ...(employee.photoKey ? { photoKey: employee.photoKey } : {}),
   }));
 }
 

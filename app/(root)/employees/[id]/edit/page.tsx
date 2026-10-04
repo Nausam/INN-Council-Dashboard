@@ -9,6 +9,7 @@ import { toast } from "@/hooks/use-toast";
 import { updateEmployeeRecord } from "@/lib/actions/hr.actions";
 import { employeeFormDataForFirestore } from "@/lib/employees/form-payload";
 import { toEmployeeFormValues } from "@/lib/employees/transforms";
+import { employeePhotoUrl } from "@/lib/employees/photo";
 import { useRouter } from "next/navigation";
 import { ShieldAlert } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -80,6 +81,7 @@ const EmployeeEditPage = ({ params }: { params: { id: string } }) => {
     <EmployeeForm
       key={`${employeeId}-${data?.$updatedAt ?? "loaded"}`}
       initialData={employeeData}
+      photoUrl={employeePhotoUrl(employeeId, data?.photoKey)}
       onSubmit={handleUpdateEmployee}
       isLoading={submitting}
     />

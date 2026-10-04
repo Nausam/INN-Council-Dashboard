@@ -29,6 +29,7 @@ export type LeaveBalanceView = {
 };
 
 export type PayItemView = {
+  key: string;
   label: string;
   value: number;
 };
@@ -209,6 +210,7 @@ export function toEmployeeDetailsView(employee: EmployeeDoc): EmployeeDetailsVie
       };
     }),
     payItems: PAY_FIELDS.map(([key, label]) => ({
+      key,
       label,
       value: num(record[key]),
     })).filter((item) => item.value > 0),
@@ -216,16 +218,19 @@ export function toEmployeeDetailsView(employee: EmployeeDoc): EmployeeDetailsVie
   };
 }
 
-export function buildAttendanceSummary(args: {
+/** Council work week: Sunday to Thursday. Friday and Saturday are the weekend. */
+export const WORK_WEEK_DAYS = 5;
+
+type AttendanceSources = {
   employeeId: string;
   councilAttendance: AttendanceDoc[];
   mosqueAttendance: MosqueAttendanceDoc[];
   leaves: EmployeeLeaveCalendarEntry[];
   today?: Date;
-}): AttendanceSummary {
-  const today = args.today ?? new Date();
-  const start = weekStart(today);
-  const currentMonth = monthKey(today);
+};
+
+/** Builds one entry per day from `start`, using council, mosque, and leave records. */
+function buildAttendanceDays(args: AttendanceSources, start: Date, count: number): WeekDayAttendance[] {
   const councilByDate = new Map(
     args.councilAttendance
       .filter((row) => row.employeeId === args.employeeId)
@@ -236,7 +241,7 @@ export function buildAttendanceSummary(args: {
     args.leaves.map((entry) => [entry.date, entry.leaveType]),
   );
 
-  const weekDays = Array.from({ length: 7 }, (_, index) => {
+  return Array.from({ length: count }, (_, index): WeekDayAttendance => {
     const date = addDays(start, index);
     const iso = toLocalIsoDate(date);
     const council = councilByDate.get(iso);
@@ -291,6 +296,12 @@ export function buildAttendanceSummary(args: {
       leaveType,
     } satisfies WeekDayAttendance;
   });
+}
+
+export function buildAttendanceSummary(args: AttendanceSources): AttendanceSummary {
+  const today = args.today ?? new Date();
+  const currentMonth = monthKey(today);
+  const weekDays = buildAttendanceDays(args, weekStart(today), WORK_WEEK_DAYS);
 
   return {
     weekDays,
@@ -298,6 +309,12 @@ export function buildAttendanceSummary(args: {
     lateMinutes: weekDays.reduce((total, day) => total + day.lateMinutes, 0),
     leaveDaysThisMonth: args.leaves.filter((entry) => entry.date.startsWith(currentMonth)).length,
   };
+}
+
+/** The previous work week, Sunday to Thursday. */
+export function buildLastWeekAttendance(args: AttendanceSources): WeekDayAttendance[] {
+  const today = args.today ?? new Date();
+  return buildAttendanceDays(args, addDays(weekStart(today), -7), WORK_WEEK_DAYS);
 }
 
 export function currentLimitedLeaveRemaining(employee: EmployeeDetailsView, key: string): number {

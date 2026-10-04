@@ -16,6 +16,8 @@ const isPublicRoute = createRouteMatcher([
   "/employees/details/sign-in(.*)",
   "/employees/details(.*)",
   "/api/employee-requests/annual(.*)",
+  // Checks admin or Employee Profile access itself, so the PIN-only app can load photos.
+  "/api/employee-photos(.*)",
   "/salary-slips(.*)",
   "/api/salary-slips(.*)",
   "/api/files/r2(.*)",
@@ -24,17 +26,9 @@ const isPublicRoute = createRouteMatcher([
 export default clerkMiddleware(async (auth, request) => {
   const { pathname } = request.nextUrl;
   const isServerAction = request.headers.has("next-action");
-  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(request.headers.get("user-agent") ?? "");
-
-  // Existing home-screen shortcuts may still launch at / or /sign-in rather
-  // than the current manifest start URL. Send mobile entry to Employee Profile.
-  if (
-    !isServerAction && isMobile &&
-    (pathname === "/" || pathname === "/sign-in" || pathname === "/sign-up" || pathname === "/employees/details/sign-in") &&
-    request.nextUrl.searchParams.get("staff") !== "1"
-  ) {
-    return NextResponse.redirect(new URL("/employees/details", request.url));
-  }
+  // The installed Employee Profile app is kept on /employees/details by
+  // EmployeePwaScope, which can see display-mode: standalone. The server can't
+  // tell the app from a phone browser, so it doesn't redirect by device here.
 
   // Employee Profile uses its own PIN session, even when Clerk is signed out.
   if (pathname === "/employees/details" || pathname.startsWith("/employees/details/")) {

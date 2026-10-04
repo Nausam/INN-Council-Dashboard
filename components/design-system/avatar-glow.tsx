@@ -1,10 +1,13 @@
 import { cn } from "@/lib/utils";
 import { getAvatarAccent, shadows } from "@/lib/design-tokens";
+import { AvatarPhoto } from "./avatar-photo";
 
 type AvatarGlowProps = {
   name: string;
   size?: "sm" | "md" | "lg";
   className?: string;
+  /** Profile photo URL; the initial shows when it's missing or fails to load. */
+  src?: string;
 };
 
 const sizeClasses = {
@@ -13,14 +16,14 @@ const sizeClasses = {
   lg: "h-16 w-16 rounded-2xl text-xl",
 };
 
-export function AvatarGlow({ name, size = "md", className }: AvatarGlowProps) {
+export function AvatarGlow({ name, size = "md", className, src }: AvatarGlowProps) {
   const accent = getAvatarAccent(name);
   const initial = name?.charAt(0)?.toUpperCase() || "?";
 
   return (
     <div
       className={cn(
-        "relative flex shrink-0 items-center justify-center font-black text-white transition-transform duration-200 group-hover:scale-105",
+        "relative flex shrink-0 items-center justify-center overflow-hidden font-black text-white transition-transform duration-200 group-hover:scale-105",
         sizeClasses[size],
         className,
       )}
@@ -30,6 +33,7 @@ export function AvatarGlow({ name, size = "md", className }: AvatarGlowProps) {
       }}
     >
       {initial}
+      {src ? <AvatarPhoto src={src} alt={name} /> : null}
     </div>
   );
 }

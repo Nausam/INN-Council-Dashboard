@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { hasEmployeeProfileAccess } from "@/lib/auth/employee-profile-session";
+import { EMPLOYEE_PHOTO_PREFIX, employeeIdFromPhotoKey } from "@/lib/employees/photo";
 import { COLLECTIONS, getFirestoreDb } from "@/lib/firebase/admin";
 import { fetchEmployeeByRecordCardNumber } from "@/lib/firebase/hr";
 
@@ -33,6 +34,11 @@ export async function GET(request: NextRequest) {
     if (!employeeId || !(await hasEmployeeProfileAccess(employeeId))) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+  }
+
+  const photoEmployeeId = employeeIdFromPhotoKey(key);
+  if (key.startsWith(EMPLOYEE_PHOTO_PREFIX) && !(photoEmployeeId && await hasEmployeeProfileAccess(photoEmployeeId))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   if (!isR2Configured()) {

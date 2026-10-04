@@ -177,6 +177,78 @@ export async function submitFamilyLeaveRequest(input: {
   return { ok: true, id, requestDate: date, reportedTime: time };
 }
 
+/**
+ * Lets the employee change the dates and reason of their own Salaam or Family
+ * leave form while it is still pending. The leave type and the original
+ * reported date and time stay as they were, and the stored form document is
+ * rebuilt so admins see the updated details.
+ */
+export async function updateFamilyLeaveRequest(input: {
+  employeeId: string;
+  requestId: string;
+  reason: string;
+  startDate: string;
+  endDate: string;
+}): Promise<{ ok: true } | { ok: false; code: "not_editable" }> {
+  const employeeId = String(input.employeeId ?? "").trim();
+  const requestId = String(input.requestId ?? "").trim();
+  const profile = await getSessionAuthProfile();
+  if (!profile && getEmployeeProfileSessionId() !== employeeId) throw new Error("Unauthorized");
+  if (!/^[\w-]{1,128}$/.test(employeeId) || !/^[\w-]{1,128}$/.test(requestId)) {
+    throw new Error("Invalid request");
+  }
+  const reason = String(input.reason ?? "").trim();
+  if (!isDhivehiText(reason, 300)) {
+    throw new Error("Leave reason must be written in Dhivehi");
+  }
+  const range = parseLeaveDateRange(String(input.startDate ?? "").trim(), String(input.endDate ?? "").trim());
+
+  const db = getFirestoreDb();
+  const requestRef = db.collection(COLLECTIONS.familyLeaveRequests).doc(requestId);
+  const snap = await requestRef.get();
+  const current = snap.data() as FamilyLeaveRequestSummary | undefined;
+  if (!current || current.employeeId !== employeeId || isReviewed(current.approvalStatus)) {
+    return { ok: false, code: "not_editable" };
+  }
+
+  const changes = {
+    reason,
+    leaveStartDate: range.startDate,
+    leaveEndDate: range.endDate,
+    durationDays: range.durationDays,
+  };
+  const { document } = await renderAssignedForm(
+    db,
+    { ...current, ...changes, secondDay: undefined, additionalDetails: undefined },
+    current.supervisor,
+    current.acceptor,
+  );
+
+  // Re-check inside the transaction so an approval that lands while the form
+  // was being rebuilt is never overwritten.
+  return db.runTransaction(async (transaction) => {
+    const latest = (await transaction.get(requestRef)).data() as FamilyLeaveRequestSummary | undefined;
+    if (!latest || latest.employeeId !== employeeId || isReviewed(latest.approvalStatus)) {
+      return { ok: false, code: "not_editable" } as const;
+    }
+    transaction.update(requestRef, {
+      ...changes,
+      secondDay: FieldValue.delete(),
+      additionalDetails: FieldValue.delete(),
+      updatedAt: new Date().toISOString(),
+    });
+    transaction.set(db.collection(COLLECTIONS.familyLeaveDocuments).doc(requestId), {
+      dataBase64: document.toString("base64"),
+      contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    return { ok: true } as const;
+  });
+}
+
+function isReviewed(status: unknown): boolean {
+  return status === "Approved" || status === "Rejected";
+}
+
 export async function listFamilyLeaveRequests(afterId?: string): Promise<FamilyLeaveRequestPage> {
   await requireAdmin();
   const collection = getFirestoreDb().collection(COLLECTIONS.familyLeaveRequests);

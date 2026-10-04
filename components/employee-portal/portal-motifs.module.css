@@ -1,0 +1,32 @@
+/*
+ * Visual motifs shared across the employee portal: glossy gradient icon
+ * tiles and tear-off calendar pages. Pick the color with data-tone:
+ * present (green), late (peach), leave (blue), annual (lavender),
+ * pending (dashed outline), neutral (grey).
+ */
+
+.glossIcon { position: relative; overflow: hidden; flex: none; display: grid; place-items: center; background: #eef0ec; color: #8a948e; }
+.glossIcon::after { content: ""; position: absolute; top: -40%; left: -20%; width: 90%; height: 70%; border-radius: 50%; background: rgba(255,255,255,.28); pointer-events: none; }
+.glossIcon :global(svg) { position: relative; stroke-width: 2.3; }
+.glossIcon[data-tone="present"] { background: linear-gradient(155deg, #8fe0c2, #2f9c80); color: #fff; box-shadow: 0 8px 16px -10px rgba(47,156,128,.9); }
+.glossIcon[data-tone="late"] { background: linear-gradient(155deg, #ffc896, #d2803e); color: #fff; box-shadow: 0 8px 16px -10px rgba(210,128,62,.9); }
+.glossIcon[data-tone="leave"] { background: linear-gradient(155deg, #b5cff0, #5f8cc0); color: #fff; box-shadow: 0 8px 16px -10px rgba(95,140,192,.9); }
+.glossIcon[data-tone="annual"] { background: linear-gradient(155deg, #d6c9fb, #7d64c9); color: #fff; box-shadow: 0 8px 16px -10px rgba(125,100,201,.9); }
+.glossIcon[data-tone="pending"] { border: 1.5px dashed #d9d5df; background: #fff; color: #8a8792; }
+.glossIcon[data-tone="pending"]::after, .glossIcon[data-tone="neutral"]::after { display: none; }
+
+/* Tear-off calendar page: a colored band with binder holes, then a big number. */
+.calendarPage { --band: #ece6ff; --band-ink: #6a55b8; position: relative; display: grid; justify-items: center; min-width: 0; padding-bottom: .55rem; overflow: hidden; border: 1px solid #fff; border-radius: 16px; background: #fff; box-shadow: 0 6px 16px rgba(61,50,73,.07); }
+.calendarPage:nth-child(4n + 2) { --band: #dcf5e7; --band-ink: #1f7a55; }
+.calendarPage:nth-child(4n + 3) { --band: #ffe8dc; --band-ink: #b4643c; }
+.calendarPage:nth-child(4n + 4) { --band: #e3eefc; --band-ink: #3d6ea8; }
+.calendarPage[data-tone="present"] { --band: #dcf5e7; --band-ink: #1f7a55; }
+.calendarPage[data-tone="late"] { --band: #ffe8dc; --band-ink: #b4643c; }
+.calendarPage[data-tone="leave"] { --band: #e3eefc; --band-ink: #3d6ea8; }
+.calendarPage[data-tone="annual"] { --band: #ece6ff; --band-ink: #6a55b8; }
+.calendarPageTop { position: relative; width: 100%; padding: .55rem 0 .3rem; background: var(--band); color: var(--band-ink); font-size: .58rem; font-weight: 850; letter-spacing: .08em; text-align: center; text-transform: uppercase; }
+.calendarPageTop::before, .calendarPageTop::after { content: ""; position: absolute; top: 4px; width: 5px; height: 5px; border-radius: 50%; background: #fff; box-shadow: inset 0 1px 1px rgba(0,0,0,.12); }
+.calendarPageTop::before { left: 28%; }
+.calendarPageTop::after { right: 28%; }
+.calendarPage strong { margin-top: .35rem; color: #17191d; font-size: 1.45rem; font-weight: 850; line-height: 1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.calendarPage small { margin-top: .25rem; color: #8a8792; font-size: .56rem; font-weight: 750; white-space: nowrap; }

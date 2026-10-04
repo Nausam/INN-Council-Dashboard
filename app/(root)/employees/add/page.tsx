@@ -15,7 +15,9 @@ const AddEmployeePage: React.FC = () => {
   const handleCreateEmployee = async (formData: EmployeeFormData) => {
     setLoading(true);
     try {
-      await createEmployeeRecord(employeeFormDataForFirestore(formData));
+      const created = await createEmployeeRecord(employeeFormDataForFirestore(formData));
+      // Returned so EmployeeForm can upload the chosen photo to the new record.
+      return created.$id;
     } catch (error) {
       console.error("Error adding employee:", error);
       throw error;
