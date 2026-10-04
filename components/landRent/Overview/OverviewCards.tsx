@@ -137,7 +137,7 @@ export default function OverviewCards({
                   <div className="flex items-center gap-2 text-black/70">
                     <CalendarDays className="h-4 w-4" />
                     <span className="tabular-nums">
-                      {fmtDateShort(r.startDate)} → {fmtDateShort(r.endDate)}
+                      {fmtDateShort(r.startDate)} → {r.endDate ? fmtDateShort(r.endDate) : "Until work is finished"}
                     </span>
                   </div>
 

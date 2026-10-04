@@ -104,6 +104,12 @@ export async function uploadToR2(
   );
 }
 
+export async function deleteFromR2(objectKey: string): Promise<void> {
+  if (!bucketName) throw new Error("R2_BUCKET_NAME is not set");
+  const client = getR2Client();
+  await client.send(new DeleteObjectCommand({ Bucket: bucketName, Key: objectKey }));
+}
+
 async function getObjectBufferFromBucket(
   bucket: string,
   objectKey: string

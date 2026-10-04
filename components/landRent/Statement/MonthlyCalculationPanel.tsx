@@ -13,7 +13,7 @@ import type {
   PreviewDetails,
   StatementDetails,
 } from "@/components/landRent/Statement/useLandRentStatementPage";
-import type { LandRentFixedAdjustmentRow } from "@/lib/landrent/landRent.actions";
+import ManualFineButton from "@/components/landRent/Statement/ManualFineButton";
 import React from "react";
 
 function clamp01(n: number) {
@@ -21,12 +21,26 @@ function clamp01(n: number) {
   return Math.max(0, Math.min(1, n));
 }
 
+type FineStatementForm = {
+  enabled: boolean;
+  setEnabled: (value: boolean) => void;
+  amount: string;
+  setAmount: (value: string) => void;
+  description: string;
+  setDescription: (value: string) => void;
+};
+
 export default function MonthlyCalculationPanel({
+  fineStatement,
+  monthKey,
+  setMonthKey,
   previewSource,
   capToEndDate,
   setCapToEndDate,
 
   openStatement,
+  paymentStatement,
+  paymentRequestCount,
 
   canCreateStatement,
   creatingStatement,
@@ -57,16 +71,20 @@ export default function MonthlyCalculationPanel({
   onRefresh,
   onRecalculateAll,
   recalculatingFines,
-  onSaveFixedAdjustmentRows,
-  savingFixedAdjustmentRows,
+  onManualFineAdded,
   leaseId,
 }: {
+  fineStatement: FineStatementForm;
+  monthKey: string;
+  setMonthKey: (v: string) => void;
   previewSource: StatementDetails | PreviewDetails | null;
 
   capToEndDate: boolean;
   setCapToEndDate: (v: boolean) => void;
 
   openStatement: StatementDetails | null;
+  paymentStatement: StatementDetails | null;
+  paymentRequestCount: number;
 
   canCreateStatement: boolean;
   creatingStatement: boolean;
@@ -97,13 +115,14 @@ export default function MonthlyCalculationPanel({
   onRefresh: () => Promise<void>;
   onRecalculateAll?: () => Promise<void>;
   recalculatingFines?: boolean;
-  onSaveFixedAdjustmentRows: (
-    rows: LandRentFixedAdjustmentRow[],
-  ) => Promise<void>;
-  savingFixedAdjustmentRows: boolean;
+  onManualFineAdded: () => Promise<void>;
   leaseId: string;
 }) {
   const [paymentsOpen, setPaymentsOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    if (paymentRequestCount > 0) setPaymentsOpen(true);
+  }, [paymentRequestCount]);
 
   if (!previewSource) return null;
 
@@ -127,24 +146,38 @@ export default function MonthlyCalculationPanel({
   const fineDays = Number((previewSource as any).numberOfFineDays ?? 0);
   const fineAmount = Number((previewSource as any).fineAmount ?? 0);
   const totalDue = Number((previewSource as any).totalRentPaymentMonthly ?? 0);
+  const generatedFineAmount = Number(
+    (previewSource as any).generatedAdjustmentTotal ?? 0
+  );
+  const fixedAdjustmentTotal = Number(
+    (previewSource as any).fixedAdjustmentTotal ?? 0
+  );
 
   const fineBreakdown = Array.isArray((previewSource as any).fineBreakdown)
     ? (previewSource as any).fineBreakdown
     : [];
-  const fixedAdjustmentRows = Array.isArray(
-    (previewSource as any).fixedAdjustmentRows
+  const generatedFineRows = Array.isArray(
+    (previewSource as any).generatedAdjustmentRows
   )
-    ? ((previewSource as any)
-        .fixedAdjustmentRows as LandRentFixedAdjustmentRow[])
+    ? (previewSource as any).generatedAdjustmentRows.map((row: any) => ({
+        key: row.key,
+        label: row.periodLabel,
+        days: Number(row.fineDays ?? 0),
+        fine: Number(row.fineAmount ?? 0),
+      }))
     : [];
+  const allFineBreakdown = [...fineBreakdown, ...generatedFineRows];
+  const manualFines = previewSource.manualFines;
+  const totalFineAmount = fineAmount + generatedFineAmount + previewSource.manualFineTotal;
+  const totalFineDays = fineDays + generatedFineRows.reduce(
+    (sum: number, row: any) => sum + row.days,
+    0
+  );
+  const paymentsTotal = Number((previewSource as any).paymentsTotal ?? 0);
 
-  const paymentsTotal = openStatement
-    ? Number((openStatement as any).paymentsTotal ?? 0)
-    : 0;
-
-  const remainingOutstanding = openStatement
+  const remainingOutstanding = (previewSource as any).statement
     ? Number(
-        (openStatement as any).balanceRemaining ??
+        (previewSource as any).balanceRemaining ??
           Math.max(0, totalDue - paymentsTotal)
       )
     : Math.max(0, totalDue);
@@ -163,7 +196,11 @@ export default function MonthlyCalculationPanel({
                 Monthly Calculation
               </h2>
 
-              {openStatement ? (
+              {paymentStatement?.statement.status === "PAID" ? (
+                <span className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-[12px] font-semibold text-amber-800 ring-1 ring-amber-200">
+                  Revised balance <span className="tabular-nums">{paymentStatement.statement.monthKey}</span>
+                </span>
+              ) : openStatement ? (
                 <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-[12px] font-semibold text-emerald-800 ring-1 ring-emerald-200">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                   OPEN
@@ -283,8 +320,8 @@ export default function MonthlyCalculationPanel({
               />
               <StatCard
                 title="Total Fines Due"
-                value={fmtMoney(fineAmount)}
-                hint={`${fineDays} fine days`}
+                value={fmtMoney(totalFineAmount)}
+                hint={`${totalFineDays} fine days`}
                 tone="violet"
                 icon="spark"
               />
@@ -321,6 +358,15 @@ export default function MonthlyCalculationPanel({
                 {fmtMoney(totalDue)}
               </div>
 
+              {paymentsTotal === 0 ? (
+                <div className="mt-1 text-xs text-slate-500 tabular-nums">
+                  Rent {fmtMoney(outstandingFees)} + fines {fmtMoney(totalFineAmount)}
+                  {fixedAdjustmentTotal > 0
+                    ? ` + saved adjustments ${fmtMoney(fixedAdjustmentTotal)}`
+                    : ""}
+                </div>
+              ) : null}
+
               <div className="mt-2 grid grid-cols-2 gap-3 text-sm">
                 <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
                   <div className="text-[12px] text-slate-500">Paid</div>
@@ -344,7 +390,7 @@ export default function MonthlyCalculationPanel({
               </div>
 
               <div className="mt-3 text-xs text-slate-500">
-                Payments are applied to the OPEN statement only.
+                Manual payments appear on the statement and reduce its remaining balance.
               </div>
             </div>
 
@@ -360,15 +406,34 @@ export default function MonthlyCalculationPanel({
           </div>
         </div>
 
-        <ExtraInvoiceRowsEditor
-          rows={fixedAdjustmentRows}
-          onSave={onSaveFixedAdjustmentRows}
-          saving={savingFixedAdjustmentRows}
-          disabled={!leaseId}
-        />
+        <div className="mt-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-xl font-semibold text-slate-900">Manual fines</h3>
+              <p className="mt-1 text-sm text-slate-500">Add a fine to a created statement with its amount and description.</p>
+            </div>
+            {"statement" in previewSource && previewSource.statement ? (
+              <ManualFineButton
+                key={previewSource.statement.$id}
+                statement={{ statementId: previewSource.statement.$id, leaseId, monthKey: previewSource.statement.monthKey }}
+                onSaved={onManualFineAdded}
+              />
+            ) : <p className="text-sm text-slate-500">Create a statement first to add manual fines.</p>}
+          </div>
+          {manualFines.length > 0 ? (
+            <div className="mt-4 divide-y divide-slate-100">
+              {manualFines.map((fine) => (
+                <div key={fine.id} className="flex items-start justify-between gap-4 py-3 text-sm">
+                  <span dir="auto" className="min-w-0 whitespace-pre-wrap break-words">{fine.description}</span>
+                  <span className="shrink-0 font-semibold tabular-nums">{fmtMoney(fine.amount)} MVR</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
 
         {/* Fine Breakdown */}
-        {fineBreakdown.length ? (
+        {allFineBreakdown.length ? (
           <div className="mt-6 rounded-2xl bg-white shadow-sm ring-1 ring-slate-100">
             <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between">
               <div>
@@ -381,7 +446,7 @@ export default function MonthlyCalculationPanel({
 
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <span className="rounded-full bg-slate-100 px-3 py-1 text-[12px] font-semibold text-slate-700 ring-1 ring-slate-200">
-                    {fineBreakdown.length} months
+                    {allFineBreakdown.length} entries
                   </span>
                   <span className="rounded-full bg-sky-50 px-3 py-1 text-[12px] font-semibold text-sky-700 ring-1 ring-sky-100">
                     Oldest → newest
@@ -394,7 +459,7 @@ export default function MonthlyCalculationPanel({
                   Total fine
                 </div>
                 <div className="mt-1 inline-flex rounded-xl bg-rose-100 px-3 py-2 font-semibold tabular-nums text-rose-700 ring-1 ring-rose-200">
-                  {fmtMoney(fineAmount)}
+                  {fmtMoney(totalFineAmount)}
                 </div>
               </div>
             </div>
@@ -405,12 +470,12 @@ export default function MonthlyCalculationPanel({
               {(() => {
                 const maxFine = Math.max(
                   1,
-                  ...fineBreakdown.map((b: any) => Number(b.fine ?? 0))
+                  ...allFineBreakdown.map((b: any) => Number(b.fine ?? 0))
                 );
 
                 return (
                   <div className="grid gap-3">
-                    {fineBreakdown.map((b: any) => {
+                    {allFineBreakdown.map((b: any) => {
                       const fine = Number(b.fine ?? 0);
                       const pct = Math.max(
                         6,
@@ -504,7 +569,9 @@ export default function MonthlyCalculationPanel({
           <div className="h-px bg-slate-100" />
 
           <div className="p-4">
-            <PaymentsPanel openStatement={openStatement} />
+            <PaymentsPanel
+              openStatement={paymentStatement ?? ("statement" in previewSource ? previewSource : null)}
+            />
           </div>
         </div>
 
@@ -515,7 +582,10 @@ export default function MonthlyCalculationPanel({
           onClose={() => setPaymentsOpen(false)}
         >
           <StatementAndPaymentsForm
-            openStatement={openStatement}
+            fineStatement={fineStatement}
+            monthKey={monthKey}
+            setMonthKey={setMonthKey}
+            openStatement={paymentStatement}
             canCreateStatement={canCreateStatement}
             creatingStatement={creatingStatement}
             onCreateStatement={onCreateStatement}
@@ -543,275 +613,6 @@ export default function MonthlyCalculationPanel({
         </PaymentsModal>
       </div>
     </div>
-  );
-}
-
-function ExtraInvoiceRowsEditor({
-  rows,
-  onSave,
-  saving,
-  disabled,
-}: {
-  rows: LandRentFixedAdjustmentRow[];
-  onSave: (rows: LandRentFixedAdjustmentRow[]) => Promise<void>;
-  saving: boolean;
-  disabled: boolean;
-}) {
-  type DraftRow = {
-    key: string;
-    total: string;
-    rentAmount: string;
-    unpaidMonths: string;
-    fineAmount: string;
-    fineDays: string;
-    periodLabel: string;
-    rentRate: string;
-    sizeOfLand: string;
-  };
-
-  const [draft, setDraft] = React.useState<DraftRow[]>([]);
-
-  React.useEffect(() => {
-    setDraft(
-      rows.map((row) => ({
-        key: String(row.key ?? ""),
-        total: formatDraftNumber(row.total),
-        rentAmount: formatDraftNumber(row.rentAmount),
-        fineAmount: formatDraftNumber(row.fineAmount),
-        unpaidMonths: formatDraftNumber(row.unpaidMonths),
-        fineDays: formatDraftNumber(row.fineDays),
-        rentRate: formatDraftNumber(row.rentRate),
-        sizeOfLand: formatDraftNumber(row.sizeOfLand),
-        periodLabel: String(row.periodLabel ?? ""),
-      }))
-    );
-  }, [rows]);
-
-  const updateRow = (
-    index: number,
-    patch: Partial<DraftRow>
-  ) => {
-    setDraft((current) =>
-      current.map((row, i) => (i === index ? { ...row, ...patch } : row))
-    );
-  };
-
-  const addRow = () => {
-    setDraft((current) => [
-      ...current,
-      {
-        key: `fixed-row-${Date.now()}`,
-        total: "",
-        rentAmount: "",
-        unpaidMonths: "",
-        fineAmount: "",
-        fineDays: "",
-        periodLabel: "",
-        rentRate: "",
-        sizeOfLand: "",
-      },
-    ]);
-  };
-
-  const removeRow = (index: number) => {
-    setDraft((current) => current.filter((_, i) => i !== index));
-  };
-
-  const saveRows = async () => {
-    await onSave(
-      draft.map((row) => ({
-        key: row.key || `fixed-row-${Date.now()}`,
-        total: parseDraftNumber(row.total),
-        rentAmount: parseDraftNumber(row.rentAmount),
-        unpaidMonths: Math.floor(parseDraftNumber(row.unpaidMonths)),
-        fineAmount: parseDraftNumber(row.fineAmount),
-        fineDays: Math.floor(parseDraftNumber(row.fineDays)),
-        periodLabel: row.periodLabel,
-        rentRate: parseDraftNumber(row.rentRate),
-        sizeOfLand: parseDraftNumber(row.sizeOfLand),
-      }))
-    );
-  };
-
-  return (
-    <div className="mt-6 rounded-2xl bg-white shadow-sm ring-1 ring-slate-100">
-      <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div className="text-xl font-semibold text-slate-900">
-            Extra Invoice Rows
-          </div>
-          <div className="mt-1 text-sm text-slate-500">
-            Fixed rows that appear before the calculated monthly row.
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={addRow}
-            disabled={disabled || saving}
-            className="h-10 rounded-xl bg-slate-50 px-4 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-100 transition hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 disabled:hover:translate-y-0"
-          >
-            Add row
-          </button>
-          <button
-            type="button"
-            onClick={saveRows}
-            disabled={disabled || saving}
-            className="h-10 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-700 hover:shadow-md disabled:opacity-50 disabled:hover:translate-y-0"
-          >
-            {saving ? "Saving..." : "Save rows"}
-          </button>
-        </div>
-      </div>
-
-      <div className="h-px bg-slate-100" />
-
-      <div className="p-4">
-        {draft.length ? (
-          <div className="space-y-4">
-            {draft.map((row, index) => (
-              <div
-                key={row.key || index}
-                className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-100"
-              >
-                <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
-                  <FixedRowField label="Size">
-                    <NumberInput
-                      value={row.sizeOfLand}
-                      onChange={(value) =>
-                        updateRow(index, { sizeOfLand: value })
-                      }
-                    />
-                  </FixedRowField>
-                  <FixedRowField label="Rate">
-                    <NumberInput
-                      value={row.rentRate}
-                      onChange={(value) => updateRow(index, { rentRate: value })}
-                    />
-                  </FixedRowField>
-                  <FixedRowField label="Period">
-                    <input
-                      value={row.periodLabel}
-                      onChange={(e) =>
-                        updateRow(index, { periodLabel: e.target.value })
-                      }
-                      className={fixedRowInputClass}
-                      placeholder="2023 December"
-                    />
-                  </FixedRowField>
-                  <FixedRowField label="Fine days">
-                    <NumberInput
-                      value={row.fineDays}
-                      onChange={(value) =>
-                        updateRow(index, { fineDays: value })
-                      }
-                    />
-                  </FixedRowField>
-                  <FixedRowField label="Fine">
-                    <NumberInput
-                      value={row.fineAmount}
-                      onChange={(value) =>
-                        updateRow(index, { fineAmount: value })
-                      }
-                    />
-                  </FixedRowField>
-                  <FixedRowField label="Months">
-                    <NumberInput
-                      value={row.unpaidMonths}
-                      onChange={(value) =>
-                        updateRow(index, { unpaidMonths: value })
-                      }
-                    />
-                  </FixedRowField>
-                  <FixedRowField label="Rent">
-                    <NumberInput
-                      value={row.rentAmount}
-                      onChange={(value) =>
-                        updateRow(index, { rentAmount: value })
-                      }
-                    />
-                  </FixedRowField>
-                  <FixedRowField label="Total">
-                    <NumberInput
-                      value={row.total}
-                      onChange={(value) => updateRow(index, { total: value })}
-                    />
-                  </FixedRowField>
-                </div>
-
-                <div className="mt-3 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => removeRow(index)}
-                    disabled={saving}
-                    className="h-9 rounded-xl bg-white px-3 text-sm font-semibold text-rose-700 ring-1 ring-rose-100 transition hover:bg-rose-50 disabled:opacity-50"
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-2xl bg-slate-50 px-4 py-6 text-sm text-slate-500 ring-1 ring-slate-100">
-            No fixed rows yet.
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function formatDraftNumber(value: unknown) {
-  const n = Number(value ?? 0);
-  if (!Number.isFinite(n) || n === 0) return "";
-  return String(n);
-}
-
-function parseDraftNumber(value: string) {
-  const n = Number(String(value ?? "").replace(/,/g, ""));
-  if (!Number.isFinite(n) || n < 0) return 0;
-  return n;
-}
-
-const fixedRowInputClass =
-  "h-10 w-full min-w-0 rounded-xl bg-white px-3 text-sm font-semibold text-slate-900 ring-1 ring-slate-200 transition focus:outline-none focus:ring-2 focus:ring-emerald-200";
-
-function FixedRowField({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="min-w-0 space-y-1.5">
-      <span className="block text-[11px] font-semibold text-slate-500">
-        {label}
-      </span>
-      {children}
-    </label>
-  );
-}
-
-function NumberInput({
-  value,
-  onChange,
-  placeholder,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-}) {
-  return (
-    <input
-      type="text"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className={fixedRowInputClass}
-    />
   );
 }
 
@@ -1047,6 +848,9 @@ function PaymentsModal({
 }
 
 function StatementAndPaymentsForm({
+  fineStatement,
+  monthKey,
+  setMonthKey,
   openStatement,
   canCreateStatement,
   creatingStatement,
@@ -1074,6 +878,9 @@ function StatementAndPaymentsForm({
   onRefresh,
   leaseId,
 }: {
+  fineStatement: FineStatementForm;
+  monthKey: string;
+  setMonthKey: (v: string) => void;
   openStatement: any | null;
 
   canCreateStatement: boolean;
@@ -1106,13 +913,15 @@ function StatementAndPaymentsForm({
   onRefresh: () => Promise<void>;
   leaseId: string;
 }) {
+  const busy = savingPayment || creatingStatement;
+  const canEnterPayment = !!openStatement || canCreateStatement;
+
   return (
     <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="mt-1 text-sm text-slate-500">
-            Create a statement first. Payments are linked to the OPEN statement
-            only.
+            Payments are linked to the statement shown below.
           </div>
         </div>
       </div>
@@ -1122,19 +931,85 @@ function StatementAndPaymentsForm({
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="text-sm font-semibold text-slate-900">
-                No open statement
+                Create a statement
               </div>
               <div className="mt-1 text-sm text-slate-500">
-                Pick a month and create the statement to start collecting
-                payments.
+                {fineStatement.enabled
+                  ? "Rent is already paid. Enter the outstanding fine to bill for this month."
+                  : "Create a rent statement, or choose Fine only when rent is already paid."}
               </div>
 
-              {canCreateNextStatement ? (
+              <Field label="Statement type">
+                <select
+                  value={fineStatement.enabled ? "FINE_ONLY" : "RENT"}
+                  onChange={(e) => fineStatement.setEnabled(e.target.value === "FINE_ONLY")}
+                  disabled={busy}
+                  className="mt-2 h-11 w-full rounded-xl bg-white px-4 text-slate-900 ring-1 ring-slate-200 disabled:opacity-60"
+                >
+                  <option value="RENT">Rent and calculated fines</option>
+                  <option value="FINE_ONLY">Fine only — rent already paid</option>
+                </select>
+              </Field>
+
+              {fineStatement.enabled ? (
+                <div className="mt-3 grid gap-3">
+                  <Field label="Outstanding fine (MVR)">
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      value={fineStatement.amount}
+                      onChange={(e) => fineStatement.setAmount(e.target.value)}
+                      placeholder="0.00"
+                      disabled={busy}
+                      className="h-11 w-full rounded-xl bg-white px-4 text-slate-900 ring-1 ring-slate-200 disabled:opacity-60"
+                    />
+                  </Field>
+                  <Field label="Fine description (optional)">
+                    <input
+                      value={fineStatement.description}
+                      onChange={(e) => fineStatement.setDescription(e.target.value)}
+                      placeholder="Outstanding fine"
+                      disabled={busy}
+                      className="h-11 w-full rounded-xl bg-white px-4 text-slate-900 ring-1 ring-slate-200 disabled:opacity-60"
+                    />
+                  </Field>
+                  <div className="text-sm text-slate-500">
+                    This statement includes only the entered fine. You can use a month whose rent is already paid.
+                  </div>
+                </div>
+              ) : null}
+
+              <Field label="Statement month">
+                <input
+                  type="month"
+                  value={monthKey}
+                  onChange={(e) => setMonthKey(e.target.value)}
+                  disabled={busy || !leaseId}
+                  className="mt-2 h-11 w-full rounded-xl bg-white px-4 text-slate-900 ring-1 ring-slate-200 disabled:opacity-60"
+                />
+              </Field>
+
+              {!canCreateStatement && leaseId ? (
+                <div className="mt-2 text-sm text-slate-500">
+                  Choose a new month to create another statement.
+                </div>
+              ) : null}
+
+              {canCreateNextStatement && !fineStatement.enabled ? (
                 <div className="mt-2 text-sm text-slate-500">
                   Suggested month:{" "}
                   <span className="font-semibold tabular-nums text-slate-900">
                     {nextMonthKeySuggestion}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => setMonthKey(nextMonthKeySuggestion)}
+                    disabled={busy}
+                    className="ml-2 font-semibold text-sky-700 disabled:opacity-60"
+                  >
+                    Use this month
+                  </button>
                 </div>
               ) : null}
             </div>
@@ -1142,11 +1017,11 @@ function StatementAndPaymentsForm({
             <button
               type="button"
               onClick={onCreateStatement}
-              disabled={!canCreateStatement || creatingStatement}
+              disabled={!canCreateStatement || busy}
               className="h-11 rounded-xl px-5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 disabled:hover:translate-y-0
                 bg-gradient-to-r from-indigo-600 via-sky-600 to-emerald-600"
             >
-              {creatingStatement ? "Creating…" : "Create statement"}
+              {creatingStatement ? "Creating…" : fineStatement.enabled ? "Create fine statement" : "Create statement"}
             </button>
           </div>
         </div>
@@ -1181,7 +1056,7 @@ function StatementAndPaymentsForm({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="text-lg font-semibold text-slate-900">
-              Collect payment
+              Add manual payment
             </div>
             {/* <div className="mt-1 text-sm text-slate-500">
               Applied to the oldest unpaid months first.
@@ -1191,7 +1066,7 @@ function StatementAndPaymentsForm({
           <button
             type="button"
             onClick={() => setPayAtLocal(toDatetimeLocalValue(new Date()))}
-            disabled={!openStatement}
+            disabled={busy || !canEnterPayment}
             className="h-10 rounded-xl bg-slate-50 px-4 text-xs font-semibold text-slate-700 ring-1 ring-slate-100 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 disabled:hover:translate-y-0"
           >
             Set time to now
@@ -1205,7 +1080,7 @@ function StatementAndPaymentsForm({
               value={payAmount}
               onChange={(e) => setPayAmount(e.target.value)}
               placeholder="0.00"
-              disabled={savingPayment || !openStatement}
+              disabled={busy || !canEnterPayment}
               className="h-11 w-full rounded-xl bg-slate-50 px-4 tabular-nums text-slate-900
                 ring-1 ring-slate-100 shadow-sm transition
                 focus:outline-none focus:ring-2 focus:ring-sky-200 disabled:opacity-60"
@@ -1217,7 +1092,7 @@ function StatementAndPaymentsForm({
               type="datetime-local"
               value={payAtLocal}
               onChange={(e) => setPayAtLocal(e.target.value)}
-              disabled={savingPayment || !openStatement}
+              disabled={busy || !canEnterPayment}
               className="h-11 w-full rounded-xl bg-slate-50 px-4 text-slate-900
                 ring-1 ring-slate-100 shadow-sm transition
                 focus:outline-none focus:ring-2 focus:ring-sky-200 disabled:opacity-60"
@@ -1231,7 +1106,7 @@ function StatementAndPaymentsForm({
               <select
                 value={payMethod}
                 onChange={(e) => setPayMethod(e.target.value)}
-                disabled={savingPayment || !openStatement}
+                disabled={busy || !canEnterPayment}
                 className="h-11 w-full appearance-none rounded-xl bg-slate-50 px-4 pr-10 text-slate-900
                   ring-1 ring-slate-100 shadow-sm transition
                   focus:outline-none focus:ring-2 focus:ring-sky-200 disabled:opacity-60"
@@ -1265,7 +1140,7 @@ function StatementAndPaymentsForm({
               value={payReceivedBy}
               onChange={(e) => setPayReceivedBy(e.target.value)}
               placeholder="Staff name (optional)"
-              disabled={savingPayment}
+              disabled={busy}
               className="h-11 w-full rounded-xl bg-slate-50 px-4 text-slate-900
                 ring-1 ring-slate-100 shadow-sm transition
                 focus:outline-none focus:ring-2 focus:ring-sky-200 disabled:opacity-60"
@@ -1280,7 +1155,7 @@ function StatementAndPaymentsForm({
                 type="file"
                 accept="image/*,application/pdf"
                 className="hidden"
-                disabled={savingPayment || !openStatement}
+                disabled={busy || !canEnterPayment}
                 onChange={(e) => setPaySlipFile(e.target.files?.[0] ?? null)}
               />
               Choose file
@@ -1299,7 +1174,7 @@ function StatementAndPaymentsForm({
               <button
                 type="button"
                 onClick={() => setPaySlipFile(null)}
-                disabled={savingPayment || !openStatement}
+                disabled={busy || !canEnterPayment}
                 className="h-11 rounded-xl bg-slate-50 px-4 text-sm font-semibold text-slate-700 ring-1 ring-slate-100 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md disabled:opacity-60"
               >
                 Clear
@@ -1314,7 +1189,7 @@ function StatementAndPaymentsForm({
             onChange={(e) => setPayNote(e.target.value)}
             placeholder="Optional note"
             rows={3}
-            disabled={savingPayment || !openStatement}
+            disabled={busy || !canEnterPayment}
             className="w-full rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-900
               ring-1 ring-slate-100 shadow-sm transition
               focus:outline-none focus:ring-2 focus:ring-sky-200 disabled:opacity-60"
@@ -1324,17 +1199,17 @@ function StatementAndPaymentsForm({
         <div className="flex flex-wrap items-center gap-3 pt-1">
           <button
             type="submit"
-            disabled={savingPayment || !openStatement}
+            disabled={busy || !canEnterPayment}
             className="h-11 rounded-xl px-5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 disabled:hover:translate-y-0
               bg-gradient-to-r from-indigo-600 via-sky-600 to-emerald-600"
           >
-            {savingPayment ? "Saving…" : "Save payment"}
+            {savingPayment ? "Saving…" : openStatement ? "Save payment" : "Create statement & save payment"}
           </button>
 
           <button
             type="button"
             onClick={onRefresh}
-            disabled={savingPayment || !leaseId}
+            disabled={busy || !leaseId}
             className="h-11 rounded-xl bg-slate-50 px-5 text-sm font-semibold text-slate-700 ring-1 ring-slate-100 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 disabled:hover:translate-y-0"
           >
             Refresh

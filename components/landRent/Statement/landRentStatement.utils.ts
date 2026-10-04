@@ -60,7 +60,7 @@ const DHIVEHI_MONTHS: Record<number, string> = {
   7: "އޯގަސްޓް",
   8: "ސެޕްޓެމްބަރު",
   9: "އޮކްޓޯބަރު",
-  10: "ނޮވެމްބަރު",
+  10: "ނޮވެމްބަރ",
   11: "ޑިސެމްބަރު",
 };
 
@@ -68,11 +68,27 @@ export function fmtDateDhivehi(iso: string | null | undefined) {
   if (!iso) return "-";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "-";
-  const dd = String(d.getDate()).padStart(2, "0");
-  const monthIndex = d.getMonth();
+  // A calendar date must retain its day even in a browser west of UTC.
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso);
+  const dd = String(dateOnly ? d.getUTCDate() : d.getDate());
+  const monthIndex = dateOnly ? d.getUTCMonth() : d.getMonth();
   const monthName = DHIVEHI_MONTHS[monthIndex] ?? "";
-  const yyyy = d.getFullYear();
+  const yyyy = dateOnly ? d.getUTCFullYear() : d.getFullYear();
   return `${dd} ${monthName} ${yyyy}`;
+}
+
+export function fmtMonthDhivehi(monthKey: string) {
+  const match = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!match) return monthKey;
+  const monthName = DHIVEHI_MONTHS[Number(match[2]) - 1];
+  return monthName ? `${monthName} ${match[1]}` : monthKey;
+}
+
+/** Localize saved fine-period labels as well as newly calculated ones. */
+export function fmtStatementPeriodDhivehi(label: string) {
+  return label.replace(/\((\d{4}-\d{2})\s*[–—-]\s*(\d{4}-\d{2})\)/g,
+    (_range, from: string, to: string) => `(${fmtMonthDhivehi(from)} – ${fmtMonthDhivehi(to)})`,
+  );
 }
 
 export function fmtDateTimeShort(iso: string | null | undefined) {

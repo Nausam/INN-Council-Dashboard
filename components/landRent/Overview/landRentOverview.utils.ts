@@ -71,9 +71,7 @@ export function getOutstandingNow(r: LandRentOverviewUIRow) {
 }
 
 export function buildStatementHref(leaseId: string, monthKey: string) {
-  return `/landRent/statement?leaseId=${encodeURIComponent(
-    leaseId
-  )}&monthKey=${encodeURIComponent(monthKey)}`;
+  return `/landRent/${encodeURIComponent(leaseId)}?monthKey=${encodeURIComponent(monthKey)}`;
 }
 
 export function filterOverviewRows(rows: LandRentOverviewUIRow[], q: string) {

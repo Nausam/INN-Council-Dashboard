@@ -19,6 +19,7 @@ export type LandRentOverviewRow = {
 
   startDate?: string | null;
   endDate?: string | null;
+  doubleRateAfterEnd?: boolean;
   releasedDate?: string | null;
   lastPaymentDate?: string | null;
 

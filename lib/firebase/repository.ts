@@ -3,6 +3,7 @@ import type {
   Query,
   WhereFilterOp,
 } from "firebase-admin/firestore";
+import { FieldValue } from "firebase-admin/firestore";
 
 import {
   fromFirestoreDoc,
@@ -187,6 +188,18 @@ export async function getDocument<T extends { $id: string }>(
   return doc;
 }
 
+/** Append without overwriting items saved concurrently by another user. */
+export async function appendDocumentArrayItem(
+  collectionPath: string,
+  id: string,
+  field: string,
+  item: Record<string, unknown>,
+): Promise<void> {
+  await getFirestoreDb().collection(collectionPath).doc(id).update(
+    withTimestamps({ [field]: FieldValue.arrayUnion(item) }),
+  );
+}
+
 export async function countDocuments(
   collectionPath: string,
   options: Omit<ListQueryOptions, "limit"> = {},
@@ -278,6 +291,21 @@ export async function deleteDocument(
   await getFirestoreDb().collection(collectionPath).doc(id).delete();
 }
 
+export async function deleteDocumentsAtomically(
+  documents: Array<{ collectionPath: string; id: string }>,
+): Promise<void> {
+  if (!documents.length) return;
+  if (documents.length > 500) {
+    throw new Error("This statement has too many payment records to delete in one operation.");
+  }
+  const db = getFirestoreDb();
+  const batch = db.batch();
+  for (const document of documents) {
+    batch.delete(db.collection(document.collectionPath).doc(document.id));
+  }
+  await batch.commit();
+}
+
 export { newDocId };
 
 export { fileProxyUrl } from "@/lib/files";
@@ -290,4 +318,9 @@ export async function uploadBufferToR2(
   const { uploadToR2 } = await import("@/lib/r2");
   await uploadToR2(objectKey, buffer, contentType);
   return objectKey;
+}
+
+export async function deleteFileFromR2(objectKey: string): Promise<void> {
+  const { deleteFromR2 } = await import("@/lib/r2");
+  await deleteFromR2(objectKey);
 }

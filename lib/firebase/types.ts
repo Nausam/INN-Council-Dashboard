@@ -95,10 +95,13 @@ export type SlimEmployee = {
   designation?: string;
   section?: string;
   recordCardNumber?: string;
+  photoKey?: string;
 };
 
 export type EmployeeDoc = LegacyDocument & {
   name: string;
+  /** R2 object key of the profile photo, served through /api/employee-photos/[id]. */
+  photoKey?: string;
   nameDv?: string;
   designation?: string;
   designationDv?: string;
@@ -267,7 +270,8 @@ export type LandLeaseDoc = LegacyDocument & {
   parcelId: string;
   tenantId: string;
   startDate: string;
-  endDate: string;
+  endDate: string | null;
+  doubleRateAfterEnd?: boolean;
   agreementNumber: string;
   releasedDate?: string | null;
   lastPaymentDate?: string | null;
@@ -282,8 +286,19 @@ export type LandLeaseDoc = LegacyDocument & {
 
 export type LandStatementStatus = "OPEN" | "PAID";
 
+export type LandStatementManualFine = {
+  id: string;
+  amount: number;
+  description: string;
+  createdAt: string;
+};
+
 export type LandStatementDoc = LegacyDocument & {
   leaseId: string;
+  kind?: "RENT" | "FINE_ONLY";
+  fineDescription?: string | null;
+  manualFines?: LandStatementManualFine[];
+  recalculatedAt?: string | null;
   monthKey: string;
   status: LandStatementStatus;
   createdAt: string;
@@ -293,6 +308,7 @@ export type LandStatementDoc = LegacyDocument & {
   agreementNumber?: string | null;
   startDate?: string | null;
   endDate?: string | null;
+  doubleRateAfterEnd?: boolean;
   releasedDate?: string | null;
   sizeSqft?: number | null;
   rateLariPerSqft?: number | null;
@@ -307,6 +323,9 @@ export type LandStatementDoc = LegacyDocument & {
   snapshot_fineAmount?: number | null;
   snapshot_latestPaymentDate?: string | null;
   snapshot_fineBreakdownJson?: string | null;
+  snapshot_generatedAdjustmentRowsJson?: string | null;
+  snapshot_rateBreakdownJson?: string | null;
+  snapshot_legacyFineStartRuleVersion?: number | null;
   snapshot_capToEndDate?: boolean | null;
 };
 
@@ -316,6 +335,7 @@ export type LandPaymentDoc = LegacyDocument & {
   paidAt: string;
   amount: number;
   method?: string;
+  reference?: string;
   note?: string;
   receivedBy?: string;
   slipFileId?: string | null;

@@ -144,10 +144,15 @@ export function LandRentStatementView({
       />
 
       <MonthlyCalculationPanel
+        fineStatement={s.fineStatement}
+        monthKey={s.monthKey}
+        setMonthKey={s.setMonthKey}
         previewSource={s.previewSource}
         capToEndDate={s.capToEndDate}
         setCapToEndDate={s.setCapToEndDate}
         openStatement={s.openStatement}
+        paymentStatement={s.paymentStatement}
+        paymentRequestCount={s.paymentRequestCount}
         canCreateStatement={s.canCreateStatement}
         creatingStatement={s.creatingStatement}
         onCreateStatement={s.createStatement}
@@ -172,8 +177,7 @@ export function LandRentStatementView({
         onRefresh={s.refreshAll}
         onRecalculateAll={s.recalculateAll}
         recalculatingFines={s.recalculatingFines}
-        onSaveFixedAdjustmentRows={s.saveFixedAdjustmentRows}
-        savingFixedAdjustmentRows={s.savingFixedAdjustmentRows}
+        onManualFineAdded={s.refreshAfterPaymentEdit}
         leaseId={s.leaseId}
       />
 
@@ -183,6 +187,9 @@ export function LandRentStatementView({
         <StatementsList
           statements={s.statements}
           latestInvoiceRef={s.latestInvoiceRef}
+          onCollectRemaining={s.selectStatementForPayment}
+          onPaymentUpdated={s.refreshAfterPaymentEdit}
+          onStatementDeleted={s.refreshAfterStatementDelete}
         />
       ) : (
         <div className="flex items-center justify-center rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100 text-slate-600">

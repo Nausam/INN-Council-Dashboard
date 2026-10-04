@@ -1,5 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import {
+  LAND_RENT_STAMP_MARGIN_MM,
+  loadLandRentStamp,
+  stampLandRentPdfPages,
+} from "@/lib/landrent/landRent.pdfStamp";
+
 function sleep(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms));
 }
@@ -13,17 +19,17 @@ export async function downloadElementAsPdf(el: HTMLElement, filename: string) {
   el.style.transformOrigin = "top left";
   el.style.transform = "none";
 
-  // ✅ Wait for layout + fonts
-  await new Promise<void>((r) => requestAnimationFrame(() => r()));
-  if ((document as any).fonts?.ready) {
-    await (document as any).fonts.ready;
-    await sleep(50);
-  }
-
   try {
+    const stamp = await loadLandRentStamp();
+    // Wait for layout and fonts before capturing the statement.
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    if ((document as any).fonts?.ready) {
+      await (document as any).fonts.ready;
+      await sleep(50);
+    }
     const html2pdf = (await import("html2pdf.js")).default;
     const worker = (html2pdf() as any).from(el).set({
-      margin: 0,
+      margin: [0, 0, LAND_RENT_STAMP_MARGIN_MM, 0],
       pagebreak: {
         mode: ["css", "legacy"],
         before: ".pdf-break",
@@ -41,6 +47,7 @@ export async function downloadElementAsPdf(el: HTMLElement, filename: string) {
         // ✅ Force the clone to use the same RTL + centering rules
         onclone: async (doc: Document) => {
           doc.documentElement.classList.add("pdf-export");
+          doc.querySelectorAll("[data-pdf-exclude]").forEach((node) => node.remove());
 
           // Wait for fonts inside the cloned document too
           if ((doc as any).fonts?.ready) {
@@ -58,8 +65,10 @@ export async function downloadElementAsPdf(el: HTMLElement, filename: string) {
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
     });
 
-    // Allow multi-page, but remove accidental trailing pages (your previous logic)
     const pdf = await worker.toPdf().get("pdf");
+    const canvas = await worker.get("canvas");
+    const pageSize = await worker.get("pageSize");
+    stampLandRentPdfPages(pdf, canvas, pageSize, stamp);
     pdf.save(
       filename.toLowerCase().endsWith(".pdf") ? filename : `${filename}.pdf`
     );

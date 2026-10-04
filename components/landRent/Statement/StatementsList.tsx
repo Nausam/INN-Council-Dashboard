@@ -3,24 +3,34 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import CouncilInvoiceTemplate from "@/components/landRent/CouncilInvoiceTemplate";
+import ManualFineButton from "@/components/landRent/Statement/ManualFineButton";
+import PaymentEditDialog, { type EditableLandRentPayment } from "@/components/landRent/Statement/PaymentEditDialog";
+import StatementDeleteDialog, { type DeletableLandStatement } from "@/components/landRent/Statement/StatementDeleteDialog";
 import { downloadElementAsPdf } from "@/components/landRent/Statement/landRentPdf.utils";
 import {
     fmtDateShort,
-    fmtDateDDMMYYYY,
     fmtDateDhivehi,
     fmtMoney,
-    monthKeyToFullDate,
+    fmtStatementPeriodDhivehi,
 } from "@/components/landRent/Statement/landRentStatement.utils";
 import type { StatementDetails } from "@/components/landRent/Statement/useLandRentStatementPage";
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 
 export default function StatementsList({
   statements,
   latestInvoiceRef,
+  onCollectRemaining,
+  onPaymentUpdated,
+  onStatementDeleted,
 }: {
   statements: StatementDetails[];
   latestInvoiceRef: React.RefObject<HTMLDivElement>;
+  onCollectRemaining: (statementId: string) => void;
+  onPaymentUpdated: () => Promise<void>;
+  onStatementDeleted?: (statementId: string) => Promise<void>;
 }) {
+  const [editingPayment, setEditingPayment] = useState<EditableLandRentPayment | null>(null);
+  const [deletingStatement, setDeletingStatement] = useState<DeletableLandStatement | null>(null);
   const rendered = useMemo(() => {
     if (!statements.length) return null;
 
@@ -46,9 +56,15 @@ export default function StatementsList({
           const invoiceTotalNumber = Number(
             details.totalRentPaymentMonthly ?? 0
           );
+          const manualFines = details.manualFines ?? [];
+          const manualFineTotal = Number(details.manualFineTotal ?? 0);
+          const manualFineRows = manualFines.map((fine: { description: string; amount: number }) => ({
+            __spanText: { text: fine.description, highlight: true },
+            c1: { value: fmtMoney(fine.amount), highlight: true },
+          }));
           const liveTotalMonthly = Math.max(
             0,
-            invoiceTotalNumber - fixedAdjustmentTotal - generatedAdjustmentTotal
+            invoiceTotalNumber - fixedAdjustmentTotal - generatedAdjustmentTotal - manualFineTotal
           );
           const totalMonthly = fmtMoney(liveTotalMonthly);
           const invoiceTotal = fmtMoney(invoiceTotalNumber);
@@ -58,20 +74,30 @@ export default function StatementsList({
           const calculatedRentTotal = fmtMoney(
             Number(details.outstandingFees ?? 0)
           );
+          const rateBreakdown = Array.isArray(details.rateBreakdown)
+            ? details.rateBreakdown.filter((row: any) =>
+                Number(row.rentAmount ?? 0) > 0 || Number(row.fineAmount ?? 0) > 0
+              )
+            : [];
+          const formatMonths = (value: number) =>
+            String(Math.max(0, Math.floor(Number.isFinite(value) ? value : 0)));
           const paymentsTotal = fmtMoney(Number(details.paymentsTotal ?? 0));
           const balance = fmtMoney(
             Math.max(0, Number(details.balanceRemaining ?? 0))
           );
 
-          const rentDurationText = `${fmtDateShort(
-            details.rentDuration?.startDate ?? null
-          )} އިން ${fmtDateShort(details.rentDuration?.endDate ?? null)} އަށް`;
+          const rentDurationText = details.rentDuration?.endDate
+            ? `${fmtDateDhivehi(fmtDateShort(details.rentDuration?.startDate ?? null))} އިން ${fmtDateDhivehi(fmtDateShort(details.rentDuration.endDate))} އަށް`
+            : `${fmtDateDhivehi(fmtDateShort(details.rentDuration?.startDate ?? null))} އިން މަސައްކަތް ނިމެންދެން`;
 
           const releasedText = details.letGoDate
-            ? fmtDateShort(details.letGoDate)
+            ? fmtDateDhivehi(fmtDateShort(details.letGoDate))
             : "-";
 
           const isOpen = details.statement?.status === "OPEN";
+          const isFineOnly = details.statement?.kind === "FINE_ONLY";
+          const revisedBalanceDue = details.statement?.status === "PAID" &&
+            Number(details.balanceRemaining ?? 0) > 0;
           const isLatest = idx === statements.length - 1;
 
           const invoice = (
@@ -86,7 +112,7 @@ export default function StatementsList({
                 { text: "ރ.އިންނަމާދޫ، ދިވެހިރާއްޖެ", highlight: true },
               ]}
               title={{
-                text: "ކުލި ދައްކަންޖެހޭގޮތުގެ ތަފްޞީލް",
+                text: isFineOnly ? "ޖޫރިމަނާ ދައްކަންޖެހޭގޮތުގެ ތަފްޞީލް" : "ކުލި ދައްކަންޖެހޭގޮތުގެ ތަފްޞީލް",
                 highlight: true,
               }}
               leftInfo={{
@@ -122,7 +148,8 @@ export default function StatementsList({
                     highlight: true,
                   },
                   {
-                    text: `އެގްރިމެންޓްގެ ނަންބަރު: ${details.agreementNumber}`,
+                    text: "އެގްރިމެންޓްގެ ނަންބަރު:",
+                    ltrSuffix: String(details.agreementNumber ?? ""),
                     highlight: true,
                   },
                   {
@@ -145,7 +172,7 @@ export default function StatementsList({
                 {
                   key: "c3",
                   label: {
-                    text: "ކުލި ނުދައްކާ ދުވަހުގެ އަދަދު",
+                    text: "ކުލި ނުދައްކާ މަހުގެ އަދަދު",
                     highlight: true,
                   },
                 },
@@ -176,7 +203,22 @@ export default function StatementsList({
                   },
                 },
               ]}
-              rows={[
+              rows={isFineOnly ? [{
+                c1: { value: fmtMoney(0), highlight: true },
+                c2: { value: calculatedRentTotal, highlight: true },
+                c3: { value: String(details.unpaidMonths ?? 0), highlight: true },
+                c4: { value: fmtMoney(0), highlight: true },
+                c5: { value: String(details.numberOfFineDays ?? 0), highlight: true },
+                c6: { value: fmtDateDhivehi(details.latestPaymentDate ?? null), highlight: true },
+                c7: { value: String(details.rentRate ?? 0), highlight: true },
+                c8: { value: String(details.sizeOfLand ?? 0), highlight: true },
+              }, {
+                __spanText: {
+                  text: details.statement.fineDescription || "Outstanding fine",
+                  highlight: true,
+                },
+                c1: { value: totalMonthly, highlight: true },
+              }, ...manualFineRows] : [
                 ...fixedAdjustmentRows.map((row: any) => ({
                   c1: {
                     value: fmtMoney(Number(row.total ?? 0)),
@@ -211,38 +253,37 @@ export default function StatementsList({
                     highlight: true,
                   },
                 })),
-                {
-                  c1: { value: totalMonthly, highlight: true },
-                  c2: { value: calculatedRentTotal, highlight: true },
-                  c3: {
-                    value: String(details.unpaidMonths ?? 0),
-                    highlight: true,
-                  },
-                  c4: {
-                    value: fmtMoney(Number(details.fineAmount ?? 0)),
-                    highlight: true,
-                  },
-                  c5: {
-                    value: String(details.numberOfFineDays ?? 0),
-                    highlight: true,
-                  },
-                  c6: {
-                    value: fmtDateDhivehi(details.latestPaymentDate ?? null),
-                    highlight: true,
-                  },
-                  c7: { value: String(details.rentRate ?? 0), highlight: true },
-                  c8: {
-                    value: String(details.sizeOfLand ?? 0),
-                    highlight: true,
-                  },
-                },
+                ...(rateBreakdown.length
+                  ? rateBreakdown.map((row: any) => ({
+                      c1: { value: fmtMoney(Number(row.total ?? 0)), highlight: true },
+                      c2: { value: fmtMoney(Number(row.rentAmount ?? 0)), highlight: true },
+                      c3: { value: formatMonths(Number(row.unpaidMonths ?? 0)), highlight: true },
+                      c4: { value: fmtMoney(Number(row.fineAmount ?? 0)), highlight: true },
+                      c5: { value: String(row.fineDays ?? 0), highlight: true },
+                      c6: { value: fmtDateDhivehi(details.latestPaymentDate ?? null), highlight: true },
+                      c7: {
+                        value: String(Number(details.rentRate ?? 0) * Number(row.multiplier ?? 1)),
+                        highlight: true,
+                      },
+                      c8: { value: String(details.sizeOfLand ?? 0), highlight: true },
+                    }))
+                  : [{
+                      c1: { value: totalMonthly, highlight: true },
+                      c2: { value: calculatedRentTotal, highlight: true },
+                      c3: { value: String(details.unpaidMonths ?? 0), highlight: true },
+                      c4: { value: fmtMoney(Number(details.fineAmount ?? 0)), highlight: true },
+                      c5: { value: String(details.numberOfFineDays ?? 0), highlight: true },
+                      c6: { value: fmtDateDhivehi(details.latestPaymentDate ?? null), highlight: true },
+                      c7: { value: String(details.rentRate ?? 0), highlight: true },
+                      c8: { value: String(details.sizeOfLand ?? 0), highlight: true },
+                    }]),
                 ...generatedAdjustmentRows.map((row: any) => ({
                   __spanText: {
-                    text: String(
+                    text: fmtStatementPeriodDhivehi(String(
                         row.description ??
                         row.periodLabel ??
                         "2025 އޮގަސްޓް މަހުން ފެށިގެން ޖޫރިމަނާ (އޮޑިޓް އޮފީހުން ޖޫރިމަނާ ހިސާބުކުރުމަށް އެންގި ގޮތަށް)"
-                    ),
+                    )),
                     highlight: true,
                   },
                   c1: {
@@ -250,15 +291,17 @@ export default function StatementsList({
                     highlight: true,
                   },
                 })),
+                ...manualFineRows,
               ]}
               totalLabel={{ text: "ޖުމްލަ: (ރުފިޔާ)", highlight: true }}
               totalAmount={{ text: invoiceTotal, highlight: true }}
               footerNote={{
                 text: `ނޯޓް: ކުލީގެ ތަފްސީލް ހެދިފައިވަނީ ${fmtDateDhivehi(
-                  details.statement.createdAt ??
+                  details.statement.recalculatedAt ??
+                    details.statement.createdAt ??
                     details.statement.$createdAt ??
                     null
-                )} ވަނަ ދުވަހުގެ ނިޔަލަށް އަރާފައިވާ ކުއްޔާއި ޖޫރިމަނާއެވެ.`,
+                )} ވަނަ ދުވަހުގެ ނިޔަލަށެވެ.`,
                 highlight: true,
               }}
             >
@@ -276,14 +319,14 @@ export default function StatementsList({
                   </div> */}
                 </div>
 
-                <div className="grid grid-cols-[140px_1fr_140px] bg-[#064E3B] items-center text-white">
-                  <div className="px-4 py-4 text-lg font-semibold font-dh1 text-right">
+                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)] bg-[#064E3B] items-center text-white">
+                  <div className="min-w-0 px-2 py-4 text-lg font-semibold font-dh1 text-right sm:px-4">
                     ތާރީޚް
                   </div>
-                  <div className="px-4 py-3 text-lg font-semibold font-dh1 text-center">
+                  <div className="min-w-0 px-2 py-3 text-lg font-semibold font-dh1 text-center sm:px-4">
                     ތަފްޞީލް
                   </div>
-                  <div className="px-4 py-3 text-lg font-semibold font-dh1 text-left">
+                  <div className="min-w-0 px-2 py-3 text-lg font-semibold font-dh1 text-left sm:px-4">
                     އަދަދު
                   </div>
                 </div>
@@ -311,25 +354,35 @@ export default function StatementsList({
                           return (
                             <div
                               key={key}
-                              className="grid grid-cols-[140px_1fr_140px] items-center"
+                              className="avoid-break grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)] items-center"
                             >
-                              <div className="px-4 py-3 text-sm font-semibold tabular-nums text-right">
-                                {fmtDateShort(p.paidAt ?? null)}
+                              <div className="min-w-0 break-words px-2 py-4 text-sm font-semibold tabular-nums text-right sm:px-4">
+                                {fmtDateDhivehi(fmtDateShort(p.paidAt ?? null))}
                               </div>
 
-                              <div className="px-4 py-3 min-w-0">
-                                <div className="flex flex-nowrap items-center justify-center gap-2 min-w-0 whitespace-nowrap">
+                              <div className="min-w-0 px-2 py-4 sm:px-4">
+                                <div className="flex min-w-0 flex-col items-center justify-center gap-2">
                                   {note ? (
-                                    <span className="min-w-0 truncate text-md text-black/60 max-w-[520px]">
+                                    <span className="block w-full whitespace-pre-wrap break-words text-center text-sm leading-8 text-black/70">
                                       {note}
                                     </span>
+                                  ) : null}
+                                  {p.$id ? (
+                                    <button
+                                      type="button"
+                                      data-pdf-exclude="true"
+                                      onClick={() => setEditingPayment(p)}
+                                      className="shrink-0 rounded-lg border border-emerald-200 bg-white px-2 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-50"
+                                    >
+                                      Edit
+                                    </button>
                                   ) : null}
                                 </div>
                               </div>
 
-                              <div className="px-4 py-3 text-left">
-                                <span className="inline-flex items-center rounded-full bg-black/[0.03] px-3 py-1.5 ring-1 ring-black/10">
-                                  <span className="text-sm font-semibold tabular-nums">
+                              <div className="min-w-0 px-2 py-4 text-left sm:px-4">
+                                <span className="inline-flex max-w-full items-center rounded-full bg-black/[0.03] px-2 py-1.5 ring-1 ring-black/10 sm:px-3">
+                                  <span className="break-all text-sm font-semibold tabular-nums">
                                     {fmtMoney(amount)}
                                   </span>
                                 </span>
@@ -371,7 +424,7 @@ export default function StatementsList({
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-sm font-semibold tracking-tight">
-                    Statement:{" "}
+                    {isFineOnly ? "Fine statement:" : "Statement:"}{" "}
                     <span className="tabular-nums">
                       {details.statement.monthKey}
                     </span>{" "}
@@ -379,7 +432,7 @@ export default function StatementsList({
                     <span
                       className={isOpen ? "text-emerald-700" : "text-black/70"}
                     >
-                      {details.statement.status}
+                      {revisedBalanceDue ? "PAID · REVISED BALANCE DUE" : details.statement.status}
                     </span>
                   </div>
                   <div className="text-xs text-muted-foreground">
@@ -392,6 +445,35 @@ export default function StatementsList({
                   </div>
                 </div>
 
+                <div className="flex flex-wrap gap-2">
+                <ManualFineButton
+                  statement={{ statementId: details.statement.$id, leaseId: details.statement.leaseId, monthKey: details.statement.monthKey }}
+                  onSaved={onPaymentUpdated}
+                />
+                {onStatementDeleted ? (
+                  <button
+                    type="button"
+                    onClick={() => setDeletingStatement({
+                      statementId: details.statement.$id,
+                      leaseId: details.statement.leaseId,
+                      monthKey: details.statement.monthKey,
+                      paymentCount: (details.payments ?? []).length,
+                      paymentsTotal,
+                    })}
+                    className="h-11 rounded-xl bg-rose-50 px-5 text-sm font-semibold text-rose-700 ring-1 ring-rose-200 hover:bg-rose-100"
+                  >
+                    Delete statement
+                  </button>
+                ) : null}
+                {revisedBalanceDue ? (
+                  <button
+                    type="button"
+                    onClick={() => onCollectRemaining(details.statement.$id)}
+                    className="h-11 rounded-xl bg-amber-50 px-5 text-sm font-semibold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100"
+                  >
+                    Collect remaining balance
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={async () => {
@@ -410,6 +492,7 @@ export default function StatementsList({
                 >
                   Download PDF
                 </button>
+                </div>
               </div>
 
               <div
@@ -423,7 +506,25 @@ export default function StatementsList({
         })}
       </div>
     );
-  }, [statements, latestInvoiceRef]);
+  }, [statements, latestInvoiceRef, onCollectRemaining, onStatementDeleted, onPaymentUpdated]);
 
-  return rendered;
+  return <>
+    {rendered}
+    {deletingStatement && onStatementDeleted ? (
+      <StatementDeleteDialog
+        key={deletingStatement.statementId}
+        statement={deletingStatement}
+        onClose={() => setDeletingStatement(null)}
+        onDeleted={onStatementDeleted}
+      />
+    ) : null}
+    {editingPayment ? (
+      <PaymentEditDialog
+        key={editingPayment.$id}
+        payment={editingPayment}
+        onClose={() => setEditingPayment(null)}
+        onSaved={onPaymentUpdated}
+      />
+    ) : null}
+  </>;
 }

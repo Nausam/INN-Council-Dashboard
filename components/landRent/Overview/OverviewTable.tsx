@@ -33,18 +33,18 @@ export default function OverviewTable({
         <table className="w-full text-sm">
           <thead className="bg-slate-50">
             <tr className="text-left text-slate-600">
-              <th className="px-4 py-3 font-semibold">Tenant</th>
+              <th className="px-4 py-3 font-semibold">Action</th>
               <th className="px-4 py-3 font-semibold">Agreement No</th>
               <th className="px-4 py-3 font-semibold">Agreement</th>
               <th className="px-4 py-3 font-semibold">Outstanding</th>
-              <th className="px-4 py-3 font-semibold text-right">Action</th>
+              <th className="px-4 py-3 font-semibold text-right">Tenant</th>
             </tr>
           </thead>
 
           <tbody className="divide-y divide-slate-100">
             {rows.length === 0 ? (
               <tr>
-                <td className="px-4 py-10 text-slate-500" colSpan={4}>
+                <td className="px-4 py-10 text-slate-500" colSpan={5}>
                   No results.
                 </td>
               </tr>
@@ -52,13 +52,37 @@ export default function OverviewTable({
               rows.map((r) => (
                 <tr key={r.leaseId} className="hover:bg-slate-50/60 transition">
                   <td className="px-4 py-3">
-                    <div className="min-w-0">
-                      <div className="font-semibold text-lg font-dh1 text-slate-900/90">
-                        {r.landName ?? "-"}
-                      </div>
-                      <div className="mt-2 text-md text-slate-500 font-dh1 truncate">
-                        {r.tenantName ?? "-"}
-                      </div>
+                    <div className="flex flex-wrap justify-start gap-2">
+                      <Link
+                        href={buildStatementHref(r.leaseId, monthKey)}
+                        className="inline-flex items-center gap-2 h-10 rounded-xl px-4 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md
+                          bg-gradient-to-r from-indigo-600 via-sky-600 to-emerald-600"
+                      >
+                        <FileText className="h-4 w-4" />
+                        Statement
+                      </Link>
+                      {isAdmin ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => onEditLease?.(r)}
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:-translate-y-0.5 hover:shadow-md"
+                            aria-label="Edit lease"
+                            title="Edit lease"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onDeleteLease?.(r)}
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white text-rose-700 shadow-sm ring-1 ring-rose-100 transition hover:-translate-y-0.5 hover:bg-rose-50 hover:shadow-md"
+                            aria-label="Delete lease"
+                            title="Delete lease"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </>
+                      ) : null}
                     </div>
                   </td>
 
@@ -107,38 +131,14 @@ export default function OverviewTable({
                     {fmtMoney(getOutstandingNow(r))}
                   </td>
 
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <Link
-                        href={buildStatementHref(r.leaseId, monthKey)}
-                        className="inline-flex items-center gap-2 h-10 rounded-xl px-4 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md
-                          bg-gradient-to-r from-indigo-600 via-sky-600 to-emerald-600"
-                      >
-                        <FileText className="h-4 w-4" />
-                        Statement
-                      </Link>
-                      {isAdmin ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => onEditLease?.(r)}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:-translate-y-0.5 hover:shadow-md"
-                            aria-label="Edit lease"
-                            title="Edit lease"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onDeleteLease?.(r)}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white text-rose-700 shadow-sm ring-1 ring-rose-100 transition hover:-translate-y-0.5 hover:bg-rose-50 hover:shadow-md"
-                            aria-label="Delete lease"
-                            title="Delete lease"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </>
-                      ) : null}
+                  <td className="px-4 py-3 text-right" dir="rtl">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-lg font-dh1 text-slate-900/90">
+                        {r.landName ?? "-"}
+                      </div>
+                      <div className="mt-2 text-md text-slate-500 font-dh1 truncate">
+                        {r.tenantName ?? "-"}
+                      </div>
                     </div>
                   </td>
                 </tr>

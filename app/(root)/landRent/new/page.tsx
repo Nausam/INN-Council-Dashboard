@@ -10,6 +10,12 @@ import {
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { createLandRentHolder } from "@/lib/landrent/landRent.actions";
+import {
+  fineBetweenDates,
+  monthlyRentCharge,
+  todayInMaldives,
+  usesPostAugustMonthlyFine,
+} from "@/lib/landrent/landRent.ratePeriods";
 import { cn } from "@/lib/utils";
 import {
   AlertCircle,
@@ -40,48 +46,6 @@ function num(v: string) {
 
 function clampInt(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, Math.floor(v)));
-}
-
-function safeParseDate(yyyyMmDd: string) {
-  if (!yyyyMmDd) return null;
-  const d = new Date(`${yyyyMmDd}T00:00:00`);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function dateOnly(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
-
-function startOfMonth(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
-}
-
-function addMonths(d: Date, months: number) {
-  return new Date(d.getFullYear(), d.getMonth() + months, 1);
-}
-
-function daysBetween(a: Date, b: Date) {
-  const ms = 24 * 60 * 60 * 1000;
-  const aa = dateOnly(a).getTime();
-  const bb = dateOnly(b).getTime();
-  return Math.max(0, Math.floor((bb - aa) / ms));
-}
-
-function monthStartsBetweenInclusive(fromMonthStart: Date, toMonthStart: Date) {
-  const out: Date[] = [];
-  let cur = new Date(
-    fromMonthStart.getFullYear(),
-    fromMonthStart.getMonth(),
-    1,
-  );
-  const end = new Date(toMonthStart.getFullYear(), toMonthStart.getMonth(), 1);
-
-  while (cur.getTime() <= end.getTime()) {
-    out.push(new Date(cur.getFullYear(), cur.getMonth(), 1));
-    cur = addMonths(cur, 1);
-  }
-
-  return out;
 }
 
 function fmtMonthYear(d: Date) {
@@ -204,6 +168,8 @@ export default function Page() {
 
   const [rentStartDate, setRentStartDate] = useState("");
   const [rentEndDate, setRentEndDate] = useState("");
+  const [untilWorkFinished, setUntilWorkFinished] = useState(false);
+  const [doubleRateAfterEnd, setDoubleRateAfterEnd] = useState(false);
 
   const [agreementNumber, setAgreementNumber] = useState("");
   const [letGoDate, setLetGoDate] = useState<string>("");
@@ -297,6 +263,8 @@ export default function Page() {
     setRenterName("");
     setRentStartDate("");
     setRentEndDate("");
+    setUntilWorkFinished(false);
+    setDoubleRateAfterEnd(false);
     setAgreementNumber("");
     setLetGoDate("");
     setSizeSqft("1800");
@@ -328,7 +296,7 @@ export default function Page() {
     if (!landName.trim()) return fail("Land name is required.");
     if (!renterName.trim()) return fail("Renter name is required.");
     if (!rentStartDate) return fail("Rent duration start is required.");
-    if (!rentEndDate) return fail("Rent duration end is required.");
+    if (!untilWorkFinished && !rentEndDate) return fail("Choose a rent end date or select Until work is finished.");
     if (!agreementNumber.trim()) return fail("Agreement number is required.");
 
     const due = clampInt(num(paymentDueDay), 1, 28);
@@ -341,7 +309,8 @@ export default function Page() {
         renterName: renterName.trim(),
 
         rentStartDate: toISODate(rentStartDate),
-        rentEndDate: toISODate(rentEndDate),
+        rentEndDate: untilWorkFinished ? null : toISODate(rentEndDate),
+        doubleRateAfterEnd: !untilWorkFinished && doubleRateAfterEnd,
 
         agreementNumber: agreementNumber.trim(),
         letGoDate: letGoDate ? toISODate(letGoDate) : null,
@@ -386,8 +355,10 @@ export default function Page() {
   };
 
   useEffect(() => {
-    const lastPaid = safeParseDate(lastPaymentDate);
-    if (!lastPaid) {
+    const parseUTC = (value: string) =>
+      value ? new Date(`${value}T00:00:00.000Z`) : null;
+    const start = parseUTC(rentStartDate);
+    if (!start) {
       setOpeningFineDays("0");
       setOpeningFineMonths("0");
       setOpeningTotalFine("0");
@@ -395,81 +366,82 @@ export default function Page() {
       setBreakdown([]);
       return;
     }
-
-    const start = safeParseDate(rentStartDate);
-    const letGo = safeParseDate(letGoDate);
-
+    const lastPaid = parseUTC(lastPaymentDate);
+    const end = parseUTC(rentEndDate);
+    const letGo = parseUTC(letGoDate);
     const dueDay = clampInt(num(paymentDueDay || "10"), 1, 28);
-
-    const realToday = dateOnly(new Date());
-    // Rent end is the agreement date; arrears continue until the land is let go.
-    const capA = letGo ? dateOnly(letGo) : null;
-
-    let effectiveToday = realToday;
-    if (capA && capA.getTime() < effectiveToday.getTime())
-      effectiveToday = capA;
-
-    let fromMonth = addMonths(startOfMonth(lastPaid), 1);
-
-    if (start) {
-      const rentStartMonth = startOfMonth(start);
-      if (fromMonth.getTime() < rentStartMonth.getTime())
-        fromMonth = rentStartMonth;
-    }
-
-    let toMonth = startOfMonth(effectiveToday);
-    const dueThisMonth = new Date(
-      toMonth.getFullYear(),
-      toMonth.getMonth(),
-      dueDay,
-    );
-    if (effectiveToday.getTime() <= dateOnly(dueThisMonth).getTime()) {
-      toMonth = addMonths(toMonth, -1);
-    }
-
-    if (toMonth.getTime() < fromMonth.getTime()) {
-      setOpeningFineDays("0");
-      setOpeningFineMonths("0");
-      setOpeningTotalFine("0");
-      setOpeningOutstandingFees("0");
-      setBreakdown([]);
-      return;
-    }
-
+    const today = todayInMaldives();
+    const firstUnpaid = lastPaid
+      ? new Date(Date.UTC(lastPaid.getUTCFullYear(), lastPaid.getUTCMonth() + 1, 1))
+      : new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+    const firstStart = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+    const fromMonth = firstUnpaid > firstStart ? firstUnpaid : firstStart;
+    const toMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+    const normalMonthlyRent = Math.round(monthlyRent * 100) / 100;
     const rows: BreakdownRow[] = [];
     let totalDays = 0;
     let totalFine = 0;
+    let outstandingFees = 0;
     let monthCount = 0;
-
-    for (const m of monthStartsBetweenInclusive(fromMonth, toMonth)) {
-      monthCount += 1;
-
-      const dueDate = new Date(m.getFullYear(), m.getMonth(), dueDay);
-      const fineStart = new Date(
-        dueDate.getFullYear(),
-        dueDate.getMonth(),
-        dueDate.getDate() + 1,
-      );
-
-      const days =
-        effectiveToday.getTime() > dateOnly(dueDate).getTime()
-          ? daysBetween(fineStart, effectiveToday) + 1
-          : 0;
-
-      const fine = days * finePerDay;
-
-      totalDays += days;
-      totalFine += fine;
-
+    const legacyFine = fineBetweenDates({
+      from: fromMonth,
+      through: today,
+      normalMonthlyRent,
+      rentStart: start,
+      rentEnd: end,
+      doubleRateAfterEnd,
+      released: letGo,
+      regime: "before-august-2025",
+    });
+    totalDays += legacyFine.days;
+    totalFine += legacyFine.amount;
+    if (legacyFine.amount > 0) {
       rows.push({
-        key: `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`,
-        label: fmtMonthYear(m),
-        days,
-        fine,
+        key: "before-august-2025",
+        label: "Fine through July 2025",
+        days: legacyFine.days,
+        fine: legacyFine.amount,
       });
     }
 
-    const outstandingFees = monthCount * monthlyRent;
+    for (
+      let month = new Date(fromMonth);
+      month <= toMonth;
+      month = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1))
+    ) {
+      const principal = monthlyRentCharge({
+        monthStart: month,
+        normalMonthlyRent,
+        rentStart: start,
+        rentEnd: end,
+        doubleRateAfterEnd,
+        released: letGo,
+      });
+      if (principal <= 0) continue;
+      monthCount += 1;
+      outstandingFees += principal;
+      if (!usesPostAugustMonthlyFine(month)) continue;
+      const fine = fineBetweenDates({
+        from: new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), dueDay + 1)),
+        through: today,
+        normalMonthlyRent,
+        rentStart: start,
+        rentEnd: end,
+        doubleRateAfterEnd,
+        released: letGo,
+        regime: "from-august-2025",
+      });
+      totalDays += fine.days;
+      totalFine += fine.amount;
+      if (fine.amount > 0) {
+        rows.push({
+          key: `${month.getUTCFullYear()}-${String(month.getUTCMonth() + 1).padStart(2, "0")}`,
+          label: fmtMonthYear(month),
+          days: fine.days,
+          fine: fine.amount,
+        });
+      }
+    }
 
     setBreakdown(rows);
     setOpeningFineMonths(String(monthCount));
@@ -479,6 +451,8 @@ export default function Page() {
   }, [
     lastPaymentDate,
     rentStartDate,
+    rentEndDate,
+    doubleRateAfterEnd,
     letGoDate,
     paymentDueDay,
     monthlyRent,
@@ -489,7 +463,7 @@ export default function Page() {
 
   return (
     <PageShell>
-      <div className="mx-auto max-w-4xl">
+      <div dir="ltr" className="mx-auto max-w-4xl font-sans">
         <Link
           href="/landRent"
           aria-label="Back to land rent"
@@ -517,18 +491,22 @@ export default function Page() {
           <div className={formGrid}>
             <FormField label="Land name">
               <input
+                dir="rtl"
+                lang="dv"
                 value={landName}
                 onChange={(e) => setLandName(e.target.value)}
-                className={inputClass}
+                className={cn(inputClass, "font-dh1 text-right")}
                 placeholder="e.g. Plot 12, Ward A"
               />
             </FormField>
 
             <FormField label="Renter name">
               <input
+                dir="rtl"
+                lang="dv"
                 value={renterName}
                 onChange={(e) => setRenterName(e.target.value)}
-                className={inputClass}
+                className={cn(inputClass, "font-dh1 text-right")}
                 placeholder="Full legal name"
               />
             </FormField>
@@ -550,11 +528,48 @@ export default function Page() {
             </FormField>
 
             <FormField label="Rent end">
-              <CouncilDatePicker
-                value={rentEndDate}
-                onChange={setRentEndDate}
-                placeholder="End date"
-              />
+              <label className="flex items-start gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={untilWorkFinished}
+                  onChange={(e) => {
+                    setUntilWorkFinished(e.target.checked);
+                    if (e.target.checked) {
+                      setRentEndDate("");
+                      setDoubleRateAfterEnd(false);
+                    }
+                  }}
+                  className="mt-0.5 h-4 w-4 accent-teal-600"
+                />
+                <span>Until work is finished (no fixed end date)</span>
+              </label>
+              {untilWorkFinished ? (
+                <p className="text-xs text-slate-500">
+                  Set the Let go date when work finishes to stop rent and fine calculations.
+                </p>
+              ) : (
+                <>
+                  <CouncilDatePicker
+                    value={rentEndDate}
+                    onChange={setRentEndDate}
+                    placeholder="End date"
+                  />
+                  <label className="mt-3 flex items-start gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={doubleRateAfterEnd}
+                      onChange={(e) => setDoubleRateAfterEnd(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 accent-teal-600"
+                    />
+                    <span>
+                      Double rate after rent end date
+                      <span className="mt-1 block text-xs text-slate-500">
+                        Applies to rent and calculated fines from the next day. Leave unticked to continue at the normal rate.
+                      </span>
+                    </span>
+                  </label>
+                </>
+              )}
             </FormField>
 
             <FormField label="Agreement number">
@@ -630,7 +645,7 @@ export default function Page() {
         <FormSectionCard
           icon={Banknote}
           title="Rent & fines"
-          description="Monthly rent is size × rate. Fine per day is 25% of the daily rent."
+          description="Enter the normal rate. Select the checkbox above to double rent and the rate used for fines after the rent end date."
         >
           <div className={formGrid}>
             <FormField label="Size (sqft)">
@@ -670,7 +685,7 @@ export default function Page() {
               value={monthlyRent.toFixed(2)}
             />
             <ComputedStat
-              label="Fine per day"
+              label="Fine per day at normal rate (from August 2025)"
               value={finePerDay.toFixed(2)}
             />
           </div>
@@ -683,7 +698,7 @@ export default function Page() {
         >
           <FormField
             label="Last payment date"
-            hint="Leave empty if there is no prior payment history. Fills in the totals below automatically."
+            hint="Rent is treated as fully paid through this calendar month. Leave empty if there is no prior payment history."
           >
             <CouncilDatePicker
               value={lastPaymentDate}
@@ -722,7 +737,7 @@ export default function Page() {
               suffix=""
             />
             <ComputedStat
-              label="Chargeable fine months"
+              label="Unpaid rent months"
               value={openingFineMonths}
               suffix=""
             />

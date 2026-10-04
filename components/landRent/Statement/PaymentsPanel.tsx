@@ -141,7 +141,7 @@ export default function PaymentsPanel({
                 {/* Middle (note) */}
                 <div className="flex-1 min-w-0 flex items-center justify-center">
                   {note ? (
-                    <div className="text-md text-slate-700 font-dh1 text-center line-clamp-2">
+                    <div className="whitespace-pre-wrap break-words text-center text-sm leading-8 text-slate-700 font-dh1">
                       {note}
                     </div>
                   ) : null}

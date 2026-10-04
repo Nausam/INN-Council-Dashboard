@@ -16,8 +16,11 @@ import type { LandRentOverviewUIRow } from "@/components/landRent/Overview/landR
 import { useUser } from "@/Providers/UserProvider";
 import {
   deleteLandRentLease,
+  recalculateAllLandRentLeases,
   updateLandRentLease,
 } from "@/lib/landrent/landRent.actions";
+import { useQueryClient } from "@tanstack/react-query";
+import { RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 
 type LeaseFormState = {
@@ -26,12 +29,13 @@ type LeaseFormState = {
   agreementNumber: string;
   rentStartDate: string;
   rentEndDate: string;
+  untilWorkFinished: boolean;
+  doubleRateAfterEnd: boolean;
   letGoDate: string;
   lastPaymentDate: string;
   sizeSqft: string;
   rate: string;
   paymentDueDay: string;
-  finePerDay: string;
 };
 
 function dateInputValue(iso: string | null | undefined) {
@@ -53,12 +57,13 @@ function formFromLease(row: LandRentOverviewUIRow): LeaseFormState {
     agreementNumber: row.agreementNumber ?? "",
     rentStartDate: dateInputValue(row.startDate),
     rentEndDate: dateInputValue(row.endDate),
+    untilWorkFinished: !row.endDate,
+    doubleRateAfterEnd: row.doubleRateAfterEnd === true,
     letGoDate: dateInputValue(row.releasedDate),
     lastPaymentDate: dateInputValue(row.lastPaymentDate),
     sizeSqft: numberText(row.sizeSqft),
     rate: numberText(row.rateLariPerSqft),
     paymentDueDay: numberText(row.paymentDueDay ?? 10) || "10",
-    finePerDay: numberText(row.fineLariPerDay),
   };
 }
 
@@ -74,6 +79,7 @@ export function LandRentOverviewView({
 }) {
   const { rows, loading, error, refetch } = useLandRentOverview(initialRows);
   const { isAdmin } = useUser();
+  const queryClient = useQueryClient();
   const [q, setQ] = useState("");
   const [editingLease, setEditingLease] =
     useState<LandRentOverviewUIRow | null>(null);
@@ -82,12 +88,38 @@ export function LandRentOverviewView({
   const [form, setForm] = useState<LeaseFormState | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [recalculating, setRecalculating] = useState(false);
+  const [recalculationError, setRecalculationError] = useState<string | null>(null);
+  const [recalculationResult, setRecalculationResult] = useState<
+    Awaited<ReturnType<typeof recalculateAllLandRentLeases>> | null
+  >(null);
 
   const monthKey = useMemo(() => getThisMonthKey(), []);
   const filtered = useMemo(() => filterOverviewRows(rows, q), [rows, q]);
   const totals = useMemo(() => calcOverviewTotals(filtered), [filtered]);
 
+  const recalculateAll = async () => {
+    if (recalculating || busy) return;
+    setRecalculating(true);
+    setRecalculationError(null);
+    setRecalculationResult(null);
+    try {
+      const result = await recalculateAllLandRentLeases();
+      setRecalculationResult(result);
+      await queryClient.invalidateQueries({ queryKey: ["land-rent"], refetchType: "none" });
+      const refreshed = await refetch();
+      if (refreshed.error) {
+        throw new Error("Recalculation finished, but the overview could not refresh. Please reload the page.");
+      }
+    } catch (e: any) {
+      setRecalculationError(e?.message ?? "Failed to recalculate leases.");
+    } finally {
+      setRecalculating(false);
+    }
+  };
+
   const openEdit = (row: LandRentOverviewUIRow) => {
+    if (recalculating) return;
     setEditingLease(row);
     setForm(formFromLease(row));
     setActionError(null);
@@ -102,6 +134,10 @@ export function LandRentOverviewView({
 
   const saveEdit = async () => {
     if (!editingLease || !form) return;
+    if (!form.untilWorkFinished && !form.rentEndDate) {
+      setActionError("Choose a rent end date or select Until work is finished.");
+      return;
+    }
 
     setBusy(true);
     setActionError(null);
@@ -112,13 +148,14 @@ export function LandRentOverviewView({
         renterName: form.renterName,
         agreementNumber: form.agreementNumber,
         rentStartDate: form.rentStartDate,
-        rentEndDate: form.rentEndDate,
+        rentEndDate: form.untilWorkFinished ? null : form.rentEndDate,
+        doubleRateAfterEnd: !form.untilWorkFinished && form.doubleRateAfterEnd,
         letGoDate: form.letGoDate || null,
         lastPaymentDate: form.lastPaymentDate || null,
         sizeSqft: parseNumber(form.sizeSqft),
         rate: parseNumber(form.rate),
         paymentDueDay: parseNumber(form.paymentDueDay),
-        finePerDay: parseNumber(form.finePerDay),
+        finePerDay: (parseNumber(form.sizeSqft) * parseNumber(form.rate) / 30) * 0.25,
       });
       await refetch();
       setEditingLease(null);
@@ -163,6 +200,41 @@ export function LandRentOverviewView({
           totalCount={rows.length}
         />
 
+        {isAdmin ? (
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              onClick={recalculateAll}
+              disabled={recalculating || busy || loading || rows.length === 0}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 via-sky-600 to-emerald-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:shadow-md disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${recalculating ? "animate-spin" : ""}`} />
+              {recalculating ? "Recalculating all leases…" : "Recalculate all leases"}
+            </button>
+          </div>
+        ) : null}
+
+        {recalculationResult ? (
+          <div role="status" className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700 ring-1 ring-slate-100">
+            Recalculated {recalculationResult.updatedStatements} open rent statements across {recalculationResult.totalLeases} leases.
+            {recalculationResult.failures.length > 0 ? (
+              <ul className="mt-2 list-inside list-disc text-rose-700">
+                {recalculationResult.failures.map((failure) => (
+                  <li key={failure.statementId}>
+                    {rows.find((row) => row.leaseId === failure.leaseId)?.agreementNumber || failure.leaseId}: {failure.message}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+
+        {recalculationError ? (
+          <div role="alert" className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
+            {recalculationError}
+          </div>
+        ) : null}
+
         <div className="mt-5">
           <OverviewStats
             loading={loading}
@@ -188,7 +260,7 @@ export function LandRentOverviewView({
           <OverviewTable
             rows={filtered}
             monthKey={monthKey}
-            isAdmin={isAdmin}
+            isAdmin={isAdmin && !recalculating}
             onEditLease={openEdit}
             onDeleteLease={(row) => {
               setDeleteLease(row);
@@ -198,7 +270,7 @@ export function LandRentOverviewView({
           <OverviewCards
             rows={filtered}
             monthKey={monthKey}
-            isAdmin={isAdmin}
+            isAdmin={isAdmin && !recalculating}
             onEditLease={openEdit}
             onDeleteLease={(row) => {
               setDeleteLease(row);
@@ -262,14 +334,51 @@ export function LandRentOverviewView({
                 className={editInputClass}
               />
             </EditField>
-            <EditField label="Rent end">
-              <input
-                type="date"
-                value={form.rentEndDate}
-                onChange={(e) => updateForm({ rentEndDate: e.target.value })}
-                className={editInputClass}
-              />
-            </EditField>
+            <div className="space-y-2">
+              <label className="flex items-start gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={form.untilWorkFinished}
+                  onChange={(e) => updateForm({
+                    untilWorkFinished: e.target.checked,
+                    rentEndDate: e.target.checked ? "" : form.rentEndDate,
+                    doubleRateAfterEnd: e.target.checked ? false : form.doubleRateAfterEnd,
+                  })}
+                  className="mt-0.5 h-4 w-4 accent-teal-600"
+                />
+                <span>Until work is finished (no fixed end date)</span>
+              </label>
+              {form.untilWorkFinished ? (
+                <p className="text-xs text-slate-500">
+                  Set the Let go date when work finishes to stop rent and fine calculations.
+                </p>
+              ) : (
+                <>
+                  <EditField label="Rent end">
+                    <input
+                      type="date"
+                      value={form.rentEndDate}
+                      onChange={(e) => updateForm({ rentEndDate: e.target.value })}
+                      className={editInputClass}
+                    />
+                  </EditField>
+                  <label className="mt-3 flex items-start gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={form.doubleRateAfterEnd}
+                      onChange={(e) => updateForm({ doubleRateAfterEnd: e.target.checked })}
+                      className="mt-0.5 h-4 w-4 accent-teal-600"
+                    />
+                    <span>
+                      Double rate after rent end date
+                      <span className="mt-1 block text-xs text-slate-500">
+                        Applies to rent and calculated fines from the next day. Leave unticked to continue at the normal rate.
+                      </span>
+                    </span>
+                  </label>
+                </>
+              )}
+            </div>
             <EditField label="Size">
               <input
                 value={form.sizeSqft}
@@ -293,10 +402,10 @@ export function LandRentOverviewView({
                 className={editInputClass}
               />
             </EditField>
-            <EditField label="Fine per day">
+            <EditField label="Fine per day at normal rate (calculated)">
               <input
-                value={form.finePerDay}
-                onChange={(e) => updateForm({ finePerDay: e.target.value })}
+                value={((parseNumber(form.sizeSqft) * parseNumber(form.rate) / 30) * 0.25).toFixed(2)}
+                readOnly
                 className={editInputClass}
               />
             </EditField>

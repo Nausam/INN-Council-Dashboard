@@ -14,9 +14,7 @@ import {
   fetchLandStatementsWithDetails,
   previewLandRentStatement,
   recalculateLandStatementFines,
-  updateLandRentFixedAdjustmentRows,
   type LandLeaseOption,
-  type LandRentFixedAdjustmentRow,
 } from "@/lib/landrent/landRent.actions";
 import { useQueryInvalidation } from "@/hooks/queries";
 import { useSearchParams } from "next/navigation";
@@ -62,6 +60,9 @@ export function useLandRentStatementPage(initial?: {
   const skipFirstRefresh = useRef(Boolean(initial?.statements));
 
   const [creatingStatement, setCreatingStatement] = useState(false);
+  const [fineOnly, setFineOnly] = useState(false);
+  const [fineAmount, setFineAmount] = useState("");
+  const [fineDescription, setFineDescription] = useState("");
 
   // Payment form
   const [payAmount, setPayAmount] = useState<string>("");
@@ -76,10 +77,10 @@ export function useLandRentStatementPage(initial?: {
   const [savingPayment, setSavingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [paymentOk, setPaymentOk] = useState<string | null>(null);
+  const [paymentTargetId, setPaymentTargetId] = useState<string | null>(null);
+  const [paymentRequestCount, setPaymentRequestCount] = useState(0);
 
   const [recalculatingFines, setRecalculatingFines] = useState(false);
-  const [savingFixedAdjustmentRows, setSavingFixedAdjustmentRows] =
-    useState(false);
 
   function fileToDataUrl(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -125,6 +126,19 @@ export function useLandRentStatementPage(initial?: {
     return statements.find((s) => s.statement.status === "OPEN") ?? null;
   }, [statements]);
 
+  const selectedPaymentTarget = useMemo(() => {
+    if (!paymentTargetId) return null;
+    return statements.find((s) => s.statement.$id === paymentTargetId) ?? null;
+  }, [statements, paymentTargetId]);
+
+  const paymentStatement = useMemo(() => {
+    if (selectedPaymentTarget && selectedPaymentTarget.balanceRemaining > 0) return selectedPaymentTarget;
+    if (openStatement) return openStatement;
+    return statementForSelectedMonth && statementForSelectedMonth.balanceRemaining > 0
+      ? statementForSelectedMonth
+      : null;
+  }, [selectedPaymentTarget, openStatement, statementForSelectedMonth]);
+
   const latestStatement = useMemo(() => {
     if (!statements.length) return null;
     return statements
@@ -136,20 +150,30 @@ export function useLandRentStatementPage(initial?: {
   const monthPickerDisabled = !!openStatement;
 
   const previewSource = useMemo(() => {
+    if (selectedPaymentTarget && selectedPaymentTarget.statement.monthKey === monthKey) return selectedPaymentTarget;
     if (openStatement) return openStatement;
     if (statementForSelectedMonth) return statementForSelectedMonth;
     return preview;
-  }, [openStatement, statementForSelectedMonth, preview]);
+  }, [selectedPaymentTarget, openStatement, statementForSelectedMonth, preview, monthKey]);
+
+  function selectStatementForPayment(statementId: string) {
+    setPaymentTargetId(statementId);
+    setPaymentRequestCount((count) => count + 1);
+  }
 
   const canCreateStatement = useMemo(
-    () => !!leaseId && !openStatement,
-    [leaseId, openStatement]
+    () => !!leaseId && !openStatement && (fineOnly || !statementForSelectedMonth),
+    [leaseId, openStatement, statementForSelectedMonth, fineOnly]
   );
 
   const nextMonthKeySuggestion = useMemo(() => {
-    if (!latestStatement) return monthKey;
-    return addMonthsToMonthKey(latestStatement.statement.monthKey, 1);
-  }, [latestStatement, monthKey]);
+    const latestRentStatement = statements
+      .filter((s) => s.statement.kind !== "FINE_ONLY")
+      .sort((a, b) => a.statement.monthKey.localeCompare(b.statement.monthKey))
+      .slice(-1)[0];
+    if (!latestRentStatement) return monthKey;
+    return addMonthsToMonthKey(latestRentStatement.statement.monthKey, 1);
+  }, [statements, monthKey]);
 
   const canCreateNextStatement = useMemo(() => {
     if (!leaseId) return false;
@@ -225,26 +249,6 @@ export function useLandRentStatementPage(initial?: {
     }
   }
 
-  async function saveFixedAdjustmentRows(rows: LandRentFixedAdjustmentRow[]) {
-    if (!leaseId) return;
-
-    setSavingFixedAdjustmentRows(true);
-    setError(null);
-    setPaymentOk(null);
-    setPaymentError(null);
-
-    try {
-      await updateLandRentFixedAdjustmentRows({ leaseId, rows });
-      await refreshAll();
-      invalidateLandRent(leaseId);
-      setPaymentOk("Extra invoice rows saved.");
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to save extra invoice rows.");
-    } finally {
-      setSavingFixedAdjustmentRows(false);
-    }
-  }
-
   // refresh on lease or cap changes
   useEffect(() => {
     if (skipFirstRefresh.current) {
@@ -293,20 +297,24 @@ export function useLandRentStatementPage(initial?: {
     setPaymentError(null);
 
     try {
-      await createLandStatement({
+      const statement = await createLandStatement({
         leaseId,
         monthKey,
         createdBy: payReceivedBy || "",
         capToEndDate,
+        kind: fineOnly ? "FINE_ONLY" : "RENT",
+        fineAmount: fineOnly ? Number(fineAmount) : undefined,
+        fineDescription,
       });
+      setPaymentTargetId(statement.$id);
 
       await refreshAll();
       invalidateLandRent(leaseId);
       setPaymentOk("Statement created.");
     } catch (e: any) {
-      setError(
-        e?.message ?? e?.response?.message ?? "Failed to create statement."
-      );
+      const message = e?.message ?? e?.response?.message ?? "Failed to create statement.";
+      setError(message);
+      setPaymentError(message);
     } finally {
       setCreatingStatement(false);
     }
@@ -314,12 +322,17 @@ export function useLandRentStatementPage(initial?: {
 
   async function submitPayment(e: React.FormEvent) {
     e.preventDefault();
-    if (!openStatement) return;
+    if (savingPayment || creatingStatement) return;
+    if (!paymentStatement && !canCreateStatement) {
+      setPaymentError("Choose a new statement month or a statement with a remaining balance.");
+      return;
+    }
 
     setSavingPayment(true);
     setPaymentOk(null);
     setPaymentError(null);
 
+    let createdStatementId: string | null = null;
     try {
       const amount = Number(payAmount);
       if (!Number.isFinite(amount) || amount <= 0)
@@ -337,8 +350,24 @@ export function useLandRentStatementPage(initial?: {
         slipFilename = paySlipFile.name || "payment-slip";
       }
 
+      let statementId = paymentStatement?.statement.$id;
+      if (!statementId) {
+        const statement = await createLandStatement({
+          leaseId,
+          monthKey,
+          createdBy: payReceivedBy || "",
+          capToEndDate,
+          kind: fineOnly ? "FINE_ONLY" : "RENT",
+          fineAmount: fineOnly ? Number(fineAmount) : undefined,
+          fineDescription,
+        });
+        statementId = statement.$id;
+        createdStatementId = statementId;
+        setPaymentTargetId(statementId);
+      }
+
       await createLandRentPayment({
-        statementId: openStatement.statement.$id,
+        statementId,
         paidAt: paidAt.toISOString(),
         amount,
         method: payMethod || "",
@@ -357,10 +386,27 @@ export function useLandRentStatementPage(initial?: {
       invalidateLandRent(leaseId);
       setPaymentOk("Payment saved.");
     } catch (err: any) {
+      if (createdStatementId) {
+        await refreshAll();
+        invalidateLandRent(leaseId);
+      }
       setPaymentError(err?.message ?? "Failed to save payment.");
     } finally {
       setSavingPayment(false);
     }
+  }
+
+  async function refreshAfterPaymentEdit() {
+    await refreshAll();
+    invalidateLandRent(leaseId);
+  }
+
+  async function refreshAfterStatementDelete(statementId: string) {
+    setPaymentTargetId((target) => target === statementId ? null : target);
+    setPaymentOk(null);
+    setPaymentError(null);
+    invalidateLandRent(leaseId);
+    await refreshAll();
   }
 
   const selectedLabel = useMemo(() => {
@@ -390,6 +436,9 @@ export function useLandRentStatementPage(initial?: {
     statements,
 
     openStatement,
+    paymentStatement,
+    paymentRequestCount,
+    selectStatementForPayment,
     latestStatement,
     statementForSelectedMonth,
 
@@ -420,15 +469,16 @@ export function useLandRentStatementPage(initial?: {
     paymentOk,
 
     creatingStatement,
+    fineStatement: { enabled: fineOnly, setEnabled: setFineOnly, amount: fineAmount, setAmount: setFineAmount, description: fineDescription, setDescription: setFineDescription },
     recalculatingFines,
-    savingFixedAdjustmentRows,
 
     // actions
     refreshAll,
     recalculateAll,
-    saveFixedAdjustmentRows,
     createStatement,
     submitPayment,
+    refreshAfterPaymentEdit,
+    refreshAfterStatementDelete,
 
     // refs
     latestInvoiceRef,

@@ -11,6 +11,7 @@ type TextRun =
   | string
   | {
       text: string;
+      ltrSuffix?: string;
       highlight?: boolean;
       className?: string;
     };
@@ -76,6 +77,7 @@ function renderText(run: TextRun, baseClass = "") {
   return (
     <span className={cx(baseClass, run.highlight && "font-dh1", run.className)}>
       {run.text}
+      {run.ltrSuffix ? <> <bdi dir="ltr" className="font-sans">{run.ltrSuffix}</bdi></> : null}
     </span>
   );
 }
