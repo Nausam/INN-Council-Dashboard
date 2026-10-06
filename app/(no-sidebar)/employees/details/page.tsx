@@ -186,7 +186,7 @@ export default function EmployeeDetailsLoginPage() {
     : "Enter the four-digit PIN you set for this profile.";
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-step={identityLoading ? "loading" : step}>
       <div className={styles.shell}>
         <div className={styles.brand}>
           <Image
@@ -264,21 +264,21 @@ export default function EmployeeDetailsLoginPage() {
             </>
           ) : (
             <>
-              <button type="button" className={styles.back} onClick={() => void changeNumber()} disabled={busy}>
-                <ArrowLeft aria-hidden="true" /> Change number
-              </button>
               <div className={styles.panelHead}>
-                <span
-                  className={cn(motifs.glossIcon, styles.headIcon)}
-                  data-tone={step === "setup" ? "present" : "annual"}
-                >
-                  {step === "setup" ? <ShieldCheck /> : <KeyRound />}
+                <span className={styles.headStart}>
+                  <span
+                    className={cn(motifs.glossIcon, styles.headIcon)}
+                    data-tone={step === "setup" ? "present" : "annual"}
+                  >
+                    {step === "setup" ? <ShieldCheck /> : <KeyRound />}
+                  </span>
+                  {step === "setup" ? (
+                    <span className={styles.stepPill}>Step {confirming ? 2 : 1} of 2</span>
+                  ) : null}
                 </span>
-                {step === "setup" ? (
-                  <span className={styles.stepPill}>Step {confirming ? 2 : 1} of 2</span>
-                ) : (
-                  <span className={styles.eyebrow}>Welcome back</span>
-                )}
+                <button type="button" className={styles.back} onClick={() => void changeNumber()} disabled={busy}>
+                  <ArrowLeft aria-hidden="true" /> Change number
+                </button>
               </div>
               <h1 id="employee-portal-title">{pinTitle}</h1>
               <p className={styles.helper}>{pinHelper}</p>

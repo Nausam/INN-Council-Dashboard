@@ -3,23 +3,20 @@
 import { forgetEmployeeProfileIdentity } from "@/lib/actions/employee-profile.actions";
 import { LAST_EMPLOYEE_PROFILE_KEY } from "@/lib/employee-profile-pwa";
 import { cn } from "@/lib/utils";
-import { ArrowLeft, Loader2, LogOut } from "lucide-react";
+import { Loader2, LogOut } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import styles from "./EmployeePortalHeader.module.css";
 
 /**
- * Top bar shared by every Employee Profile page: optional back button, the
- * council logo, any page-specific actions, and Log out.
+ * Top bar shared by every Employee Profile page: the council logo, any
+ * page-specific actions, and Log out.
  */
 export function EmployeePortalHeader({
-  backHref,
   actions,
   className,
 }: {
-  /** Where the back button goes; omit on top-level pages. */
-  backHref?: string;
   actions?: React.ReactNode;
   className?: string;
 }) {
@@ -46,16 +43,6 @@ export function EmployeePortalHeader({
   return (
     <header className={cn(styles.header, className)}>
       <div className={styles.start}>
-        {backHref ? (
-          <button
-            type="button"
-            onClick={() => router.push(backHref)}
-            className={styles.iconButton}
-            aria-label="Back"
-          >
-            <ArrowLeft />
-          </button>
-        ) : null}
         <Image
           src="/council-logo-full.png"
           alt="Raa Innamaadhoo Council"

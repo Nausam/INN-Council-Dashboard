@@ -16,7 +16,6 @@ import { leaveVisual } from "@/lib/employees/leave-visuals";
 import { employeePhotoUrl } from "@/lib/employees/photo";
 import { cn } from "@/lib/utils";
 import {
-  ArrowLeft,
   CalendarClock,
   CalendarDays,
   CalendarRange,
@@ -25,7 +24,7 @@ import {
   User,
   type LucideIcon,
 } from "lucide-react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import surface from "../employee-portal-surface.module.css";
 import styles from "./leave-calendar.module.css";
@@ -174,7 +173,6 @@ export function EmployeeLeaveCalendarView({
   leaves: EmployeeLeaveCalendarEntry[];
 }) {
   const params = useParams();
-  const router = useRouter();
   const id = Array.isArray(params?.id) ? params.id[0] : params?.id;
   const [visibleMonth, setVisibleMonth] = useState(() => new Date());
   const [monthInitialized, setMonthInitialized] = useState(false);
@@ -244,7 +242,7 @@ export function EmployeeLeaveCalendarView({
       <div className={cn(surface.page, "px-4 py-6")}>
         <style>{`@media (max-width: 767px){[data-council-mobile-header]{display:none !important;}}`}</style>
         <div className="mx-auto max-w-5xl">
-          <BackButton onClick={() => router.push("/employees/details")} />
+          <EmployeePortalHeader />
           <EmptyState
             icon={User}
             title="Employee not found"
@@ -260,7 +258,7 @@ export function EmployeeLeaveCalendarView({
       {/* Hide the app's mobile header on this page only */}
       <style>{`@media (max-width: 767px){[data-council-mobile-header]{display:none !important;}}`}</style>
       <div className={cn(surface.shell, "space-y-5")}>
-        <EmployeePortalHeader backHref={`/employees/details/${id}?tab=leave`} />
+        <EmployeePortalHeader />
 
         {/* Hero */}
         <section className={cn(surface.hero, styles.hero)}>
@@ -466,18 +464,5 @@ function HeroStat({
       <strong>{value}</strong>
       <small>{label}</small>
     </div>
-  );
-}
-
-function BackButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(surface.back, "flex h-10 w-10 items-center justify-center rounded-full transition active:scale-95")}
-      aria-label="Back"
-    >
-      <ArrowLeft className="h-5 w-5" />
-    </button>
   );
 }

@@ -6,9 +6,9 @@
   min-height: 100vh;
   min-height: 100dvh;
   display: flex;
-  align-items: center;
   justify-content: center;
-  overflow: hidden;
+  /* Scrolls when the content is taller than the screen instead of cutting it off. */
+  overflow-x: hidden;
   padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
   background: #fff;
   color: #17191d;
@@ -17,11 +17,14 @@
 .page::before { content: ""; position: absolute; z-index: -1; inset: 0; background: radial-gradient(circle at 12% 18%, #e6f8ec 0, transparent 30%), radial-gradient(circle at 92% 30%, #ffe9df 0, transparent 30%), radial-gradient(circle at 30% 92%, #efe9ff 0, transparent 34%); pointer-events: none; }
 
 /* Logo and name above the sign-in card, the whole group centered on screen. */
-.shell { display: flex; flex-direction: column; width: min(100%, 420px); }
+.shell { display: flex; flex-direction: column; width: min(100%, 420px); margin-block: auto; }
 
 .brand { display: flex; justify-content: center; margin-bottom: 24px; }
 /* Full council logo (emblem, Dhivehi and English name) on a transparent background. */
-.brandLogo { display: block; width: 240px; height: auto; }
+.brandLogo { display: block; width: 240px; height: auto; transition: width .25s ease; }
+/* The PIN screens need the room for the keypad, so the logo steps back. */
+.page[data-step="pin"] .brandLogo, .page[data-step="setup"] .brandLogo { width: 140px; }
+.page[data-step="pin"] .brand, .page[data-step="setup"] .brand { margin-bottom: 16px; }
 
 .panel {
   position: relative;
@@ -33,6 +36,7 @@
 }
 .panel h1 { margin: 14px 0 6px; font-size: clamp(1.75rem, 6vw, 2.1rem); font-weight: 850; letter-spacing: -.05em; line-height: 1.12; }
 .panelHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.headStart { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .headIcon { width: 48px; height: 48px; border-radius: 16px; }
 .headIcon svg { width: 22px; height: 22px; }
 .eyebrow { padding: 6px 11px; border: 1px solid #fff; border-radius: 999px; background: rgba(255,255,255,.75); color: #67616e; font-size: .64rem; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
@@ -41,7 +45,7 @@
 
 .form { display: grid; }
 .fieldLabel { margin-bottom: 9px; color: #575761; font-size: .74rem; font-weight: 750; }
-.back { display: inline-flex; align-items: center; gap: 7px; margin: 0 0 16px; padding: 7px 12px 7px 9px; border: 1px solid #fff; border-radius: 999px; background: rgba(255,255,255,.8); color: #4e4d58; font: inherit; font-size: .74rem; font-weight: 750; cursor: pointer; box-shadow: 0 3px 10px rgba(45,38,54,.06); }
+.back { display: inline-flex; align-items: center; gap: 7px; flex: none; padding: 7px 12px 7px 9px; border: 1px solid #fff; border-radius: 999px; background: rgba(255,255,255,.8); color: #4e4d58; font: inherit; font-size: .74rem; font-weight: 750; cursor: pointer; box-shadow: 0 3px 10px rgba(45,38,54,.06); }
 .back svg { width: 15px; height: 15px; }
 .back:hover { color: #17191d; }
 .back:disabled { opacity: .55; cursor: wait; }
@@ -116,7 +120,20 @@
   .brandLogo { width: 210px; }
   .panel { padding: 22px 20px; border-radius: 26px; }
 }
-@media (max-width: 350px) {
-  .pinTile { width: 50px; height: 56px; }
-  .key { height: 52px; }
-}
+/*
+ * PIN screens fill exactly one screen with no scrolling: the logo, tiles,
+ * keys and spacing scale with the screen height (dvh), within set limits.
+ */
+.page[data-step="pin"], .page[data-step="setup"] { height: 100vh; height: 100dvh; overflow: hidden; }
+.page[data-step="pin"] .brandLogo, .page[data-step="setup"] .brandLogo { width: clamp(64px, 16dvh, 140px); }
+.page[data-step="pin"] .brand, .page[data-step="setup"] .brand { margin-bottom: clamp(8px, 1.6dvh, 16px); }
+.page[data-step="pin"] .panel, .page[data-step="setup"] .panel { padding: clamp(14px, 2.6dvh, 24px) 20px; }
+.page[data-step="pin"] .panel h1, .page[data-step="setup"] .panel h1 { margin-top: clamp(6px, 1.4dvh, 14px); font-size: clamp(1.35rem, 3.6dvh, 2.1rem); }
+.page[data-step="pin"] .helper, .page[data-step="setup"] .helper { margin-bottom: clamp(8px, 2dvh, 22px); }
+.page[data-step="pin"] .headIcon, .page[data-step="setup"] .headIcon { width: clamp(34px, 5.6dvh, 48px); height: clamp(34px, 5.6dvh, 48px); }
+.pinTile { width: clamp(40px, 6.4dvh, 58px); height: clamp(42px, 7dvh, 64px); }
+.pinStatus { min-height: clamp(22px, 4dvh, 42px); margin: clamp(4px, 1dvh, 10px) 0 clamp(2px, .6dvh, 6px); }
+.keypad { gap: clamp(6px, 1.1dvh, 10px); }
+.key { height: clamp(38px, 6.6dvh, 58px); }
+
+

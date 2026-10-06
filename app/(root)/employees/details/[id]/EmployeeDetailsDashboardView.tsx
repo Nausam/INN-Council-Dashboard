@@ -11,7 +11,6 @@ import {
 } from "@/components/design-system";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/Providers/UserProvider";
-import { useGeneratedSlipForEmployeeQuery } from "@/hooks/queries";
 import type {
   AttendanceDoc,
   EmployeeDoc,
@@ -26,14 +25,12 @@ import {
   formatDateLabel,
   formatMoney,
   leaveLabel,
-  monthKey,
   toEmployeeDetailsView,
   type AttendanceSummary,
   type EmployeeDetailsView,
   type LeaveBalanceView,
   type WeekDayAttendance,
 } from "@/lib/employees/details-dashboard";
-import { formatMvr } from "@/lib/salary-slips/format";
 import { cn } from "@/lib/utils";
 import { LAST_EMPLOYEE_PROFILE_KEY, isStandaloneApp } from "@/lib/employee-profile-pwa";
 import { employeePhotoUrl } from "@/lib/employees/photo";
@@ -142,19 +139,11 @@ export function EmployeeDetailsDashboardView({
       // The profile remains usable when browser storage is unavailable.
     }
   }, [data, id]);
-  const currentMonth = monthKey();
   const isPending = false;
   const isError = !data;
   const leavesPending = false;
   const councilPending = false;
   const mosquePending = false;
-  const {
-    data: currentSlip = null,
-    isPending: slipPending,
-    isError: slipError,
-  } = useGeneratedSlipForEmployeeQuery(currentMonth, id, {
-    enabled: tab === "pay",
-  });
 
   const employee = useMemo(
     () => (data ? toEmployeeDetailsView(data) : null),
@@ -316,10 +305,6 @@ export function EmployeeDetailsDashboardView({
             <PaySection
               employee={employee}
               employeeId={id}
-              netIncome={currentSlip?.netIncome ?? null}
-              periodTitle={currentSlip?.periodTitle ?? null}
-              slipLoading={slipPending}
-              slipError={slipError}
             />
           ) : null}
         </div>
@@ -1077,59 +1062,27 @@ function durationLabel(months: number): string {
 function PaySection({
   employee,
   employeeId,
-  netIncome,
-  periodTitle,
-  slipLoading,
-  slipError,
 }: {
   employee: EmployeeDetailsView;
   employeeId: string;
-  netIncome: number | null;
-  periodTitle: string | null;
-  slipLoading: boolean;
-  slipError: boolean;
 }) {
-  // "October 2026" → a calendar page with the year on the band and the month below.
-  const [periodMonth, periodYear] = (periodTitle ?? "").split(" ");
-  const showPeriodPage = netIncome !== null && Boolean(periodMonth && periodYear);
-
+  // Net pay is hidden for now; the card links straight to the salary slips.
   return (
     <div className={styles.stack}>
-      <section className={styles.payHero}>
-        <div className={styles.payHeroText}>
-          <p className={styles.payHeroHead}>
-            <span className={cn(motifs.glossIcon, styles.payHeroIcon)} data-tone="present">
-              <Banknote />
-            </span>
-            <span className={styles.eyebrow}>
-              Net pay{periodTitle ? ` · ${periodTitle}` : " · this month"}
-            </span>
-          </p>
-          {slipLoading ? (
-            <div className="mt-3 h-9 w-40 animate-pulse rounded-lg bg-white/70" />
-          ) : netIncome !== null ? (
-            <p className={styles.payAmount}>
-              <small>MVR</small>
-              {formatMvr(netIncome)}
-            </p>
-          ) : (
-            <p className={cn(styles.payAmount, styles.payAmountMuted)}>
-              {slipError ? "Couldn’t load this month’s slip" : "No slip for this month yet"}
-            </p>
-          )}
-          <Link href={`/employees/details/${employeeId}/salary-slips`} className={styles.payLink}>
-            <FileText className="h-4 w-4" />
-            View salary slips
-          </Link>
-        </div>
-        {showPeriodPage ? (
-          <div className={cn(motifs.calendarPage, styles.payPeriodPage)} data-tone="present" aria-hidden="true">
-            <span className={motifs.calendarPageTop}>{periodYear}</span>
-            <strong>{periodMonth.slice(0, 3)}</strong>
-            <small>Pay month</small>
-          </div>
-        ) : null}
-      </section>
+      <Link href={`/employees/details/${employeeId}/salary-slips`} className={styles.featureLink}>
+        <span className="flex items-center gap-3">
+          <span className={cn(motifs.glossIcon, styles.featureIcon)} data-tone="present">
+            <FileText />
+          </span>
+          <span>
+            <strong>Salary slips</strong>
+            <small>View and download your monthly slips</small>
+          </span>
+        </span>
+        <span className={styles.featureArrow}>
+          <ArrowRight className="h-4 w-4" />
+        </span>
+      </Link>
 
       <Panel icon={WalletCards} title="Pay breakdown">
         {employee.payItems.length > 0 ? (

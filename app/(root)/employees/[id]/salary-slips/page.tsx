@@ -15,7 +15,6 @@ import { employeePhotoUrl } from "@/lib/employees/photo";
 import { formatMvr } from "@/lib/salary-slips/format";
 import { cn } from "@/lib/utils";
 import {
-  ArrowLeft,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -29,7 +28,7 @@ import {
   Wallet,
   type LucideIcon,
 } from "lucide-react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import surface from "../employee-portal-surface.module.css";
 import styles from "./salary-slips.module.css";
@@ -57,6 +56,13 @@ const MONTH_NAMES = [
 ];
 
 const HISTORY_PAGE_SIZE = 6;
+
+/**
+ * The slip generated from attendance (net pay, allowances, deductions and the
+ * View / Download PDF buttons) is hidden for now. Set to true to bring it back;
+ * until then "This month" only shows an uploaded slip.
+ */
+const SHOW_GENERATED_SLIP = false;
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
@@ -94,7 +100,6 @@ function asString(value: unknown): string {
 
 export default function EmployeeSalarySlipsPage() {
   const params = useParams();
-  const router = useRouter();
   const id = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
   const now = new Date();
@@ -115,7 +120,7 @@ export default function EmployeeSalarySlipsPage() {
   );
 
   const { data: slip = null, isPending: slipPending } =
-    useGeneratedSlipForEmployeeQuery(currentPeriod, id);
+    useGeneratedSlipForEmployeeQuery(currentPeriod, id, { enabled: SHOW_GENERATED_SLIP });
   const { data: uploadedData } = useSalarySlipsByRecordQuery(recordCard);
 
   const allUploaded = useMemo(
@@ -212,7 +217,7 @@ export default function EmployeeSalarySlipsPage() {
       <div className={cn(surface.page, "px-4 py-6")}>
         <style>{`@media (max-width: 767px){[data-council-mobile-header]{display:none !important;}}`}</style>
         <div className="mx-auto max-w-3xl">
-          <BackButton onClick={() => router.push("/employees/details")} />
+          <EmployeePortalHeader />
           <EmptyState
             icon={User}
             title="Employee not found"
@@ -225,7 +230,8 @@ export default function EmployeeSalarySlipsPage() {
 
   const photoUrl = employee ? employeePhotoUrl(id, employee.photoKey) : undefined;
   const [currentYear] = currentPeriod.split("-");
-  const latestPeriod = uploadedCurrent.length || (slip && hasAttendance) ? currentPeriod : history[0]?.periodLabel;
+  const showGeneratedSlip = SHOW_GENERATED_SLIP && Boolean(slip && hasAttendance);
+  const latestPeriod = uploadedCurrent.length || showGeneratedSlip ? currentPeriod : history[0]?.periodLabel;
 
   // Group the visible page of history by year for the year dividers.
   const historyByYear = pageItems.reduce<Array<{ year: string; slips: UploadedSlip[] }>>((groups, item) => {
@@ -242,7 +248,7 @@ export default function EmployeeSalarySlipsPage() {
       <style>{`@media (max-width: 767px){[data-council-mobile-header]{display:none !important;}}`}</style>
 
       <div className={cn(surface.shell, "max-w-3xl space-y-5")}>
-        <EmployeePortalHeader backHref={`/employees/details/${id}?tab=pay`} />
+        <EmployeePortalHeader />
 
         {/* Hero */}
         <section className={cn(surface.hero, styles.hero)}>
@@ -306,12 +312,12 @@ export default function EmployeeSalarySlipsPage() {
             </div>
           ) : null}
 
-          {slipPending ? (
+          {SHOW_GENERATED_SLIP && slipPending ? (
             <div className="space-y-3">
               <div className="h-24 animate-pulse rounded-3xl bg-slate-100" />
               <div className="h-11 animate-pulse rounded-full bg-slate-100" />
             </div>
-          ) : slip && hasAttendance ? (
+          ) : showGeneratedSlip && slip ? (
             <>
               <div className={styles.netTile}>
                 <span className={cn(motifs.glossIcon, styles.netIcon)} data-tone="present">
@@ -366,11 +372,8 @@ export default function EmployeeSalarySlipsPage() {
               <span className={cn(motifs.glossIcon, styles.emptyIcon)} data-tone="pending">
                 <FileText />
               </span>
-              <p>No slip for {currentMonthTitle} yet</p>
-              <small>
-                Attendance for this month hasn&apos;t been added yet. The slip will appear here once
-                attendance is recorded.
-              </small>
+              <p>Slip not available</p>
+              <small>The slip for {currentMonthTitle} hasn&apos;t been added yet.</small>
             </div>
           ) : null}
         </section>
@@ -513,18 +516,5 @@ function SummaryTile({
         <strong>{formatMvr(value)}</strong>
       </div>
     </div>
-  );
-}
-
-function BackButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(surface.back, "flex h-10 w-10 items-center justify-center rounded-full transition active:scale-95")}
-      aria-label="Back"
-    >
-      <ArrowLeft className="h-5 w-5" />
-    </button>
   );
 }
