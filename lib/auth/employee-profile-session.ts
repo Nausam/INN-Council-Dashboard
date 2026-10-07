@@ -10,8 +10,8 @@ import { EMPLOYEE_PROFILE_HOME } from "@/lib/employee-profile-pwa";
 const COOKIE_NAME = "employee_profile_session";
 const PENDING_COOKIE_NAME = "employee_profile_pending";
 const IDENTITY_COOKIE_NAME = "employee_profile_identity";
-// Renewed whenever the app opens, so in practice it lasts until Log out.
-const SESSION_AGE_SECONDS = 365 * 24 * 60 * 60;
+// Stays signed in until Log out; 400 days is the longest browsers keep a cookie.
+const SESSION_AGE_SECONDS = 400 * 24 * 60 * 60;
 const PENDING_AGE_SECONDS = 10 * 60;
 const IDENTITY_AGE_SECONDS = 365 * 24 * 60 * 60;
 const EMPLOYEE_ID_PATTERN = /^[\w-]{1,128}$/;

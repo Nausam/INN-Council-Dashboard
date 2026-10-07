@@ -5,7 +5,6 @@ import {
   isEmployeeProfileRoute,
   isStandaloneApp,
 } from "@/lib/employee-profile-pwa";
-import { renewEmployeeProfileSession } from "@/lib/actions/employee-profile.actions";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -26,11 +25,6 @@ export function EmployeePwaScope({ children }: { children: React.ReactNode }) {
     displayMode.addListener(update);
     return () => displayMode.removeListener(update);
   }, []);
-
-  // The sign-in stays saved until Log out; keep it from expiring while in use.
-  useEffect(() => {
-    if (allowed) void renewEmployeeProfileSession().catch(() => {});
-  }, [allowed]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("employee-profile-app", standalone === true);

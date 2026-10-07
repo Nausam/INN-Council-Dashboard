@@ -7,7 +7,6 @@ import {
   clearEmployeeProfileIdentity,
   clearEmployeeProfileSession,
   getEmployeeProfileIdentityId,
-  getEmployeeProfileSessionId,
   getPendingEmployeeProfileId,
   setEmployeeProfileSession,
   setEmployeeProfileIdentity,
@@ -61,11 +60,12 @@ export async function currentEmployeeProfileIdentity(): Promise<string | null> {
   return getEmployeeProfileIdentityId();
 }
 
-/** Pushes the saved sign-in's expiry out again each time the app opens. */
-export async function renewEmployeeProfileSession(): Promise<void> {
-  const employeeId = getEmployeeProfileSessionId();
-  if (employeeId) setEmployeeProfileSession(employeeId);
-}
+/**
+ * No longer locks anything: employees stay signed in until Log out. Kept so
+ * installed apps still running the previous build, which call this when they
+ * come back to the foreground, don't crash on a missing server action.
+ */
+export async function lockEmployeeProfile(): Promise<void> {}
 
 export async function forgetEmployeeProfileIdentity(): Promise<void> {
   clearEmployeeProfileSession();
