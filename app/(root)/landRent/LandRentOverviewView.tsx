@@ -6,6 +6,7 @@ import {
   filterOverviewRows,
   getThisMonthKey,
 } from "@/components/landRent/Overview/landRentOverview.utils";
+import DownloadAllStatementsButton from "@/components/landRent/Overview/DownloadAllStatementsButton";
 import OverviewCards from "@/components/landRent/Overview/OverviewCards";
 import OverviewHeader from "@/components/landRent/Overview/OverviewHeader";
 import OverviewSkeleton from "@/components/landRent/Overview/OverviewSkeleton";
@@ -200,8 +201,13 @@ export function LandRentOverviewView({
           totalCount={rows.length}
         />
 
-        {isAdmin ? (
-          <div className="mt-4 flex justify-end">
+        <div className="mt-4 flex flex-wrap items-start justify-end gap-2">
+          <DownloadAllStatementsButton
+            rows={filtered}
+            filtered={filtered.length !== rows.length}
+            disabled={loading || recalculating}
+          />
+          {isAdmin ? (
             <button
               type="button"
               onClick={recalculateAll}
@@ -211,8 +217,8 @@ export function LandRentOverviewView({
               <RefreshCw className={`h-4 w-4 ${recalculating ? "animate-spin" : ""}`} />
               {recalculating ? "Recalculating all leases…" : "Recalculate all leases"}
             </button>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
 
         {recalculationResult ? (
           <div role="status" className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700 ring-1 ring-slate-100">

@@ -10,17 +10,29 @@ function sleep(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms));
 }
 
-export async function downloadElementAsPdf(el: HTMLElement, filename: string) {
+/**
+ * Runs `work` with the page in PDF export mode (smaller type, A4 page width).
+ * A batch export wraps all its statements in one call so the page doesn't
+ * switch back and forth between statements.
+ */
+export async function withPdfExportMode<T>(work: () => Promise<T>): Promise<T> {
   const prevHtmlClass = document.documentElement.className;
+  document.documentElement.classList.add("pdf-export");
+  try {
+    return await work();
+  } finally {
+    document.documentElement.className = prevHtmlClass;
+  }
+}
+
+/** Captures `el` as a stamped A4 jsPDF document. Call inside withPdfExportMode. */
+async function renderStampedPdf(el: HTMLElement, stamp: HTMLImageElement): Promise<any> {
   const prevTransform = el.style.transform;
   const prevOrigin = el.style.transformOrigin;
-
-  document.documentElement.classList.add("pdf-export");
   el.style.transformOrigin = "top left";
   el.style.transform = "none";
 
   try {
-    const stamp = await loadLandRentStamp();
     // Wait for layout and fonts before capturing the statement.
     await new Promise<void>((r) => requestAnimationFrame(() => r()));
     if ((document as any).fonts?.ready) {
@@ -69,12 +81,25 @@ export async function downloadElementAsPdf(el: HTMLElement, filename: string) {
     const canvas = await worker.get("canvas");
     const pageSize = await worker.get("pageSize");
     stampLandRentPdfPages(pdf, canvas, pageSize, stamp);
-    pdf.save(
-      filename.toLowerCase().endsWith(".pdf") ? filename : `${filename}.pdf`
-    );
+    return pdf;
   } finally {
     el.style.transform = prevTransform;
     el.style.transformOrigin = prevOrigin;
-    document.documentElement.className = prevHtmlClass;
   }
+}
+
+export async function downloadElementAsPdf(el: HTMLElement, filename: string) {
+  await withPdfExportMode(async () => {
+    const stamp = await loadLandRentStamp();
+    const pdf = await renderStampedPdf(el, stamp);
+    pdf.save(
+      filename.toLowerCase().endsWith(".pdf") ? filename : `${filename}.pdf`
+    );
+  });
+}
+
+/** Same stamped PDF as downloadElementAsPdf, returned as bytes. Call inside withPdfExportMode. */
+export async function elementToPdfBytes(el: HTMLElement, stamp: HTMLImageElement): Promise<Uint8Array> {
+  const pdf = await renderStampedPdf(el, stamp);
+  return new Uint8Array(pdf.output("arraybuffer") as ArrayBuffer);
 }

@@ -1733,6 +1733,14 @@ export const fetchLandStatementsWithDetails = async (params: {
   return details;
 };
 
+/** The most recent statement for a lease with its details, or null if it has none. */
+export const fetchLatestLandStatementDetails = async (leaseId: string) => {
+  const statements = await listLandStatementsForLease(leaseId);
+  const latest = statements[statements.length - 1];
+  if (!latest) return null;
+  return getLandStatementDetails({ statementId: latest.$id, capToEndDate: false });
+};
+
 const maybeMarkStatementPaid = async (
   statementId: string,
   capToEndDate?: boolean,
