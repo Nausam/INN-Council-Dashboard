@@ -7,6 +7,7 @@ import {
   clearEmployeeProfileIdentity,
   clearEmployeeProfileSession,
   getEmployeeProfileIdentityId,
+  getEmployeeProfileSessionId,
   getPendingEmployeeProfileId,
   setEmployeeProfileSession,
   setEmployeeProfileIdentity,
@@ -60,8 +61,10 @@ export async function currentEmployeeProfileIdentity(): Promise<string | null> {
   return getEmployeeProfileIdentityId();
 }
 
-export async function lockEmployeeProfile(): Promise<void> {
-  clearEmployeeProfileSession();
+/** Pushes the saved sign-in's expiry out again each time the app opens. */
+export async function renewEmployeeProfileSession(): Promise<void> {
+  const employeeId = getEmployeeProfileSessionId();
+  if (employeeId) setEmployeeProfileSession(employeeId);
 }
 
 export async function forgetEmployeeProfileIdentity(): Promise<void> {
