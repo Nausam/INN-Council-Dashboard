@@ -1,9 +1,6 @@
 "use server";
 
-import {
-  computeCouncilMinutesLate,
-  resolveSectionForLateness,
-} from "@/lib/attendance/council-lateness";
+import { computeCouncilMinutesLate } from "@/lib/attendance/council-lateness";
 import {
   fetchAllEmployees,
   fetchAttendanceForDate,
@@ -99,11 +96,7 @@ export async function fetchDashboardSummary(
       (row as { employeeName?: string | null }).employeeName,
     );
     const minutesLate = row.signInTime
-      ? computeCouncilMinutesLate(
-          row.signInTime,
-          date,
-          resolveSectionForLateness(employee?.section, employee?.designation),
-        )
+      ? computeCouncilMinutesLate(row.signInTime, date)
       : Number(row.minutesLate ?? 0);
 
     if (!absentSet.has(name) && minutesLate > 0) {

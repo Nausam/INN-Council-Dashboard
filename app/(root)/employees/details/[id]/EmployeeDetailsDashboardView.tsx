@@ -64,6 +64,9 @@ import {
   WalletCards,
   type LucideIcon,
 } from "lucide-react";
+import { salarySlipsByRecordQueryOptions } from "@/hooks/queries";
+import { queryKeys } from "@/lib/query/keys";
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -139,6 +142,21 @@ export function EmployeeDetailsDashboardView({
       // The profile remains usable when browser storage is unavailable.
     }
   }, [data, id]);
+
+  // The leave calendar and salary slips pages read from the query cache, so
+  // hand them what this page already has and they open without waiting.
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!id || !data) return;
+    queryClient.setQueryData(queryKeys.employees.detail(id), data);
+    queryClient.setQueryData(queryKeys.employees.leaveCalendar(id), leaves);
+  }, [data, id, leaves, queryClient]);
+  const recordCard = typeof data?.recordCardNumber === "string" ? data.recordCardNumber.trim() : "";
+  useEffect(() => {
+    if (tab !== "pay" || !recordCard) return;
+    void queryClient.prefetchQuery(salarySlipsByRecordQueryOptions(recordCard));
+  }, [queryClient, recordCard, tab]);
+
   const isPending = false;
   const isError = !data;
   const leavesPending = false;
@@ -974,7 +992,7 @@ function LeaveSection({
 
 function LeaveCalendarLink({ employeeId }: { employeeId: string }) {
   return (
-    <Link href={`/employees/details/${employeeId}/leaves`} className={styles.featureLink}>
+    <Link href={`/employees/details/${employeeId}/leaves`} prefetch className={styles.featureLink}>
       <span className="flex items-center gap-3">
         <span className={cn(motifs.glossIcon, styles.featureIcon)} data-tone="annual">
           <CalendarDays />
@@ -1069,7 +1087,7 @@ function PaySection({
   // Net pay is hidden for now; the card links straight to the salary slips.
   return (
     <div className={styles.stack}>
-      <Link href={`/employees/details/${employeeId}/salary-slips`} className={styles.featureLink}>
+      <Link href={`/employees/details/${employeeId}/salary-slips`} prefetch className={styles.featureLink}>
         <span className="flex items-center gap-3">
           <span className={cn(motifs.glossIcon, styles.featureIcon)} data-tone="present">
             <FileText />

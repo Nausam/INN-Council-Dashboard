@@ -1,18 +1,7 @@
 const MV_OFFSET_MIN = 5 * 60;
 
-function normalizeSectionKey(section?: string): string {
-  return (section ?? "").trim().toLowerCase().replace(/[^a-z]/g, "");
-}
-
-export function getRequiredSignInTime(section?: string): string {
-  const key = normalizeSectionKey(section);
-  if (
-    ["councillor", "councilor", "council", "counciler", "wdc"].includes(key)
-  ) {
-    return "08:30";
-  }
-  return "08:00";
-}
+/** Everyone is expected to sign in by 08:30 MVT; 08:31 counts as 1 minute late. */
+export const REQUIRED_SIGN_IN_TIME = "08:30";
 
 /** Section from employee record, with designation fallback (e.g. WDC President → WDC). */
 export function resolveSectionForLateness(
@@ -47,9 +36,8 @@ function mvLocalToUtcDate(date: string, hhmm: string): Date {
 export function computeCouncilMinutesLate(
   signInTime: string,
   date: string,
-  section?: string,
 ): number {
-  const requiredTime = mvLocalToUtcDate(date, getRequiredSignInTime(section));
+  const requiredTime = mvLocalToUtcDate(date, REQUIRED_SIGN_IN_TIME);
   const actual = new Date(signInTime);
   return Math.max(
     0,

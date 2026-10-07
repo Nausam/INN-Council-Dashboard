@@ -35,5 +35,6 @@ export {
   useUploadedSlipsQuery,
   useSalarySlipsByRecordQuery,
   useGeneratedSlipForEmployeeQuery,
+  salarySlipsByRecordQueryOptions,
 } from "./use-salary-slips";
 export { useQueryInvalidation } from "./use-query-invalidation";

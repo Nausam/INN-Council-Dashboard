@@ -15,6 +15,7 @@ import {
   ArrowUpRight, CalendarDays, ChevronLeft, ChevronRight, Download,
   FileText, RefreshCw, Trash2, X,
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 const PAGE_SIZE = 12;
@@ -52,7 +53,14 @@ export function AnnualLeaveRequestsPanel() {
   }, [pageIndex, revision]);
 
   const selected = page?.requests.find((request) => request.$id === selectedId) ?? null;
-  const refresh = () => setRevision((value) => value + 1);
+  const queryClient = useQueryClient();
+  // Approvals mark attendance and change leave balances, so drop those caches too.
+  const refresh = () => {
+    setRevision((value) => value + 1);
+    for (const queryKey of [["attendance"], ["employees"], ["dashboard"]]) {
+      void queryClient.invalidateQueries({ queryKey });
+    }
+  };
 
   async function assign(role: "approver" | "collector", employeeId: string) {
     if (!selected || !employeeId) return;
@@ -73,8 +81,9 @@ export function AnnualLeaveRequestsPanel() {
     setBusy(true);
     setError("");
     try {
-      await approveAnnualLeaveRequest(selected.$id);
-      refresh();
+      const result = await approveAnnualLeaveRequest(selected.$id);
+      if (!result.ok) setError(result.message);
+      else refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not approve annual leave.");
     } finally {
@@ -85,7 +94,10 @@ export function AnnualLeaveRequestsPanel() {
   const approvers = employees.filter((employee) => LEAVE_SUPERVISORS.some((supervisor) => supervisor.employeeId === employee.employeeId));
 
   async function remove(request: AnnualLeaveRequest) {
-    if (!window.confirm(`Delete ${request.fullName}'s annual leave form permanently?`)) return;
+    const note = request.attendanceLeave
+      ? " Its leave days will be removed from attendance, returned to the balance and fingerprint sign-ins restored."
+      : "";
+    if (!window.confirm(`Delete ${request.fullName}'s annual leave form permanently?${note}`)) return;
     setBusy(true);
     setError("");
     try {
@@ -120,11 +132,14 @@ export function AnnualLeaveRequestsPanel() {
       ) : page?.requests.length ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {page.requests.map((request, index) => (
-            <button key={request.$id} type="button" onClick={() => { setError(""); setSelectedId(request.$id); }} className="group relative flex min-h-[220px] w-full flex-col rounded-[24px] border border-[#d9ebe5] bg-[#f1faf6] p-5 text-left transition hover:-translate-y-1 hover:shadow-[0_16px_32px_rgba(34,49,50,0.10)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#158577]">
-              <span className="flex items-center justify-between"><span className="text-xs font-bold tracking-[0.16em] text-[#7a8987]">{String(pageIndex * PAGE_SIZE + index + 1).padStart(2, "0")}</span><span className="rounded-full bg-white px-3 py-1 text-[11px] font-extrabold text-[#167a67]">{request.approvalStatus || "Pending"}</span></span>
+            <div key={request.$id} className="relative">
+            <button type="button" onClick={() => { setError(""); setSelectedId(request.$id); }} className="group relative flex min-h-[220px] w-full flex-col rounded-[24px] border border-[#d9ebe5] bg-[#f1faf6] p-5 text-left transition hover:-translate-y-1 hover:shadow-[0_16px_32px_rgba(34,49,50,0.10)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#158577]">
+              <span className="flex items-center justify-between pr-10"><span className="text-xs font-bold tracking-[0.16em] text-[#7a8987]">{String(pageIndex * PAGE_SIZE + index + 1).padStart(2, "0")}</span><span className="rounded-full bg-white px-3 py-1 text-[11px] font-extrabold text-[#167a67]">{request.approvalStatus || "Pending"}</span></span>
               <span className="mt-8 flex min-w-0 items-center gap-3"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#c8ebdd] text-lg font-black text-[#126a5b]">{request.fullName?.trim().charAt(0).toUpperCase() || "?"}</span><span className="min-w-0"><strong className="block truncate text-lg font-black tracking-tight text-[#1c2d2e]">{request.fullName}</strong><span className="mt-0.5 block text-xs font-medium text-[#7b8a8b]">{dateLabel(request.startDate)} – {dateLabel(request.endDate)} · {request.totalDays} days</span></span></span>
               <span className="mt-auto flex items-center justify-between gap-3 border-t border-[#243b3b]/10 pt-4 text-xs font-semibold text-[#526c6a]"><span className="truncate">{request.takeover?.name ? `Handover: ${request.takeover.name}` : "Earlier request"}</span><span className="inline-flex items-center gap-1 text-[#1e4642]">Open <ArrowUpRight size={15} /></span></span>
             </button>
+            <button type="button" onClick={() => void remove(request)} disabled={busy} aria-label={`Delete ${request.fullName}'s annual leave form`} className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-white/80 text-rose-500 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"><Trash2 size={15} /></button>
+            </div>
           ))}
         </div>
       ) : (

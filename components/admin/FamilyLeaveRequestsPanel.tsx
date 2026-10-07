@@ -30,6 +30,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 const PAGE_SIZE = 12;
@@ -66,13 +67,18 @@ function FormCard({
   request,
   number,
   onOpen,
+  onDelete,
+  busy,
 }: {
   request: FamilyLeaveRequestSummary;
   number: number;
   onOpen: () => void;
+  onDelete: () => void;
+  busy: boolean;
 }) {
   const salaam = request.leaveType === "salaam";
   return (
+    <div className="relative">
     <button
       type="button"
       onClick={onOpen}
@@ -83,7 +89,7 @@ function FormCard({
       aria-label={`Open ${typeLabel(request)} form for ${request.employeeName}`}
     >
       <span className={cn("absolute -right-10 -top-12 h-40 w-40 rounded-full opacity-70", salaam ? "bg-[#dff4e8]" : "bg-[#f0e6f8]")} />
-      <span className="relative flex w-full items-center justify-between gap-2">
+      <span className="relative flex w-full items-center justify-between gap-2 pr-10">
         <span className="text-xs font-bold tracking-[0.16em] text-[#7a8987]">{String(number).padStart(2, "0")}</span>
         <span className="flex items-center gap-1.5">
           <span className={cn("rounded-full bg-white/80 px-3 py-1 text-[11px] font-extrabold", salaam ? "text-[#167a67]" : "text-[#8059a2]")}>{typeLabel(request)}</span>
@@ -109,6 +115,8 @@ function FormCard({
         <span className="inline-flex items-center gap-1 text-[#1e4642]">Open <ArrowUpRight size={15} className="transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" /></span>
       </span>
     </button>
+    <button type="button" onClick={onDelete} disabled={busy} aria-label={`Delete ${request.employeeName}'s leave form`} className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-white/80 text-rose-500 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"><Trash2 size={15} /></button>
+    </div>
   );
 }
 
@@ -288,7 +296,14 @@ export function FamilyLeaveRequestsPanel() {
   const selected = page?.requests.find((request) => request.id === selectedId) ?? null;
   const firstNumber = pageIndex * PAGE_SIZE + 1;
   const lastNumber = Math.min((pageIndex + 1) * PAGE_SIZE, page?.totalCount ?? 0);
-  const refresh = () => setRevision((value) => value + 1);
+  const queryClient = useQueryClient();
+  // Approvals mark attendance and change leave balances, so drop those caches too.
+  const refresh = () => {
+    setRevision((value) => value + 1);
+    for (const queryKey of [["attendance"], ["employees"], ["dashboard"]]) {
+      void queryClient.invalidateQueries({ queryKey });
+    }
+  };
 
   const assignSupervisor = async (requestId: string, supervisorKey: string) => {
     if (!supervisorKey) return;
@@ -333,7 +348,10 @@ export function FamilyLeaveRequestsPanel() {
   };
 
   const deleteRequest = async (request: FamilyLeaveRequestSummary) => {
-    if (!window.confirm(`Delete ${request.employeeName}'s leave form permanently?`)) return;
+    const note = request.attendanceLeave
+      ? " Its leave days will be removed from attendance, returned to the balance and fingerprint sign-ins restored."
+      : "";
+    if (!window.confirm(`Delete ${request.employeeName}'s leave form permanently?${note}`)) return;
     setBusyId(request.id);
     setError("");
     try {
@@ -352,8 +370,9 @@ export function FamilyLeaveRequestsPanel() {
     setBusyId(requestId);
     setError("");
     try {
-      await reviewFamilyLeaveRequest(requestId, status);
-      refresh();
+      const result = await reviewFamilyLeaveRequest(requestId, status);
+      if (!result.ok) setError(result.message);
+      else refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not review leave request.");
     } finally {
@@ -389,7 +408,7 @@ export function FamilyLeaveRequestsPanel() {
         </div>
       ) : page?.requests.length ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {page.requests.map((request, index) => <FormCard key={request.id} request={request} number={firstNumber + index} onOpen={() => { setError(""); setSelectedId(request.id); }} />)}
+          {page.requests.map((request, index) => <FormCard key={request.id} request={request} number={firstNumber + index} busy={busyId === request.id} onOpen={() => { setError(""); setSelectedId(request.id); }} onDelete={() => void deleteRequest(request)} />)}
         </div>
       ) : (
         <div className="flex min-h-[340px] flex-col items-center justify-center rounded-[28px] border border-dashed border-[#dae6dd] bg-[#fbfdfb] p-8 text-center">

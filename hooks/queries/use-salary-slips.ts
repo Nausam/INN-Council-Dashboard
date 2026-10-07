@@ -56,8 +56,9 @@ export function useGeneratedSlipForEmployeeQuery(
   });
 }
 
-export function useSalarySlipsByRecordQuery(recordCard: string) {
-  return useQuery({
+/** Shared by the query below and the employee dashboard, which prefetches it. */
+export function salarySlipsByRecordQueryOptions(recordCard: string) {
+  return {
     queryKey: queryKeys.salarySlips.byRecord(recordCard),
     queryFn: async () => {
       const res = await fetch(
@@ -67,6 +68,13 @@ export function useSalarySlipsByRecordQuery(recordCard: string) {
       if (!res.ok) throw new Error(data?.error ?? "Failed to load slips");
       return data;
     },
+    staleTime: QUERY_STALE_TIME,
+  };
+}
+
+export function useSalarySlipsByRecordQuery(recordCard: string) {
+  return useQuery({
+    ...salarySlipsByRecordQueryOptions(recordCard),
     enabled: Boolean(recordCard.trim()),
   });
 }

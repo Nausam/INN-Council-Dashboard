@@ -887,6 +887,73 @@ export async function submitCouncilAttendanceUpdates(
   await commitBatch();
 }
 
+/**
+ * Server-side equivalent of the mosque sheet's leave handling: a stored leave
+ * type is treated as already deducted, so changing it restores the old balance
+ * and deducts the new one. Choosing a leave clears that day's sign-ins.
+ */
+export async function submitMosqueLeaveUpdates(
+  employeeId: string,
+  items: Array<{ attendanceId: string; leaveType: string | null }>,
+): Promise<void> {
+  if (items.length === 0) return;
+
+  const db = getFirestoreDb();
+  const [employeeSnap, ...rowSnaps] = await db.getAll(
+    db.collection(COLLECTIONS.employees).doc(employeeId),
+    ...items.map((item) => db.collection(COLLECTIONS.mosqueAttendance).doc(item.attendanceId)),
+  );
+  const employee = fromFirestoreDoc<EmployeeDoc>(employeeSnap);
+  if (!employee) throw new Error("Employee not found");
+
+  const employeePatch: Record<string, number> = {};
+  const rowPatches: Array<[string, Record<string, unknown>]> = [];
+  items.forEach((item, index) => {
+    const row = fromFirestoreDoc<MosqueAttendanceDoc>(rowSnaps[index]!);
+    if (!row) throw new Error("Mosque attendance row not found");
+    const persisted = row.leaveType ?? null;
+    const next = item.leaveType ?? null;
+    if (persisted === next) return;
+
+    if (persisted) {
+      employeePatch[persisted] = applyLeaveBalanceDelta(employee, persisted, true);
+    }
+    if (next) {
+      employeePatch[next] = applyLeaveBalanceDelta(employee, next, false);
+    }
+    rowPatches.push([
+      item.attendanceId,
+      {
+        leaveType: next,
+        previousLeaveType: next,
+        leaveDeducted: Boolean(next),
+        ...(next
+          ? {
+              fathisSignInTime: null,
+              mendhuruSignInTime: null,
+              asuruSignInTime: null,
+              maqribSignInTime: null,
+              ishaSignInTime: null,
+              fathisMinutesLate: 0,
+              mendhuruMinutesLate: 0,
+              asuruMinutesLate: 0,
+              maqribMinutesLate: 0,
+              ishaMinutesLate: 0,
+            }
+          : {}),
+      },
+    ]);
+  });
+
+  if (rowPatches.length === 0) return;
+  const batch = db.batch();
+  batch.update(db.collection(COLLECTIONS.employees).doc(employeeId), withTimestamps(employeePatch));
+  for (const [id, fields] of rowPatches) {
+    batch.update(db.collection(COLLECTIONS.mosqueAttendance).doc(id), withTimestamps(fields));
+  }
+  await batch.commit();
+}
+
 export async function fetchAttendanceForMonth(month: string): Promise<AttendanceDoc[]> {
   const [y, m] = month.split("-").map(Number);
   const next = new Date(Date.UTC(y, m, 1));

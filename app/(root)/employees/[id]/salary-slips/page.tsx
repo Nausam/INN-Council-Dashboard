@@ -121,7 +121,10 @@ export default function EmployeeSalarySlipsPage() {
 
   const { data: slip = null, isPending: slipPending } =
     useGeneratedSlipForEmployeeQuery(currentPeriod, id, { enabled: SHOW_GENERATED_SLIP });
-  const { data: uploadedData } = useSalarySlipsByRecordQuery(recordCard);
+  const { data: uploadedData, isPending: uploadedPending } =
+    useSalarySlipsByRecordQuery(recordCard);
+  // The slip list can only be fetched once the employee's record card is known.
+  const slipsLoading = employeePending || (Boolean(recordCard) && uploadedPending);
 
   const allUploaded = useMemo(
     () => (uploadedData?.slips ?? []) as UploadedSlip[],
@@ -268,8 +271,16 @@ export default function EmployeeSalarySlipsPage() {
               <div className={cn(styles.heroAvatar, "animate-pulse rounded-full bg-white/70")} />
             )}
             <div className="min-w-0">
-              <h1 className={styles.heroName}>{employee?.name ?? "Loading"}</h1>
-              {recordCard ? <span className={styles.recordPill}>Record card #{recordCard}</span> : null}
+              {employee ? (
+                <h1 className={cn(styles.heroName, styles.fadeIn)}>{employee.name}</h1>
+              ) : (
+                <span className={cn(styles.skeleton, styles.skeletonName)} aria-label="Loading" />
+              )}
+              {employeePending ? (
+                <span className={cn(styles.skeleton, styles.skeletonPill)} />
+              ) : recordCard ? (
+                <span className={cn(styles.recordPill, styles.fadeIn)}>Record card #{recordCard}</span>
+              ) : null}
             </div>
           </div>
           <div className={styles.heroStats}>
@@ -277,14 +288,22 @@ export default function EmployeeSalarySlipsPage() {
               <span className={cn(motifs.glossIcon, styles.heroStatIcon)} data-tone="annual">
                 <FileText />
               </span>
-              <strong>{allUploaded.length}</strong>
+              {slipsLoading ? (
+                <span className={cn(styles.skeleton, styles.skeletonStat)} />
+              ) : (
+                <strong className={styles.fadeIn}>{allUploaded.length}</strong>
+              )}
               <small>Slips on file</small>
             </div>
             <div className={cn(surface.softTile, styles.heroStat)}>
               <span className={cn(motifs.glossIcon, styles.heroStatIcon)} data-tone="leave">
                 <CalendarDays />
               </span>
-              <strong>{latestPeriod ? formatPeriodShort(latestPeriod) : "—"}</strong>
+              {slipsLoading ? (
+                <span className={cn(styles.skeleton, styles.skeletonStat)} />
+              ) : (
+                <strong className={styles.fadeIn}>{latestPeriod ? formatPeriodShort(latestPeriod) : "—"}</strong>
+              )}
               <small>Latest slip</small>
             </div>
           </div>
@@ -304,8 +323,12 @@ export default function EmployeeSalarySlipsPage() {
           </div>
 
           {/* Uploaded PDF for current month, if any */}
-          {uploadedCurrent.length > 0 ? (
-            <div className={styles.uploadedList}>
+          {slipsLoading ? (
+            <div className={styles.uploadedList} aria-busy="true" aria-label="Loading salary slips">
+              <SkeletonRow />
+            </div>
+          ) : uploadedCurrent.length > 0 ? (
+            <div className={cn(styles.uploadedList, styles.fadeIn)}>
               {uploadedCurrent.map((u, index) => (
                 <UploadedRow key={`${u.periodLabel}-${u.fileName ?? index}`} slip={u} />
               ))}
@@ -367,8 +390,8 @@ export default function EmployeeSalarySlipsPage() {
                 </div>
               </div>
             </>
-          ) : uploadedCurrent.length === 0 ? (
-            <div className={styles.emptyState}>
+          ) : !slipsLoading && uploadedCurrent.length === 0 ? (
+            <div className={cn(styles.emptyState, styles.fadeIn)}>
               <span className={cn(motifs.glossIcon, styles.emptyIcon)} data-tone="pending">
                 <FileText />
               </span>
@@ -382,16 +405,24 @@ export default function EmployeeSalarySlipsPage() {
         <section className={cn(surface.surface, styles.panel)}>
           <div className={styles.historyHead}>
             <h2 className={styles.panelTitle}>Slip history</h2>
-            {history.length ? (
-              <span className={styles.countPill}>
+            {slipsLoading ? (
+              <span className={cn(styles.skeleton, styles.skeletonCount)} />
+            ) : history.length ? (
+              <span className={cn(styles.countPill, styles.fadeIn)}>
                 {history.length} {history.length === 1 ? "slip" : "slips"}
               </span>
             ) : null}
           </div>
 
-          {history.length > 0 ? (
+          {slipsLoading ? (
+            <div className={styles.historyList} aria-busy="true" aria-label="Loading slip history">
+              <SkeletonRow />
+              <SkeletonRow />
+              <SkeletonRow />
+            </div>
+          ) : history.length > 0 ? (
             <>
-              <div className={styles.historyGroups}>
+              <div className={cn(styles.historyGroups, styles.fadeIn)}>
                 {historyByYear.map((group) => (
                   <div key={group.year}>
                     <p className={styles.yearLabel}>{group.year}</p>
@@ -441,7 +472,7 @@ export default function EmployeeSalarySlipsPage() {
               ) : null}
             </>
           ) : (
-            <p className={styles.emptyHistory}>No earlier slips available yet.</p>
+            <p className={cn(styles.emptyHistory, styles.fadeIn)}>No earlier slips available yet.</p>
           )}
         </section>
       </div>
@@ -476,6 +507,23 @@ function SlipActions({ slip }: { slip: UploadedSlip }) {
           <Download className="h-4 w-4" />
         </a>
       ) : null}
+    </div>
+  );
+}
+
+/** Placeholder with the same footprint as a slip row while the list loads. */
+function SkeletonRow() {
+  return (
+    <div className={styles.historyRow} aria-hidden="true">
+      <span className={cn(styles.skeleton, styles.skeletonPage)} />
+      <div className="min-w-0 flex-1">
+        <span className={cn(styles.skeleton, styles.skeletonTitle)} />
+        <span className={cn(styles.skeleton, styles.skeletonFile)} />
+      </div>
+      <div className={styles.rowActions}>
+        <span className={cn(styles.skeleton, styles.skeletonCircle)} />
+        <span className={cn(styles.skeleton, styles.skeletonCircle)} />
+      </div>
     </div>
   );
 }

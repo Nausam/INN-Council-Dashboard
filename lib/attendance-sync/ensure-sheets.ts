@@ -8,7 +8,7 @@ import { isAttendanceSyncAutoWriteEnabled } from "@/lib/attendance-sync/runtime"
 import type { EnsureResult } from "@/lib/attendance-sync/types";
 import { assertIsoDate } from "@/lib/attendance-sync/time";
 
-function blankMosqueAttendanceEntry(
+export function blankMosqueAttendanceEntry(
   employeeId: string,
   date: string,
 ): Omit<MosqueAttendanceDoc, "$id" | "$createdAt" | "$updatedAt"> {

@@ -612,11 +612,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
 
     const withLateness = attendanceUpdates.map((r) => {
       if (!r.signInTime) return r;
-      const minutesLate = computeCouncilMinutesLate(
-        r.signInTime,
-        date,
-        sectionFromRecord(r),
-      );
+      const minutesLate = computeCouncilMinutesLate(r.signInTime, date);
       return { ...r, minutesLate };
     });
 

@@ -43,7 +43,7 @@ export function isCouncilPunchFromEnabledSource(punch: StoredPunch, entry: SyncE
   return Boolean(zkId && punch.sourceEmployeeId === zkId);
 }
 
-function blankEntry(employeeId: string, date: string): Omit<AttendanceDoc, "$id" | "$createdAt" | "$updatedAt"> {
+export function blankEntry(employeeId: string, date: string): Omit<AttendanceDoc, "$id" | "$createdAt" | "$updatedAt"> {
   return {
     employeeId,
     date,
@@ -108,7 +108,7 @@ export type CouncilReconcileResult = {
 
 export async function reconcileCouncilAttendanceDate(
   date: string,
-  options: { preview?: boolean; ensureToday?: boolean } = {},
+  options: { preview?: boolean; ensureToday?: boolean; employeeIds?: string[] } = {},
 ): Promise<CouncilReconcileResult> {
   assertIsoDate(date);
   const preview = options.preview ?? !isAttendanceSyncAutoWriteEnabled();
@@ -124,8 +124,10 @@ export async function reconcileCouncilAttendanceDate(
       .map((entry) => [entry.employee.$id, entry]),
   );
   const groups = new Map<string, AttendanceDoc[]>();
+  const onlyIds = options.employeeIds?.length ? new Set(options.employeeIds) : null;
   for (const row of rows) {
     if (!entryById.has(row.employeeId)) continue;
+    if (onlyIds && !onlyIds.has(row.employeeId)) continue;
     const group = groups.get(row.employeeId) ?? [];
     group.push(row);
     groups.set(row.employeeId, group);
@@ -155,7 +157,7 @@ export async function reconcileCouncilAttendanceDate(
         isCouncilPunchFromEnabledSource(punch, entry)));
     const signInTime = selected?.timestampUtc ?? null;
     const minutesLate = signInTime
-      ? computeCouncilMinutesLate(signInTime, date, employee.section)
+      ? computeCouncilMinutesLate(signInTime, date)
       : 0;
     const oldRef = row.automation?.punchRef;
     if (row.signInTime === signInTime && row.minutesLate === minutesLate &&

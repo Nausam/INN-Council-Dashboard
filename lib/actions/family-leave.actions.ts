@@ -13,6 +13,7 @@ import { fillSalaamFamilyLeaveTemplate } from "@/lib/forms/salaam-family-leave";
 import { displayLeaveDate, parseLeaveDateRange, templateDaysForRange } from "@/lib/leave/date-range";
 import { isDhivehiText } from "@/lib/leave/dhivehi-text";
 import {
+  ATTENDANCE_LEAVE_TYPE,
   isSalaamFamilyLeaveType,
   type LeaveDayDetails,
   type SalaamFamilyLeaveType,
@@ -22,6 +23,13 @@ import {
   LEAVE_SUPERVISORS,
   type LeaveSupervisorKey,
 } from "@/lib/leave/supervisors";
+import {
+  applyApprovedLeaveToAttendance,
+  leaveAttendanceFailure,
+  revertApprovedLeaveFromAttendance,
+  type AppliedLeaveAttendance,
+} from "@/lib/leave/approved-leave-attendance";
+
 
 export type AssignedLeaveSupervisor = {
   key: LeaveSupervisorKey;
@@ -69,6 +77,7 @@ export type FamilyLeaveRequestSummary = {
   additionalDetails?: LeaveDayDetails;
   supervisor?: AssignedLeaveSupervisor;
   acceptor?: AssignedLeaveAcceptor;
+  attendanceLeave?: AppliedLeaveAttendance;
 };
 
 export type FamilyLeaveRequestPage = {
@@ -411,6 +420,10 @@ export async function assignFamilyLeaveSupervisor(
   };
   const { document, employeeNameDv, addressDv, designationDv: requesterDesignationDv } =
     await renderAssignedForm(db, request, supervisor, request.acceptor);
+  // A new supervisor sends an approved form back to Pending, so undo its leave days.
+  if (request.approvalStatus === "Approved") {
+    await revertApprovedLeaveFromAttendance(request.employeeId, request.attendanceLeave);
+  }
   const batch = db.batch();
   batch.update(requestRef, {
     supervisor,
@@ -418,7 +431,12 @@ export async function assignFamilyLeaveSupervisor(
     addressDv,
     designationDv: requesterDesignationDv,
     ...(request.approvalStatus === "Approved"
-      ? { approvalStatus: "Pending", reviewedAt: FieldValue.delete(), reviewedBy: FieldValue.delete() }
+      ? {
+          approvalStatus: "Pending",
+          reviewedAt: FieldValue.delete(),
+          reviewedBy: FieldValue.delete(),
+          attendanceLeave: FieldValue.delete(),
+        }
       : {}),
   });
   batch.set(db.collection(COLLECTIONS.familyLeaveDocuments).doc(requestId), {
@@ -484,6 +502,9 @@ export async function deleteFamilyLeaveRequest(requestId: string): Promise<void>
   await requireAdmin();
   if (!/^[\w-]{1,128}$/.test(requestId)) throw new Error("Invalid request");
   const db = getFirestoreDb();
+  const request = (await db.collection(COLLECTIONS.familyLeaveRequests).doc(requestId).get())
+    .data() as FamilyLeaveRequestSummary | undefined;
+  if (request) await revertApprovedLeaveFromAttendance(request.employeeId, request.attendanceLeave);
   const batch = db.batch();
   batch.delete(db.collection(COLLECTIONS.familyLeaveRequests).doc(requestId));
   batch.delete(db.collection(COLLECTIONS.familyLeaveDocuments).doc(requestId));
@@ -493,7 +514,7 @@ export async function deleteFamilyLeaveRequest(requestId: string): Promise<void>
 export async function reviewFamilyLeaveRequest(
   requestId: string,
   status: "Approved" | "Rejected",
-): Promise<void> {
+): Promise<{ ok: true } | { ok: false; message: string }> {
   const profile = await requireAdmin();
   if (!/^[\w-]{1,128}$/.test(requestId)) throw new Error("Invalid request");
   if (status !== "Approved" && status !== "Rejected") throw new Error("Invalid status");
@@ -504,9 +525,33 @@ export async function reviewFamilyLeaveRequest(
   if (status === "Approved" && !request.supervisor) {
     throw new Error("Select a supervisor before approving this leave request");
   }
+
+  let attendanceLeave: AppliedLeaveAttendance | undefined;
+  if (status === "Approved") {
+    if (!isSalaamFamilyLeaveType(request.leaveType)) {
+      throw new Error("Leave type is missing from this form");
+    }
+    // Forms from before the date-range picker only have the reported date (and maybe a second day).
+    const startDate = request.leaveStartDate || request.requestDate;
+    try {
+      attendanceLeave = await applyApprovedLeaveToAttendance({
+        employeeId: request.employeeId,
+        leaveType: ATTENDANCE_LEAVE_TYPE[request.leaveType],
+        startDate,
+        endDate: request.leaveEndDate || request.secondDay?.date || startDate,
+      });
+    } catch (error) {
+      return leaveAttendanceFailure(error);
+    }
+  } else {
+    await revertApprovedLeaveFromAttendance(request.employeeId, request.attendanceLeave);
+  }
+
   await ref.update({
     approvalStatus: status,
     reviewedAt: new Date().toISOString(),
     reviewedBy: profile.email || profile.fullName,
+    attendanceLeave: attendanceLeave ?? FieldValue.delete(),
   });
+  return { ok: true };
 }

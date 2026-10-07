@@ -14,6 +14,12 @@ import { createAnnualLeaveChitPdf } from "@/lib/forms/annual-leave-chit";
 import { parseLeaveDateRange } from "@/lib/leave/date-range";
 import { annualApproverSignaturePath } from "@/lib/leave/approval-signatures";
 import { findAnnualLeaveEmployee } from "@/lib/leave/annual-employee";
+import {
+  applyApprovedLeaveToAttendance,
+  leaveAttendanceFailure,
+  revertApprovedLeaveFromAttendance,
+  type AppliedLeaveAttendance,
+} from "@/lib/leave/approved-leave-attendance";
 
 export type AnnualLeaveRequest = LeaveRequest & AnnualLeaveFormValues & {
   employeeId: string;
@@ -23,6 +29,7 @@ export type AnnualLeaveRequest = LeaveRequest & AnnualLeaveFormValues & {
   permanentAddressDv?: string;
   familyLeaveBalance?: number;
   joinedDate?: string;
+  attendanceLeave?: AppliedLeaveAttendance;
 };
 
 export type AnnualLeaveEmployeeOption = {
@@ -189,18 +196,24 @@ export async function assignAnnualLeavePerson(
   if (!request.exists) throw new Error("Annual leave request not found");
   const person = personFromEmployee(employee, maldivesDateTime().date);
   if (role === "approver") {
+    // Changing the approver sends the request back to Pending, so undo its leave days.
+    const current = request.data() as AnnualLeaveRequest;
+    await revertApprovedLeaveFromAttendance(current.employeeId, current.attendanceLeave);
     await requestRef.update({
       approver: person,
       approvalStatus: "Pending",
       approvedAt: FieldValue.delete(),
       signatureReady: false,
+      attendanceLeave: FieldValue.delete(),
     });
   } else {
     await requestRef.update({ collector: person });
   }
 }
 
-export async function approveAnnualLeaveRequest(requestId: string): Promise<void> {
+export async function approveAnnualLeaveRequest(
+  requestId: string,
+): Promise<{ ok: true } | { ok: false; message: string }> {
   await requireAdmin();
   if (!/^[\w-]{1,128}$/.test(requestId)) throw new Error("Invalid request");
   const db = getFirestoreDb();
@@ -230,18 +243,36 @@ export async function approveAnnualLeaveRequest(requestId: string): Promise<void
       if (request.familyLeaveBalance == null && typeof employee.familyRelatedLeave === "number") details.familyLeaveBalance = employee.familyRelatedLeave;
     }
   }
+  const employeeId = request.employeeId || details.employeeId;
+  if (!employeeId) throw new Error("Could not match this request to an employee record");
   const approvedAt = new Date().toISOString();
   await createAnnualLeaveChitPdf({ ...request, ...details, approvalStatus: "Approved", approvedAt });
+  let attendanceLeave;
+  try {
+    attendanceLeave = await applyApprovedLeaveToAttendance({
+      employeeId,
+      leaveType: "annualLeave",
+      startDate: String(request.startDate).slice(0, 10),
+      endDate: String(request.endDate || request.startDate).slice(0, 10),
+    });
+  } catch (error) {
+    return leaveAttendanceFailure(error);
+  }
   await ref.update({
     ...details,
     approvalStatus: "Approved",
     approvedAt,
     signatureReady: true,
+    attendanceLeave,
   });
+  return { ok: true };
 }
 
 export async function deleteAnnualLeaveRequest(requestId: string): Promise<void> {
   await requireAdmin();
   if (!/^[\w-]{1,128}$/.test(requestId)) throw new Error("Invalid request");
-  await getFirestoreDb().collection(COLLECTIONS.annualLeaveRequests).doc(requestId).delete();
+  const ref = getFirestoreDb().collection(COLLECTIONS.annualLeaveRequests).doc(requestId);
+  const request = (await ref.get()).data() as AnnualLeaveRequest | undefined;
+  if (request) await revertApprovedLeaveFromAttendance(request.employeeId, request.attendanceLeave);
+  await ref.delete();
 }
