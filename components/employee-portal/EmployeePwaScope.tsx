@@ -32,6 +32,8 @@ export function EmployeePwaScope({ children }: { children: React.ReactNode }) {
     return () => document.documentElement.classList.remove("employee-profile-app");
   }, [allowed, router, standalone]);
 
-  if (standalone === null || (standalone && !allowed)) return null;
+  // Render straight away, including on the server, so the page is visible
+  // before the scripts load. Only admin pages in the installed app are held back.
+  if (standalone && !allowed) return null;
   return <>{children}</>;
 }

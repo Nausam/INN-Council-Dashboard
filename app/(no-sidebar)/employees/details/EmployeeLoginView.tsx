@@ -10,6 +10,7 @@ import {
   forgetEmployeeProfileIdentity,
   signInEmployeeProfileWithPin,
 } from "@/lib/actions/employee-profile.actions";
+import { forgetEmployeeProfileDevice } from "@/lib/employee-profile-cache";
 import motifs from "@/components/employee-portal/portal-motifs.module.css";
 import { cn } from "@/lib/utils";
 import {
@@ -53,6 +54,11 @@ export function EmployeeLoginView() {
   const [error, setError] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [shakeKey, setShakeKey] = useState(0);
+
+  // Reaching sign-in means there is no session, so no saved profile should open.
+  useEffect(() => {
+    void forgetEmployeeProfileDevice();
+  }, []);
 
   useEffect(() => {
     void currentEmployeeProfileIdentity()

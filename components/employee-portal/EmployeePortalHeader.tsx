@@ -2,6 +2,7 @@
 
 import { forgetEmployeeProfileIdentity } from "@/lib/actions/employee-profile.actions";
 import { LAST_EMPLOYEE_PROFILE_KEY } from "@/lib/employee-profile-pwa";
+import { forgetEmployeeProfileDevice } from "@/lib/employee-profile-cache";
 import { cn } from "@/lib/utils";
 import { Loader2, LogOut } from "lucide-react";
 import Image from "next/image";
@@ -35,6 +36,8 @@ export function EmployeePortalHeader({
       } catch {
         // Storage may be unavailable; the cleared cookies are what matter.
       }
+      // Before leaving, so the next launch can't reopen the saved profile.
+      await forgetEmployeeProfileDevice();
       router.replace("/employees/details");
       router.refresh();
     }

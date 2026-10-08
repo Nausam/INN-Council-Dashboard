@@ -1,20 +1,55 @@
 export const dynamic = "force-dynamic";
 
+import { Suspense } from "react";
 import {
-  fetchAttendanceForEmployeeMonth,
+  fetchAttendanceForEmployeeRange,
   fetchEmployeeById,
   fetchEmployeeLeaveCalendar,
-  fetchMosqueDailyAttendanceForMonth,
+  fetchMosqueAttendanceForEmployeeRange,
+  monthDateBounds,
 } from "@/lib/firebase/hr";
+import type { EmployeeDoc } from "@/lib/firebase/types";
 import { requireEmployeeProfileAccess } from "@/lib/auth/employee-profile-session";
 import { monthFromSearchParam } from "@/lib/dates/page-params";
-import { EmployeeDetailsDashboardView } from "./EmployeeDetailsDashboardView";
+import { lastWeekStartIso, maldivesTodayIso } from "@/lib/employees/details-dashboard";
+import { employeePhotoUrl } from "@/lib/employees/photo";
+import { DetailsSkeleton, EmployeeDetailsDashboardView } from "./EmployeeDetailsDashboardView";
 
-function previousMonth(month: string): string {
-  const [year, monthNumber] = month.split("-").map(Number);
-  return monthNumber === 1
-    ? `${year - 1}-12`
-    : `${year}-${String(monthNumber - 1).padStart(2, "0")}`;
+type TabId = "overview" | "attendance" | "leave" | "pay" | "requests";
+
+/**
+ * Leave plus attendance for `month`. One read per collection covers the month
+ * and, early in a month, the days "Last week" needs from the month before.
+ */
+async function loadDashboardRecords(employeeId: string, month: string) {
+  const { start: monthStart, endExclusive: monthEnd } = monthDateBounds(month);
+  const lastWeekStart = lastWeekStartIso(maldivesTodayIso());
+  const rangeStart = lastWeekStart < monthStart ? lastWeekStart : monthStart;
+  const [leaves, council, mosque] = await Promise.all([
+    fetchEmployeeLeaveCalendar(employeeId),
+    fetchAttendanceForEmployeeRange(employeeId, rangeStart, monthEnd),
+    fetchMosqueAttendanceForEmployeeRange(employeeId, rangeStart, monthEnd),
+  ]);
+  const inMonth = (row: { date: string }) => row.date >= monthStart && row.date < monthEnd;
+  return {
+    leaves,
+    councilAttendance: council.filter(inMonth),
+    mosqueAttendance: mosque.filter(inMonth),
+    recentCouncilAttendance: council,
+    recentMosqueAttendance: mosque,
+  };
+}
+
+async function DashboardWithRecords({
+  employee,
+  records,
+  initialTab,
+}: {
+  employee: EmployeeDoc;
+  records: ReturnType<typeof loadDashboardRecords>;
+  initialTab: TabId;
+}) {
+  return <EmployeeDetailsDashboardView employee={employee} {...await records} initialTab={initialTab} />;
 }
 
 export default async function EmployeeDetailsDashboardPage({
@@ -27,34 +62,34 @@ export default async function EmployeeDetailsDashboardPage({
   await requireEmployeeProfileAccess(params.id);
   const month = monthFromSearchParam(searchParams?.month);
   const requestedTab = searchParams?.tab;
-  const initialTab: "overview" | "attendance" | "leave" | "pay" | "requests" =
+  const initialTab: TabId =
     requestedTab === "attendance" ||
     requestedTab === "leave" ||
     requestedTab === "pay" ||
     requestedTab === "requests"
       ? requestedTab
       : "overview";
-  // Last month's records complete "Last week" early in a month.
-  const lastMonth = previousMonth(month);
-  const [employee, leaves, councilAttendance, mosqueAttendance, lastMonthCouncil, lastMonthMosque] =
-    await Promise.all([
-      fetchEmployeeById(params.id).catch(() => null),
-      fetchEmployeeLeaveCalendar(params.id),
-      fetchAttendanceForEmployeeMonth(month, params.id),
-      fetchMosqueDailyAttendanceForMonth(month, params.id),
-      fetchAttendanceForEmployeeMonth(lastMonth, params.id).catch(() => []),
-      fetchMosqueDailyAttendanceForMonth(lastMonth, params.id).catch(() => []),
-    ]);
+
+  // Every read starts now. The name and photo show as soon as the employee
+  // record arrives, while attendance and leave are still on their way.
+  const records = loadDashboardRecords(params.id, month);
+  records.catch(() => {
+    // Rendering below rethrows it; this only stops an unhandled rejection.
+  });
+  const employee = await fetchEmployeeById(params.id).catch(() => null);
+  if (!employee) return <EmployeeDetailsDashboardView employee={null} />;
 
   return (
-    <EmployeeDetailsDashboardView
-      employee={employee}
-      leaves={leaves}
-      councilAttendance={councilAttendance}
-      mosqueAttendance={mosqueAttendance}
-      recentCouncilAttendance={[...lastMonthCouncil, ...councilAttendance]}
-      recentMosqueAttendance={[...lastMonthMosque, ...mosqueAttendance]}
-      initialTab={initialTab}
-    />
+    <Suspense
+      fallback={
+        <DetailsSkeleton
+          name={typeof employee.name === "string" ? employee.name : ""}
+          designation={typeof employee.designation === "string" ? employee.designation : ""}
+          photoUrl={employeePhotoUrl(params.id, employee.photoKey)}
+        />
+      }
+    >
+      <DashboardWithRecords employee={employee} records={records} initialTab={initialTab} />
+    </Suspense>
   );
 }

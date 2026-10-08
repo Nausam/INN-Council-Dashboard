@@ -1,6 +1,5 @@
 ﻿"use client";
 
-import { EmployeeEditModal } from "@/components/Modals/EmployeeEditModal";
 import {
   EmployeePortalHeader,
   EmployeePortalHeaderButton,
@@ -25,6 +24,7 @@ import {
   formatDateLabel,
   formatMoney,
   leaveLabel,
+  maldivesTodayIso,
   toEmployeeDetailsView,
   type AttendanceSummary,
   type EmployeeDetailsView,
@@ -33,6 +33,7 @@ import {
 } from "@/lib/employees/details-dashboard";
 import { cn } from "@/lib/utils";
 import { LAST_EMPLOYEE_PROFILE_KEY, isStandaloneApp } from "@/lib/employee-profile-pwa";
+import { rememberEmployeeProfile, wasServedFromDeviceCache } from "@/lib/employee-profile-cache";
 import { employeePhotoUrl } from "@/lib/employees/photo";
 import { AvatarPhoto } from "@/components/design-system/avatar-photo";
 import {
@@ -68,14 +69,22 @@ import { salarySlipsByRecordQueryOptions } from "@/hooks/queries";
 import { queryKeys } from "@/lib/query/keys";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { EmployeeRequestsPageView } from "../../[id]/requests/EmployeeRequestsPageView";
 import styles from "./employee-details.module.css";
 import motifs from "@/components/employee-portal/portal-motifs.module.css";
 import { leaveVisual, type GlossTone } from "@/lib/employees/leave-visuals";
 
 type TabId = "overview" | "attendance" | "leave" | "pay" | "requests";
+
+// Loaded on first use: only admins edit, and Requests is its own screen.
+const loadRequestsView = () =>
+  import("../../[id]/requests/EmployeeRequestsPageView").then((mod) => mod.EmployeeRequestsPageView);
+const EmployeeRequestsPageView = dynamic(loadRequestsView, { loading: () => <DetailsSkeleton /> });
+const EmployeeEditModal = dynamic(
+  () => import("@/components/Modals/EmployeeEditModal").then((mod) => mod.EmployeeEditModal),
+);
 
 const tabs: Array<{ id: TabId; label: string; icon: LucideIcon }> = [
   { id: "overview", label: "Overview", icon: LayoutGrid },
@@ -106,6 +115,7 @@ function formatPrayerTime(value: unknown): string {
   return parsed.toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "Indian/Maldives",
   });
 }
 
@@ -141,7 +151,26 @@ export function EmployeeDetailsDashboardView({
     } catch {
       // The profile remains usable when browser storage is unavailable.
     }
+    if (data) void rememberEmployeeProfile(id);
   }, [data, id]);
+
+  // The installed app opens on the copy saved from the last visit; fetch
+  // today's records straight away and swap them in.
+  useEffect(() => {
+    let active = true;
+    void wasServedFromDeviceCache().then((cached) => {
+      if (active && cached) router.refresh();
+    });
+    return () => {
+      active = false;
+    };
+  }, [router]);
+
+  // Warm the Requests screen so its tab opens without a wait.
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadRequestsView(), 1500);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   // The leave calendar and salary slips pages read from the query cache, so
   // hand them what this page already has and they open without waiting.
@@ -200,7 +229,7 @@ export function EmployeeDetailsDashboardView({
 
   // Leave days still ahead, earliest first, one entry per date.
   const upcomingLeave = useMemo(() => {
-    const todayIso = localIsoDate(new Date());
+    const todayIso = maldivesTodayIso();
     const byDate = new Map<string, EmployeeLeaveCalendarEntry>();
     for (const entry of leaves) {
       if (entry.date > todayIso && !byDate.has(entry.date)) byDate.set(entry.date, entry);
@@ -364,24 +393,57 @@ export function EmployeeDetailsDashboardView({
 
 /* ---------------- Loading skeleton ---------------- */
 
-function DetailsSkeleton() {
+/**
+ * Placeholder while records load. Given the employee's name it shows the real
+ * hero straight away, so only the numbers below are still pulsing.
+ */
+export function DetailsSkeleton({
+  name,
+  designation,
+  photoUrl,
+}: {
+  name?: string;
+  designation?: string;
+  photoUrl?: string;
+}) {
   return (
     <div className={styles.page}>
       <style>{`@media (max-width: 767px){[data-council-mobile-header]{display:none !important;}}`}</style>
+      <EmployeePortalHeader className={styles.wrap} />
       <div className={styles.wrap}>
-        <div className={styles.topbar}>
-          <div className="h-10 w-10 animate-pulse rounded-xl bg-slate-100" />
-        </div>
         <div className={styles.profileHeader}>
           <div className={styles.hero}>
-            <div className={styles.heroMain}>
-              <div className="space-y-3">
-                <div className="h-3 w-28 animate-pulse rounded bg-slate-200" />
-                <div className="h-9 w-48 animate-pulse rounded-lg bg-slate-200" />
-                <div className="h-4 w-32 animate-pulse rounded bg-slate-200" />
+            {name ? (
+              <div className={cn(styles.heroMain, photoUrl && styles.heroMainCentered)}>
+                <div className={styles.heroText}>
+                  <p className={cn(styles.eyebrow, styles.heroKicker)}>Employee profile</p>
+                  <h1 className={styles.name}>{name}</h1>
+                  <p className={styles.designation}>
+                    <BriefcaseBusiness className="h-4 w-4 shrink-0" />
+                    {designation || "No designation"}
+                  </p>
+                  <div className={styles.heroMeta}>
+                    <div className="h-8 w-40 animate-pulse rounded-full bg-white/70" />
+                  </div>
+                </div>
+                <div
+                  className={cn(styles.avatar, photoUrl && styles.avatarPhoto)}
+                  aria-hidden={photoUrl ? undefined : true}
+                >
+                  {name.trim().charAt(0).toUpperCase() || "?"}
+                  {photoUrl ? <AvatarPhoto src={photoUrl} alt={name} loading="eager" /> : null}
+                </div>
               </div>
-              <div className="h-16 w-16 shrink-0 animate-pulse rounded-full bg-white ring-1 ring-slate-200" />
-            </div>
+            ) : (
+              <div className={styles.heroMain}>
+                <div className="space-y-3">
+                  <div className="h-3 w-28 animate-pulse rounded bg-slate-200" />
+                  <div className="h-9 w-48 animate-pulse rounded-lg bg-slate-200" />
+                  <div className="h-4 w-32 animate-pulse rounded bg-slate-200" />
+                </div>
+                <div className="h-16 w-16 shrink-0 animate-pulse rounded-full bg-white ring-1 ring-slate-200" />
+              </div>
+            )}
           </div>
           <div className={styles.stats}>
             {Array.from({ length: 4 }).map((_, i) => (
@@ -460,7 +522,7 @@ function ProfileHeader({
   upcomingLeave: EmployeeLeaveCalendarEntry[];
   photoUrl?: string;
 }) {
-  const todayIso = localIsoDate(new Date());
+  const todayIso = maldivesTodayIso();
   const today = todayStatus(summary.weekDays, todayIso);
   const TodayIcon = today.icon;
   const lateDays = summary.weekDays.filter((day) => day.status === "late").length;
@@ -494,7 +556,7 @@ function ProfileHeader({
             aria-hidden={photoUrl ? undefined : true}
           >
             {employee.name.trim().charAt(0).toUpperCase() || "?"}
-            {photoUrl ? <AvatarPhoto src={photoUrl} alt={employee.name} /> : null}
+            {photoUrl ? <AvatarPhoto src={photoUrl} alt={employee.name} loading="eager" /> : null}
           </div>
         </div>
       </div>
@@ -602,7 +664,7 @@ function OverviewSection({
   summary: AttendanceSummary;
   upcomingLeave: EmployeeLeaveCalendarEntry[];
 }) {
-  const todayIso = localIsoDate(new Date());
+  const todayIso = maldivesTodayIso();
 
   return (
     <div className={styles.overviewGrid}>
@@ -739,10 +801,6 @@ function ribbonPercent(minutes: number): number {
   return Math.min(100, Math.max(0, ratio * 100));
 }
 
-function localIsoDate(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-
 /** Whole days from one YYYY-MM-DD date to another. */
 function daysBetween(fromIso: string, toIso: string): number {
   const day = 24 * 60 * 60 * 1000;
@@ -801,7 +859,7 @@ function AttendanceWeek({
   days: WeekDayAttendance[];
   balanceByKey: Map<string, LeaveBalanceView>;
 }) {
-  const todayIso = localIsoDate(new Date());
+  const todayIso = maldivesTodayIso();
   // Days that haven't started can't have a record yet, so they're listed
   // separately instead of showing as "No record". Cards run Sunday to
   // Thursday, the same order as the strip above them.
@@ -1187,7 +1245,7 @@ function CreditSchemeCard({ scheme }: { scheme: EmployeeDetailsView["creditSchem
             <div className={styles.schemeBar}>
               <span style={{ width: `${progress * 100}%` }} />
             </div>
-            {status ? <p className={styles.schemeStatus}>{status}</p> : null}
+            {status ? <p className={styles.schemeStatus} suppressHydrationWarning>{status}</p> : null}
           </div>
           {page(end, "annual", "End")}
         </div>

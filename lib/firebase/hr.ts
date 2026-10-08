@@ -581,18 +581,42 @@ export async function fetchAttendanceAfterDate(
   );
 }
 
+/** Firestore's "this query needs a composite index" error. */
+function isMissingIndexError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === 9 || code === "failed-precondition";
+}
+
+/**
+ * An employee's rows that carry a leave type. Reads only those rows, so the
+ * cost doesn't grow with years of attendance history.
+ */
+async function listEmployeeLeaveRows<T extends { $id: string; leaveType?: string | null }>(
+  collectionPath: string,
+  employeeId: string,
+): Promise<T[]> {
+  try {
+    return await listAllDocs<T>(collectionPath, (q) =>
+      q.where("employeeId", "==", employeeId).where("leaveType", "!=", null),
+    );
+  } catch (error) {
+    if (!isMissingIndexError(error)) throw error;
+    // The employeeId + leaveType index is still building: read the whole history.
+    const rows = await listAllDocs<T>(collectionPath, (q) =>
+      q.where("employeeId", "==", employeeId),
+    );
+    return rows.filter((row) => row.leaveType);
+  }
+}
+
 export async function fetchEmployeeLeaveCalendar(
   employeeId: string,
 ): Promise<EmployeeLeaveCalendarEntry[]> {
   if (!employeeId.trim()) return [];
 
   const [councilRows, mosqueRows] = await Promise.all([
-    listAllDocs<AttendanceDoc>(COLLECTIONS.attendance, (q) =>
-      q.where("employeeId", "==", employeeId),
-    ),
-    listAllDocs<MosqueAttendanceDoc>(COLLECTIONS.mosqueAttendance, (q) =>
-      q.where("employeeId", "==", employeeId),
-    ),
+    listEmployeeLeaveRows<AttendanceDoc>(COLLECTIONS.attendance, employeeId),
+    listEmployeeLeaveRows<MosqueAttendanceDoc>(COLLECTIONS.mosqueAttendance, employeeId),
   ]);
 
   return [
@@ -1258,44 +1282,58 @@ export async function fetchMosqueAttendanceForPeriod(
   );
 }
 
-export async function fetchMosqueDailyAttendanceForMonth(
-  month: string,
-  employeeId: string,
-): Promise<MosqueAttendanceDoc[]> {
-  const monthStart = `${month}-01`;
+/** First day of `month` (YYYY-MM) and of the month after it, as YYYY-MM-DD. */
+export function monthDateBounds(month: string): { start: string; endExclusive: string } {
   const [y, m] = month.split("-").map(Number);
   const nextMonth =
     m === 12
       ? `${y + 1}-01`
       : `${y}-${String(m + 1).padStart(2, "0")}`;
-  const monthEndExclusive = `${nextMonth}-01`;
+  return { start: `${month}-01`, endExclusive: `${nextMonth}-01` };
+}
 
+/** One employee's mosque rows dated from `start` up to, not including, `endExclusive`. */
+export async function fetchMosqueAttendanceForEmployeeRange(
+  employeeId: string,
+  start: string,
+  endExclusive: string,
+): Promise<MosqueAttendanceDoc[]> {
   return listAllDocs<MosqueAttendanceDoc>(COLLECTIONS.mosqueAttendance, (q) =>
     q
       .where("employeeId", "==", employeeId)
-      .where("date", ">=", monthStart)
-      .where("date", "<", monthEndExclusive),
+      .where("date", ">=", start)
+      .where("date", "<", endExclusive),
   );
+}
+
+/** One employee's council rows dated from `start` up to, not including, `endExclusive`. */
+export async function fetchAttendanceForEmployeeRange(
+  employeeId: string,
+  start: string,
+  endExclusive: string,
+): Promise<AttendanceDoc[]> {
+  return listAllDocs<AttendanceDoc>(COLLECTIONS.attendance, (q) =>
+    q
+      .where("employeeId", "==", employeeId)
+      .where("date", ">=", start)
+      .where("date", "<", endExclusive),
+  );
+}
+
+export async function fetchMosqueDailyAttendanceForMonth(
+  month: string,
+  employeeId: string,
+): Promise<MosqueAttendanceDoc[]> {
+  const { start, endExclusive } = monthDateBounds(month);
+  return fetchMosqueAttendanceForEmployeeRange(employeeId, start, endExclusive);
 }
 
 export async function fetchAttendanceForEmployeeMonth(
   month: string,
   employeeId: string,
 ): Promise<AttendanceDoc[]> {
-  const monthStart = `${month}-01`;
-  const [y, m] = month.split("-").map(Number);
-  const nextMonth =
-    m === 12
-      ? `${y + 1}-01`
-      : `${y}-${String(m + 1).padStart(2, "0")}`;
-  const monthEndExclusive = `${nextMonth}-01`;
-
-  return listAllDocs<AttendanceDoc>(COLLECTIONS.attendance, (q) =>
-    q
-      .where("employeeId", "==", employeeId)
-      .where("date", ">=", monthStart)
-      .where("date", "<", monthEndExclusive),
-  );
+  const { start, endExclusive } = monthDateBounds(month);
+  return fetchAttendanceForEmployeeRange(employeeId, start, endExclusive);
 }
 
 export async function deleteMosqueAttendancesByDate(date: string): Promise<void> {

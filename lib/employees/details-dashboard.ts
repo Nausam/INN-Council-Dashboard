@@ -1,5 +1,6 @@
 import type { AttendanceDoc, EmployeeDoc, MosqueAttendanceDoc } from "@/lib/firebase/types";
 import type { EmployeeLeaveCalendarEntry } from "@/lib/firebase/types";
+import { maldivesDateTime } from "@/lib/dates/maldives";
 import {
   ADDITIVE_LEAVE_KEYS,
   LEAVE_TOTAL_ALLOWANCE,
@@ -118,22 +119,32 @@ function employeeIdFromDoc(employee: EmployeeDoc): string {
   return typeof candidate === "string" ? candidate : "";
 }
 
-function toLocalIsoDate(date: Date): string {
-  const copy = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return copy.toISOString().split("T")[0]!;
+// Dates are worked out as Maldives calendar days, so the server and the phone
+// render the same page whatever timezone each one runs in.
+
+/** Today's Maldives date as YYYY-MM-DD. */
+export function maldivesTodayIso(now = new Date()): string {
+  return maldivesDateTime(now).date;
 }
 
-function addDays(date: Date, days: number): Date {
-  const copy = new Date(date);
-  copy.setDate(copy.getDate() + days);
-  return copy;
+function isoToUtcDate(iso: string): Date {
+  return new Date(`${iso}T00:00:00Z`);
 }
 
-function weekStart(date: Date): Date {
-  const start = new Date(date);
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - start.getDay());
-  return start;
+function addDaysIso(iso: string, days: number): string {
+  const date = isoToUtcDate(iso);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/** The Sunday that starts the work week containing `iso`. */
+function weekStartIso(iso: string): string {
+  return addDaysIso(iso, -isoToUtcDate(iso).getUTCDay());
+}
+
+/** First day of the previous work week, the earliest date "Last week" shows. */
+export function lastWeekStartIso(todayIso: string): string {
+  return addDaysIso(weekStartIso(todayIso), -7);
 }
 
 function formatTime(value: string | null | undefined): string | null {
@@ -143,17 +154,20 @@ function formatTime(value: string | null | undefined): string | null {
   return parsed.toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "Indian/Maldives",
   });
 }
 
 export function formatDateLabel(value: string): string {
   if (!value) return "Not specified";
-  const parsed = new Date(value.includes("T") ? value : `${value}T00:00:00`);
+  const instant = value.includes("T");
+  const parsed = new Date(instant ? value : `${value}T00:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
+    timeZone: instant ? "Indian/Maldives" : "UTC",
   });
 }
 
@@ -229,8 +243,16 @@ type AttendanceSources = {
   today?: Date;
 };
 
-/** Builds one entry per day from `start`, using council, mosque, and leave records. */
-function buildAttendanceDays(args: AttendanceSources, start: Date, count: number): WeekDayAttendance[] {
+function dayLabels(iso: string): { label: string; day: string } {
+  const date = isoToUtcDate(iso);
+  return {
+    label: date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }),
+    day: date.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }),
+  };
+}
+
+/** Builds one entry per day from `startIso`, using council, mosque, and leave records. */
+function buildAttendanceDays(args: AttendanceSources, startIso: string, count: number): WeekDayAttendance[] {
   const councilByDate = new Map(
     args.councilAttendance
       .filter((row) => row.employeeId === args.employeeId)
@@ -242,8 +264,8 @@ function buildAttendanceDays(args: AttendanceSources, start: Date, count: number
   );
 
   return Array.from({ length: count }, (_, index): WeekDayAttendance => {
-    const date = addDays(start, index);
-    const iso = toLocalIsoDate(date);
+    const iso = addDaysIso(startIso, index);
+    const labels = dayLabels(iso);
     const council = councilByDate.get(iso);
     const mosque = mosqueByDate.get(iso);
     const leaveType = council?.leaveType ?? mosque?.leaveType ?? leavesByDate.get(iso) ?? null;
@@ -253,8 +275,7 @@ function buildAttendanceDays(args: AttendanceSources, start: Date, count: number
       const signInTime = formatTime(council.signInTime);
       return {
         date: iso,
-        label: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-        day: date.toLocaleDateString("en-US", { weekday: "short" }),
+        ...labels,
         status: leaveType ? "leave" : lateMinutes > 0 ? "late" : signInTime ? "present" : "absent",
         source: "Council",
         note: leaveType ? leaveLabel(leaveType) : signInTime ? `In ${signInTime}` : "No sign-in",
@@ -273,8 +294,7 @@ function buildAttendanceDays(args: AttendanceSources, start: Date, count: number
         PRAYER_TIME_FIELDS.map((field) => formatTime(mosque[field])).find(Boolean) ?? null;
       return {
         date: iso,
-        label: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-        day: date.toLocaleDateString("en-US", { weekday: "short" }),
+        ...labels,
         status: leaveType ? "leave" : lateMinutes > 0 ? "late" : firstSignIn ? "present" : "absent",
         source: "Mosque",
         note: leaveType ? leaveLabel(leaveType) : firstSignIn ? `First ${firstSignIn}` : "No prayer sign-in",
@@ -286,8 +306,7 @@ function buildAttendanceDays(args: AttendanceSources, start: Date, count: number
 
     return {
       date: iso,
-      label: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-      day: date.toLocaleDateString("en-US", { weekday: "short" }),
+      ...labels,
       status: leaveType ? "leave" : "absent",
       source: "None",
       note: leaveType ? leaveLabel(leaveType) : "No record",
@@ -299,9 +318,9 @@ function buildAttendanceDays(args: AttendanceSources, start: Date, count: number
 }
 
 export function buildAttendanceSummary(args: AttendanceSources): AttendanceSummary {
-  const today = args.today ?? new Date();
-  const currentMonth = monthKey(today);
-  const weekDays = buildAttendanceDays(args, weekStart(today), WORK_WEEK_DAYS);
+  const todayIso = maldivesTodayIso(args.today);
+  const currentMonth = todayIso.slice(0, 7);
+  const weekDays = buildAttendanceDays(args, weekStartIso(todayIso), WORK_WEEK_DAYS);
 
   return {
     weekDays,
@@ -313,8 +332,7 @@ export function buildAttendanceSummary(args: AttendanceSources): AttendanceSumma
 
 /** The previous work week, Sunday to Thursday. */
 export function buildLastWeekAttendance(args: AttendanceSources): WeekDayAttendance[] {
-  const today = args.today ?? new Date();
-  return buildAttendanceDays(args, addDays(weekStart(today), -7), WORK_WEEK_DAYS);
+  return buildAttendanceDays(args, lastWeekStartIso(maldivesTodayIso(args.today)), WORK_WEEK_DAYS);
 }
 
 export function currentLimitedLeaveRemaining(employee: EmployeeDetailsView, key: string): number {
