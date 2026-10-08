@@ -111,6 +111,8 @@ export type EmployeeDoc = LegacyDocument & {
   recordCardNumber?: string;
   idCardNumber?: string;
   attendanceSync?: EmployeeAttendanceSyncConfig;
+  /** "HH:mm" Maldives time recorded as the council sign-in on workdays instead of punches; empty uses punches. */
+  fixedSignInTime?: string | null;
   joinedDate?: string;
   address?: string;
   addressDv?: string;

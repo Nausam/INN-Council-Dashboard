@@ -5,6 +5,7 @@ import {
   CouncilDatePicker,
   CouncilSelect,
   type CouncilSelectOption,
+  CouncilTimePicker,
   PageHeader,
   PageShell,
 } from "@/components/design-system";
@@ -77,6 +78,8 @@ export type EmployeeFormData = {
   recordCardNumber: string;
   idCardNumber: string;
   deviceUserId: string;
+  /** "HH:mm" recorded as the council sign-in on workdays instead of punches; "" uses the machine. */
+  fixedSignInTime: string;
   sickLeave: number;
   certificateSickLeave: number;
   annualLeave: number;
@@ -161,6 +164,7 @@ function buildInitialFormData(
     recordCardNumber: initialData?.recordCardNumber ?? "",
     idCardNumber: initialData?.idCardNumber ?? "",
     deviceUserId: initialData?.deviceUserId ?? "",
+    fixedSignInTime: initialData?.fixedSignInTime ?? "",
     sickLeave: initialData?.sickLeave ?? 0,
     certificateSickLeave: initialData?.certificateSickLeave ?? 0,
     annualLeave: initialData?.annualLeave ?? 0,
@@ -548,6 +552,20 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                 onChange={handleInputChange}
                 icon={<Fingerprint className="h-4 w-4" />}
               />
+
+              <div>
+                <FieldLabel htmlFor="fixedSignInTime" label="Fixed Sign-in Time" />
+                <CouncilTimePicker
+                  id="fixedSignInTime"
+                  value={formData.fixedSignInTime}
+                  onChange={(value) => handleSelectChange("fixedSignInTime", value)}
+                  placeholder="Uses the machine"
+                  icon={Clock}
+                />
+                <p className="mt-1.5 text-xs text-slate-500">
+                  Recorded every workday instead of punches. Leave empty to use the machine.
+                </p>
+              </div>
 
               <DateField
                 id="joinedDate"

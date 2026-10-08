@@ -11,6 +11,7 @@ export function employeeFormDataForFirestore(formData: EmployeeFormData) {
     designationDv: rest.designationDv.trim(),
     sectionDv: rest.sectionDv.trim(),
     idCardNumber: rest.idCardNumber.trim(),
+    fixedSignInTime: rest.fixedSignInTime.trim() || null,
     retirementPension: computeRetirementPension(
       rest.basicSalary,
       rest.retirementPensionApplies,

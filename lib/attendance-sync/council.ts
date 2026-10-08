@@ -1,7 +1,7 @@
 import { fromFirestoreDoc, withTimestamps } from "@/lib/firebase/adapters";
 import { COLLECTIONS, getFirestoreDb } from "@/lib/firebase/admin";
-import { fetchAllEmployees, fetchAttendanceForDate } from "@/lib/firebase/hr";
-import type { AttendanceDoc } from "@/lib/firebase/types";
+import { fetchAllEmployees, fetchAttendanceForDate, fetchHolidayCalendar } from "@/lib/firebase/hr";
+import type { AttendanceDoc, EmployeeDoc } from "@/lib/firebase/types";
 import { computeCouncilMinutesLate } from "@/lib/attendance/council-lateness";
 import { buildSourceEmployeeMaps, listCouncilEmployees, type SyncEligibleEmployee } from "@/lib/attendance-sync/employee-sync";
 import { listEligiblePunchesForEmployeeDate } from "@/lib/attendance-sync/punch-store";
@@ -43,6 +43,24 @@ export function isCouncilPunchFromEnabledSource(punch: StoredPunch, entry: SyncE
   return Boolean(zkId && punch.sourceEmployeeId === zkId);
 }
 
+/** Council staff are off on Fridays, Saturdays and holiday-calendar dates. */
+async function isCouncilWorkday(date: string): Promise<boolean> {
+  const day = new Date(`${date}T00:00:00.000Z`).getUTCDay();
+  if (day === 5 || day === 6) return false;
+  const calendar = await fetchHolidayCalendar(date.slice(0, 7));
+  return !(calendar?.holidayDates ?? []).includes(date);
+}
+
+/**
+ * Sign-in recorded for an employee with a fixed time (set on their record,
+ * e.g. 08:00 for staff who work away from the machine), or null to use punches.
+ */
+export function fixedSignInIso(employee: EmployeeDoc, date: string): string | null {
+  const time = employee.fixedSignInTime?.trim() ?? "";
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return null;
+  return new Date(`${date}T${time}:00.000+05:00`).toISOString();
+}
+
 export function blankEntry(employeeId: string, date: string): Omit<AttendanceDoc, "$id" | "$createdAt" | "$updatedAt"> {
   return {
     employeeId,
@@ -72,7 +90,11 @@ export async function ensureCouncilAttendanceSheets(
 
   const result: EnsureResult = { date, created: 0, reused: 0, skipped: 0, conflicts: [], preview };
   const db = getFirestoreDb();
-  for (const employee of listCouncilEmployees(employees)) {
+  const councilEmployees = listCouncilEmployees(employees);
+  const workday = councilEmployees.some((employee) => fixedSignInIso(employee, date))
+    ? await isCouncilWorkday(date)
+    : false;
+  for (const employee of councilEmployees) {
     const group = rowsByEmployee.get(employee.$id) ?? [];
     if (group.length > 1) {
       result.conflicts.push({ employeeId: employee.$id, rowIds: group.map((row) => row.$id) });
@@ -90,7 +112,11 @@ export async function ensureCouncilAttendanceSheets(
     const wrote = await db.runTransaction(async (tx) => {
       const existing = await tx.get(ref);
       if (existing.exists) return false;
-      tx.set(ref, withTimestamps(blankEntry(employee.$id, date), true));
+      const fixed = workday ? fixedSignInIso(employee, date) : null;
+      tx.set(ref, withTimestamps({
+        ...blankEntry(employee.$id, date),
+        ...(fixed ? { signInTime: fixed, minutesLate: computeCouncilMinutesLate(fixed, date) } : {}),
+      }, true));
       return true;
     });
     if (wrote) result.created++;
@@ -123,6 +149,12 @@ export async function reconcileCouncilAttendanceDate(
       .filter(({ employee }) => councilIds.has(employee.$id))
       .map((entry) => [entry.employee.$id, entry]),
   );
+  // Staff with a fixed sign-in often have no machine ID, so add them here.
+  for (const employee of listCouncilEmployees(employees)) {
+    if (!entryById.has(employee.$id) && fixedSignInIso(employee, date)) {
+      entryById.set(employee.$id, { employee, config: { enabled: true, effectiveFrom: "2020-01-01" } });
+    }
+  }
   const groups = new Map<string, AttendanceDoc[]>();
   const onlyIds = options.employeeIds?.length ? new Set(options.employeeIds) : null;
   for (const row of rows) {
@@ -135,6 +167,9 @@ export async function reconcileCouncilAttendanceDate(
   const conflicts: CouncilReconcileResult["conflicts"] = [];
   let updated = 0;
   const db = getFirestoreDb();
+  const workday = Array.from(groups.keys()).some((id) => fixedSignInIso(entryById.get(id)!.employee, date))
+    ? await isCouncilWorkday(date)
+    : false;
 
   for (const [employeeId, group] of groups) {
     if (group.length > 1) {
@@ -145,7 +180,9 @@ export async function reconcileCouncilAttendanceDate(
     const entry = entryById.get(employeeId)!;
     const employee = entry.employee;
     if (!canAutomateCouncilRow(row)) continue;
-    const punches = await listEligiblePunchesForEmployeeDate(employeeId, date, {
+    // A fixed sign-in replaces punches on workdays.
+    const fixed = workday ? fixedSignInIso(employee, date) : null;
+    const punches = fixed ? [] : await listEligiblePunchesForEmployeeDate(employeeId, date, {
       zkUserId: employee.deviceUserId ?? employee.attendanceSync?.zkteco?.userId,
       etimeCode: employee.attendanceSync?.etime?.employeeCode,
     });
@@ -155,7 +192,7 @@ export async function reconcileCouncilAttendanceDate(
           ? mappings.duplicateZkIds
           : mappings.duplicateEtimeCodes).includes(punch.sourceEmployeeId) &&
         isCouncilPunchFromEnabledSource(punch, entry)));
-    const signInTime = selected?.timestampUtc ?? null;
+    const signInTime = fixed ?? selected?.timestampUtc ?? null;
     const minutesLate = signInTime
       ? computeCouncilMinutesLate(signInTime, date)
       : 0;
