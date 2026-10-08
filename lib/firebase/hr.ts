@@ -75,6 +75,8 @@ type LeaveUsageRow = {
   leaveType: string | null;
   leaveUsedAfter?: number | null;
   leaveRemainingAfter?: number | null;
+  /** Council rows: whether a sign-in is recorded. */
+  signedIn?: boolean;
 };
 
 type ProposedAttendanceState = {
@@ -151,6 +153,7 @@ function inferLeaveSnapshotValueFromRows(
   leaveRows: LeaveUsageRow[],
   leaveType: string,
   allRows: LeaveUsageRow[],
+  holidays: ReadonlySet<string>,
 ): number | null {
   if (leaveRows.length === 0) return null;
 
@@ -170,6 +173,7 @@ function inferLeaveSnapshotValueFromRows(
       runningDate,
       row.date,
       allRows,
+      holidays,
     );
     runningDate = row.date;
   }
@@ -198,17 +202,46 @@ function calendarDayDifference(from: string, to: string): number {
   return Math.max(1, diff);
 }
 
+/** Council staff are off on Fridays, Saturdays and holiday-calendar dates. */
+function isCouncilDayOff(date: string, holidays: ReadonlySet<string>): boolean {
+  const day = new Date(`${date}T00:00:00.000Z`).getUTCDay();
+  return day === 5 || day === 6 || holidays.has(date);
+}
+
+/**
+ * Whether the employee was back at work or on other leave between two days of
+ * a continuous leave. A blank council row on a day off (the sheet is made for
+ * every date) isn't a break, so the leave keeps counting through weekends.
+ */
 function hasAttendanceBreakBetween(
   rows: LeaveUsageRow[],
   leaveType: string,
   fromDate: string,
   toDate: string,
+  holidays: ReadonlySet<string>,
 ): boolean {
   return rows.some(
     (row) =>
       row.date > fromDate &&
       row.date < toDate &&
-      row.leaveType !== leaveType,
+      row.leaveType !== leaveType &&
+      !(
+        row.collection === COLLECTIONS.attendance &&
+        !row.leaveType &&
+        !row.signedIn &&
+        isCouncilDayOff(row.date, holidays)
+      ),
+  );
+}
+
+/** Every date in the holiday calendar. */
+async function fetchAllHolidayDates(): Promise<Set<string>> {
+  const snap = await getFirestoreDb().collection(COLLECTIONS.holidayCalendar).get();
+  return new Set(
+    snap.docs.flatMap((doc) => {
+      const dates = doc.get("holidayDates");
+      return Array.isArray(dates) ? dates.filter((date): date is string => typeof date === "string") : [];
+    }),
   );
 }
 
@@ -218,12 +251,13 @@ function advanceLeaveSnapshotValue(
   previousDate: string | undefined,
   nextDate: string,
   allRows: LeaveUsageRow[],
+  holidays: ReadonlySet<string>,
 ): number {
   if (!CONTINUOUS_CALENDAR_LEAVES.has(leaveType) || !previousDate) {
     return nextLeaveSnapshotValue(leaveType, currentValue);
   }
 
-  if (hasAttendanceBreakBetween(allRows, leaveType, previousDate, nextDate)) {
+  if (hasAttendanceBreakBetween(allRows, leaveType, previousDate, nextDate, holidays)) {
     return nextLeaveSnapshotValue(leaveType, currentValue);
   }
 
@@ -267,6 +301,8 @@ async function recalculateLeaveUsageSnapshots(
     employeePatches: {},
     rowPatches: [],
   };
+  if (employeeIds.length === 0) return result;
+  const holidays = await fetchAllHolidayDates();
 
   for (const employeeId of employeeIds) {
     const [attendanceSnap, mosqueSnap] = await Promise.all([
@@ -293,6 +329,7 @@ async function recalculateLeaveUsageSnapshots(
             leaveType: proposed ? proposed.leaveType : row.leaveType,
             leaveUsedAfter: row.leaveUsedAfter,
             leaveRemainingAfter: row.leaveRemainingAfter,
+            signedIn: Boolean(row.signInTime),
           };
         }),
       ...mosqueSnap.docs
@@ -352,6 +389,7 @@ async function recalculateLeaveUsageSnapshots(
               leaveRows.slice(0, effectiveStartIndex),
               leaveType,
               rows,
+              holidays,
             )
           : null;
       const defaultStartValue = BALANCE_LEAVES.has(leaveType)
@@ -390,6 +428,7 @@ async function recalculateLeaveUsageSnapshots(
             runningDate,
             row.date,
             rows,
+            holidays,
           );
         }
         runningDate = row.date;
@@ -1293,9 +1332,9 @@ export function monthDateBounds(month: string): { start: string; endExclusive: s
 }
 
 /**
- * Whether the employee has any council or mosque day strictly between two
- * dates that isn't `leaveType`. Saving treats such a day as a break, so a
- * continuous leave counts one day instead of the calendar days in between.
+ * Whether the employee was back at work or on other leave strictly between
+ * two dates, by the same rule saving uses. After a break a continuous leave
+ * counts one day instead of the calendar days in between.
  */
 export async function hasLeaveBreakBetween(
   employeeId: string,
@@ -1311,13 +1350,29 @@ export async function hasLeaveBreakBetween(
       .where("employeeId", "==", employeeId)
       .where("date", ">", fromDate)
       .where("date", "<", toDate)
-      .select("date", "leaveType")
+      .select("date", "leaveType", "signInTime")
       .get();
-  const [council, mosque] = await Promise.all([
+  const [council, mosque, holidays] = await Promise.all([
     between(COLLECTIONS.attendance),
     between(COLLECTIONS.mosqueAttendance),
+    fetchAllHolidayDates(),
   ]);
-  return [...council.docs, ...mosque.docs].some((doc) => doc.get("leaveType") !== leaveType);
+  const rows: LeaveUsageRow[] = [
+    ...council.docs.map((doc) => ({
+      collection: COLLECTIONS.attendance,
+      id: doc.id,
+      date: String(doc.get("date")),
+      leaveType: doc.get("leaveType") ?? null,
+      signedIn: Boolean(doc.get("signInTime")),
+    })),
+    ...mosque.docs.map((doc) => ({
+      collection: COLLECTIONS.mosqueAttendance,
+      id: doc.id,
+      date: String(doc.get("date")),
+      leaveType: doc.get("leaveType") ?? null,
+    })),
+  ];
+  return hasAttendanceBreakBetween(rows, leaveType, fromDate, toDate, holidays);
 }
 
 /** One employee's mosque rows dated from `start` up to, not including, `endExclusive`. */
