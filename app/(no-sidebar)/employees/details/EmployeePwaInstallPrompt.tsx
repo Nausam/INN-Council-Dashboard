@@ -78,7 +78,7 @@ export function EmployeePwaInstallPrompt() {
           <Dialog.Content className={styles.modal}>
             <Dialog.Close className={styles.close} aria-label="Close"><X size={19} /></Dialog.Close>
             <div className={styles.appIcon}>
-              <Image src="/pwa/icon-192.png" alt="" width={64} height={64} unoptimized />
+              <Image src="/pwa/icon-v2-192.png" alt="" width={64} height={64} unoptimized />
             </div>
             <Dialog.Title className={styles.title}>
               {ios ? "Add Employee Profile" : "Install Employee Profile"}

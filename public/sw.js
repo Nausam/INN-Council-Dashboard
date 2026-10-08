@@ -1,5 +1,5 @@
 const CACHE_NAME = "employee-profile-shell-v5";
-const SHELL = ["/offline.html", "/manifest.webmanifest", "/pwa/icon-192.png", "/pwa/icon-512.png", "/council-logo.png"];
+const SHELL = ["/offline.html", "/manifest.webmanifest", "/pwa/icon-v2-192.png", "/pwa/icon-v2-512.png", "/council-logo.png"];
 
 // The signed-in employee's own profile page and photo, saved by the installed
 // app (lib/employee-profile-cache.ts uses the same names) so it opens

@@ -22,8 +22,8 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, statusBarStyle: "default", title: "Employee Profile" },
   icons: {
-    icon: [{ url: "/pwa/icon-192.png", sizes: "192x192", type: "image/png" }],
-    apple: [{ url: "/pwa/icon-192.png", sizes: "192x192", type: "image/png" }],
+    icon: [{ url: "/pwa/icon-v2-192.png", sizes: "192x192", type: "image/png" }],
+    apple: [{ url: "/pwa/apple-touch-icon-v2.png", sizes: "180x180", type: "image/png" }],
   },
 };
 
