@@ -2,6 +2,7 @@
 
 import type { OvertimeRequestEmployee } from "@/lib/firebase/types";
 import { formatCouncilTimeDisplay } from "@/components/design-system";
+import { Trash2 } from "lucide-react";
 import React from "react";
 
 interface AdminOvertimeRequestCardProps {
@@ -17,6 +18,8 @@ interface AdminOvertimeRequestCardProps {
   busy?: boolean;
   onApprove: (requestId: string) => void;
   onReject: (requestId: string) => void;
+  /** Shown as a delete button when given. */
+  onDelete?: (requestId: string) => void;
 }
 
 const statusClasses = {
@@ -46,6 +49,7 @@ const AdminOvertimeRequestCard: React.FC<AdminOvertimeRequestCardProps> = ({
   busy = false,
   onApprove,
   onReject,
+  onDelete,
 }) => {
   const employeeSummary =
     employees.length === 1
@@ -74,6 +78,7 @@ const AdminOvertimeRequestCard: React.FC<AdminOvertimeRequestCardProps> = ({
           <p className="font-extralight text-md truncate">{employeeSummary}</p>
           {workDate ? <p className="mt-1 text-sm text-gray-600">{workDate}</p> : null}
         </div>
+        <div className="flex shrink-0 items-center gap-2">
         <span
           className={`shrink-0 border ${
             status === "Approved"
@@ -87,6 +92,18 @@ const AdminOvertimeRequestCard: React.FC<AdminOvertimeRequestCardProps> = ({
         >
           {status}
         </span>
+        {onDelete ? (
+          <button
+            type="button"
+            onClick={() => onDelete(requestId)}
+            disabled={busy}
+            aria-label={`Delete overtime request for ${employeeSummary}`}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/80 text-rose-500 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
+          >
+            <Trash2 size={15} />
+          </button>
+        ) : null}
+        </div>
       </div>
 
       <div className="mt-4">

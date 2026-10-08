@@ -1,7 +1,7 @@
 "use client";
 
 import { fetchOvertimeRequests } from "@/lib/actions/hr.actions";
-import { reviewOvertimeRequest } from "@/lib/actions/overtime-requests.actions";
+import { deleteOvertimeRequest, reviewOvertimeRequest } from "@/lib/actions/overtime-requests.actions";
 import type { OvertimeRequest } from "@/lib/firebase/types";
 import AdminOvertimeRequestCard from "@/components/overtime/AdminOvertimeRequestCard";
 import { OvertimeRequestForm } from "@/components/overtime/OvertimeRequestForm";
@@ -45,6 +45,24 @@ export function OvertimeRequestsPanel() {
     }
   }
 
+  async function remove(request: OvertimeRequest) {
+    const who = request.employees?.length === 1
+      ? `${request.employees[0]?.name}'s`
+      : `this ${request.employees?.length ?? 0}-employee`;
+    if (!window.confirm(`Delete ${who} overtime request${request.workDate ? ` for ${request.workDate}` : ""} permanently?`)) return;
+    setBusyId(request.$id);
+    setError("");
+    try {
+      await deleteOvertimeRequest(request.$id);
+      if (data?.requests.length === 1 && pageIndex > 0) setPageIndex(pageIndex - 1);
+      else refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not delete the OT request.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   const requests = data?.requests ?? [];
   const total = data?.totalCount ?? 0;
   return (
@@ -83,6 +101,7 @@ export function OvertimeRequestsPanel() {
             busy={busyId !== null}
             onApprove={(id) => void review(id, "Approved")}
             onReject={(id) => void review(id, "Rejected")}
+            onDelete={() => void remove(request)}
           />)}
         </div>
       ) : (

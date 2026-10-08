@@ -18,3 +18,10 @@ export async function reviewOvertimeRequest(
     actionBy: profile.fullName || profile.email,
   }));
 }
+
+/** Removes an OT request. Approval doesn't change attendance or pay, so nothing else needs undoing. */
+export async function deleteOvertimeRequest(requestId: string): Promise<void> {
+  await requireAdmin();
+  if (!/^[\w-]{1,128}$/.test(requestId)) throw new Error("Invalid OT request");
+  await getFirestoreDb().collection(COLLECTIONS.overtimeRequests).doc(requestId).delete();
+}
