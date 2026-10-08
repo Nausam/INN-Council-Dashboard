@@ -37,6 +37,7 @@ import {
 import {
   deleteAttendancesByDate,
   fetchEmployeeLeaveCalendar,
+  hasLeaveBreakBetween,
 } from "@/lib/actions/hr.actions";
 import type {
   AttendanceDoc,
@@ -336,6 +337,56 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     return map;
   }, [previewEmployeeIds, previewLeaveQueries]);
 
+  // The latest saved count for this leave type before the sheet's date, the
+  // same starting point saving uses (recalculateLeaveUsageSnapshots).
+  const previousLeaveSnapshot = (employeeId: string, leaveType: string) =>
+    (leaveHistoryByEmployee.get(employeeId) ?? [])
+      .filter((entry) => entry.leaveType === leaveType && entry.date < date)
+      .sort((a, b) => b.date.localeCompare(a.date) || b.$id.localeCompare(a.$id))
+      .map((entry) => ({ date: entry.date, balance: leaveSnapshotBalance(entry) }))
+      .find(
+        (entry): entry is { date: string; balance: number } =>
+          typeof entry.balance === "number",
+      );
+
+  // Maternity, pre-maternity and paternity count calendar days since the last
+  // leave day, unless the employee was back at work in between. Ask the server
+  // whether there was such a break, as saving does.
+  const continuousLeaveGaps = useMemo(() => {
+    const gaps = new Map<string, { employeeId: string; leaveType: string; from: string }>();
+    for (const record of attendanceUpdates) {
+      if (!record.leaveType || !CONTINUOUS_CALENDAR_LEAVES.has(record.leaveType)) continue;
+      if (!shouldPreviewLeaveDeduction(record)) continue;
+      const employeeId = idFromRef(record.employeeId);
+      const snapshot = previousLeaveSnapshot(employeeId, record.leaveType);
+      if (!snapshot || calendarDayDifference(snapshot.date, date) <= 1) continue;
+      gaps.set(`${employeeId}:${record.leaveType}:${snapshot.date}`, {
+        employeeId,
+        leaveType: record.leaveType,
+        from: snapshot.date,
+      });
+    }
+    return Array.from(gaps.entries());
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- previousLeaveSnapshot reads leaveHistoryByEmployee and date
+  }, [attendanceUpdates, leaveHistoryByEmployee, date]);
+
+  const leaveBreakQueries = useQueries({
+    queries: continuousLeaveGaps.map(([, gap]) => ({
+      queryKey: ["attendance", "leave-break", gap.employeeId, gap.leaveType, gap.from, date],
+      queryFn: () => hasLeaveBreakBetween(gap.employeeId, gap.leaveType, gap.from, date),
+      staleTime: QUERY_STALE_TIME_ATTENDANCE,
+    })),
+  });
+
+  const leaveBreakByGap = useMemo(() => {
+    const map = new Map<string, boolean>();
+    continuousLeaveGaps.forEach(([key], index) => {
+      const result = leaveBreakQueries[index]?.data;
+      if (typeof result === "boolean") map.set(key, result);
+    });
+    return map;
+  }, [continuousLeaveGaps, leaveBreakQueries]);
+
   const leaveUsageFromRecord = (r: AttendanceRecord) => {
     if (!r.leaveType) return null;
 
@@ -361,38 +412,23 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
       typeof value === "number" && Number.isFinite(value) ? value : 0;
 
     if (shouldPreviewLeaveDeduction(r)) {
-      const priorEntries = leaveHistoryByEmployee
-        .get(employeeId)
-        ?.filter(
-          (entry) => entry.leaveType === r.leaveType && entry.date < date,
-        )
-        .sort((a, b) => a.date.localeCompare(b.date) || a.$id.localeCompare(b.$id))
-        ?? [];
+      // With no saved count yet, start from the total on the employee's
+      // record, which can include leave from before attendance was tracked.
+      const previousSnapshot = previousLeaveSnapshot(employeeId, r.leaveType);
+      const base = previousSnapshot?.balance ?? balance;
 
-      const previousSnapshot = [...priorEntries]
-        .sort(
-          (a, b) =>
-            b.date.localeCompare(a.date) || b.$id.localeCompare(a.$id),
-        )
-        .map((entry) => ({
-          date: entry.date,
-          balance: leaveSnapshotBalance(entry),
-        }))
-        .find(
-          (entry): entry is { date: string; balance: number } =>
-            typeof entry.balance === "number",
-        );
-
-      const inferredBase = ADDITIVE_LEAVE_KEYS.has(r.leaveType)
-        ? priorEntries.length
-        : balance;
-      const base = previousSnapshot?.balance ?? inferredBase;
-      balance = ADDITIVE_LEAVE_KEYS.has(r.leaveType)
-        ? base +
-          (previousSnapshot && CONTINUOUS_CALENDAR_LEAVES.has(r.leaveType)
-            ? calendarDayDifference(previousSnapshot.date, date)
-            : 1)
-        : Math.max(0, base - 1);
+      if (!ADDITIVE_LEAVE_KEYS.has(r.leaveType)) {
+        balance = Math.max(0, base - 1);
+      } else if (previousSnapshot && CONTINUOUS_CALENDAR_LEAVES.has(r.leaveType)) {
+        const gapDays = calendarDayDifference(previousSnapshot.date, date);
+        const broken = gapDays > 1
+          ? leaveBreakByGap.get(`${employeeId}:${r.leaveType}:${previousSnapshot.date}`)
+          : false;
+        if (broken === undefined) return null;
+        balance = base + (broken ? 1 : gapDays);
+      } else {
+        balance = base + 1;
+      }
     }
 
     return getLeaveUsageSummary(r.leaveType, balance);

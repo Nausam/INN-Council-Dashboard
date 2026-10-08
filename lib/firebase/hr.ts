@@ -1292,6 +1292,34 @@ export function monthDateBounds(month: string): { start: string; endExclusive: s
   return { start: `${month}-01`, endExclusive: `${nextMonth}-01` };
 }
 
+/**
+ * Whether the employee has any council or mosque day strictly between two
+ * dates that isn't `leaveType`. Saving treats such a day as a break, so a
+ * continuous leave counts one day instead of the calendar days in between.
+ */
+export async function hasLeaveBreakBetween(
+  employeeId: string,
+  leaveType: string,
+  fromDate: string,
+  toDate: string,
+): Promise<boolean> {
+  if (!employeeId || fromDate >= toDate) return false;
+  const db = getFirestoreDb();
+  const between = (collectionPath: string) =>
+    db
+      .collection(collectionPath)
+      .where("employeeId", "==", employeeId)
+      .where("date", ">", fromDate)
+      .where("date", "<", toDate)
+      .select("date", "leaveType")
+      .get();
+  const [council, mosque] = await Promise.all([
+    between(COLLECTIONS.attendance),
+    between(COLLECTIONS.mosqueAttendance),
+  ]);
+  return [...council.docs, ...mosque.docs].some((doc) => doc.get("leaveType") !== leaveType);
+}
+
 /** One employee's mosque rows dated from `start` up to, not including, `endExclusive`. */
 export async function fetchMosqueAttendanceForEmployeeRange(
   employeeId: string,

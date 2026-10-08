@@ -61,6 +61,13 @@ export async function fetchAttendanceAfterDate(
   return hr.fetchAttendanceAfterDate(...args);
 }
 
+export async function hasLeaveBreakBetween(
+  ...args: Parameters<typeof hr.hasLeaveBreakBetween>
+) {
+  await requireStaffSession();
+  return hr.hasLeaveBreakBetween(...args);
+}
+
 export async function fetchAttendanceForEmployeeMonth(
   ...args: Parameters<typeof hr.fetchAttendanceForEmployeeMonth>
 ) {
