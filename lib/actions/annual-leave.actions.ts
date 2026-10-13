@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireRequestReviewer } from "@/lib/auth/request-approvers";
 import { getSessionAuthProfile } from "@/lib/auth/session-profile";
 import { getEmployeeProfileSessionId } from "@/lib/auth/employee-profile-session";
 import { maldivesDateTime } from "@/lib/dates/maldives";
@@ -25,6 +26,7 @@ export type AnnualLeaveRequest = LeaveRequest & AnnualLeaveFormValues & {
   employeeId: string;
   submittedBy: string;
   approvedAt?: string;
+  rejectedAt?: string;
   signatureReady?: boolean;
   permanentAddressDv?: string;
   familyLeaveBalance?: number;
@@ -184,7 +186,9 @@ export async function assignAnnualLeavePerson(
   role: "approver" | "collector",
   employeeId: string,
 ): Promise<void> {
-  await requireAdmin();
+  // Approvers in the Employee Profile app choose who signs; collectors stay admin-only.
+  if (role === "approver") await requireRequestReviewer();
+  else await requireAdmin();
   if (!/^[\w-]{1,128}$/.test(requestId) || !/^[\w-]{1,128}$/.test(employeeId)) throw new Error("Invalid request or employee");
   if (role !== "approver" && role !== "collector") throw new Error("Invalid role");
   if (role === "approver" && !annualApproverSignaturePath(employeeId)) {
@@ -203,6 +207,7 @@ export async function assignAnnualLeavePerson(
       approver: person,
       approvalStatus: "Pending",
       approvedAt: FieldValue.delete(),
+      rejectedAt: FieldValue.delete(),
       signatureReady: false,
       attendanceLeave: FieldValue.delete(),
     });
@@ -214,7 +219,7 @@ export async function assignAnnualLeavePerson(
 export async function approveAnnualLeaveRequest(
   requestId: string,
 ): Promise<{ ok: true } | { ok: false; message: string }> {
-  await requireAdmin();
+  const reviewer = await requireRequestReviewer();
   if (!/^[\w-]{1,128}$/.test(requestId)) throw new Error("Invalid request");
   const db = getFirestoreDb();
   const ref = db.collection(COLLECTIONS.annualLeaveRequests).doc(requestId);
@@ -262,10 +267,31 @@ export async function approveAnnualLeaveRequest(
     ...details,
     approvalStatus: "Approved",
     approvedAt,
+    rejectedAt: FieldValue.delete(),
     signatureReady: true,
     attendanceLeave,
+    actionBy: reviewer.name,
   });
   return { ok: true };
+}
+
+/** Declines an annual leave request, undoing its leave days if it had been approved. */
+export async function rejectAnnualLeaveRequest(requestId: string): Promise<void> {
+  const reviewer = await requireRequestReviewer();
+  if (!/^[\w-]{1,128}$/.test(requestId)) throw new Error("Invalid request");
+  const ref = getFirestoreDb().collection(COLLECTIONS.annualLeaveRequests).doc(requestId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new Error("Annual leave request not found");
+  const request = snap.data() as AnnualLeaveRequest;
+  await revertApprovedLeaveFromAttendance(request.employeeId, request.attendanceLeave);
+  await ref.update({
+    approvalStatus: "Rejected",
+    rejectedAt: new Date().toISOString(),
+    approvedAt: FieldValue.delete(),
+    signatureReady: false,
+    attendanceLeave: FieldValue.delete(),
+    actionBy: reviewer.name,
+  });
 }
 
 export async function deleteAnnualLeaveRequest(requestId: string): Promise<void> {

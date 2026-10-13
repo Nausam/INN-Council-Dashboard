@@ -9,10 +9,11 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import styles from "./EmployeePortalHeader.module.css";
+import { RequestApprovalsButton } from "./RequestApprovals";
 
 /**
  * Top bar shared by every Employee Profile page: the council logo, any
- * page-specific actions, and Log out.
+ * page-specific actions, the Approvals bell for approvers, and Log out.
  */
 export function EmployeePortalHeader({
   actions,
@@ -57,6 +58,7 @@ export function EmployeePortalHeader({
         />
       </div>
       <div className={styles.end}>
+        <RequestApprovalsButton />
         {actions}
         <button
           type="button"

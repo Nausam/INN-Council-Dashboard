@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { FieldValue } from "firebase-admin/firestore";
 
 import { requireAdmin } from "@/lib/auth/require-admin";
+import { requireRequestReviewer } from "@/lib/auth/request-approvers";
 import { getSessionAuthProfile } from "@/lib/auth/session-profile";
 import { getEmployeeProfileSessionId } from "@/lib/auth/employee-profile-session";
 import { maldivesDateTime } from "@/lib/dates/maldives";
@@ -379,7 +380,7 @@ export async function assignFamilyLeaveSupervisor(
   requestId: string,
   supervisorKey: string,
 ): Promise<void> {
-  await requireAdmin();
+  await requireRequestReviewer();
   if (!/^[\w-]{1,128}$/.test(requestId)) throw new Error("Invalid request");
   const choice = getLeaveSupervisor(supervisorKey);
   if (!choice) throw new Error("Invalid supervisor");
@@ -515,7 +516,7 @@ export async function reviewFamilyLeaveRequest(
   requestId: string,
   status: "Approved" | "Rejected",
 ): Promise<{ ok: true } | { ok: false; message: string }> {
-  const profile = await requireAdmin();
+  const reviewer = await requireRequestReviewer();
   if (!/^[\w-]{1,128}$/.test(requestId)) throw new Error("Invalid request");
   if (status !== "Approved" && status !== "Rejected") throw new Error("Invalid status");
   const ref = getFirestoreDb().collection(COLLECTIONS.familyLeaveRequests).doc(requestId);
@@ -550,7 +551,7 @@ export async function reviewFamilyLeaveRequest(
   await ref.update({
     approvalStatus: status,
     reviewedAt: new Date().toISOString(),
-    reviewedBy: profile.email || profile.fullName,
+    reviewedBy: reviewer.email || reviewer.name,
     attendanceLeave: attendanceLeave ?? FieldValue.delete(),
   });
   return { ok: true };
