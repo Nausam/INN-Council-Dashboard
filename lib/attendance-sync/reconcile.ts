@@ -129,7 +129,8 @@ export async function reconcileMosqueAttendanceDate(
     const automation = readAutomation(row);
     const leaveActive = hasApprovedLeave(row);
     const designation = employee.designation ?? "";
-    const punches = await listEligiblePunchesForEmployeeDate(employee.$id, date, {
+    // A day on leave keeps its sheet as is, so its punches aren't needed.
+    const punches = leaveActive ? [] : await listEligiblePunchesForEmployeeDate(employee.$id, date, {
       zkUserId: employee.deviceUserId ?? employee.attendanceSync?.zkteco?.userId,
       etimeCode: employee.attendanceSync?.etime?.employeeCode,
     });

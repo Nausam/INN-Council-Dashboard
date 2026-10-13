@@ -448,8 +448,30 @@ async function recalculateLeaveUsageSnapshots(
   return result;
 }
 
+/**
+ * Long-running processes (the attendance sync worker) can keep rarely-changing
+ * reads in memory for a few minutes. Web requests never enable this, so pages
+ * always read fresh data.
+ */
+const processReadCache = {
+  ttlMs: 0,
+  employees: null as { at: number; value: EmployeeDoc[] } | null,
+  holidays: new Map<string, { at: number; value: HolidayCalendarDoc | null }>(),
+};
+
+export function enableProcessReadCache(ttlMs: number): void {
+  processReadCache.ttlMs = Math.max(0, ttlMs);
+}
+
+function isFresh(entry: { at: number } | null | undefined): boolean {
+  return Boolean(entry && processReadCache.ttlMs > 0 && Date.now() - entry.at < processReadCache.ttlMs);
+}
+
 export async function fetchAllEmployees(): Promise<EmployeeDoc[]> {
-  return listAllDocs<EmployeeDoc>(COLLECTIONS.employees);
+  if (isFresh(processReadCache.employees)) return processReadCache.employees!.value.slice();
+  const value = await listAllDocs<EmployeeDoc>(COLLECTIONS.employees);
+  if (processReadCache.ttlMs > 0) processReadCache.employees = { at: Date.now(), value };
+  return value.slice();
 }
 
 export async function fetchSlimEmployees(): Promise<SlimEmployee[]> {
@@ -1105,13 +1127,16 @@ export async function fetchHolidayCalendar(
   month: string,
 ): Promise<HolidayCalendarDoc | null> {
   const sanitizedMonth = sanitizeHolidayMonth(month);
+  const cached = processReadCache.holidays.get(sanitizedMonth);
+  if (isFresh(cached)) return cached!.value;
   const snap = await getFirestoreDb()
     .collection(COLLECTIONS.holidayCalendar)
     .doc(sanitizedMonth)
     .get();
 
-  if (!snap.exists) return null;
-  return fromFirestoreDoc<HolidayCalendarDoc>(snap);
+  const value = snap.exists ? fromFirestoreDoc<HolidayCalendarDoc>(snap) : null;
+  if (processReadCache.ttlMs > 0) processReadCache.holidays.set(sanitizedMonth, { at: Date.now(), value });
+  return value;
 }
 
 export async function upsertHolidayCalendar(
@@ -1271,31 +1296,27 @@ export async function fetchPrayerTimesByDate(
   return snap.empty ? null : fromFirestoreDoc<PrayerTimesDoc>(snap.docs[0]!)!;
 }
 
+// Dates are stored as YYYY-MM-DD (a few older mosque rows as
+// "YYYY-MM-DDT00:00:00.000+00:00"). Comparing against "YYYY-MM-01" and the
+// next month's "-01" (exclusive) selects the whole month in both formats.
+
 export async function fetchPrayerTimesForMonth(
   month: string,
 ): Promise<PrayerTimesDoc[]> {
-  const startOfMonth = new Date(`${month}-01T00:00:00Z`).toISOString();
-  const endOfMonth = new Date(
-    new Date(startOfMonth).setMonth(new Date(startOfMonth).getMonth() + 1),
-  ).toISOString();
-
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return [];
+  const { start, endExclusive } = monthDateBounds(month);
   return listAllDocs<PrayerTimesDoc>(COLLECTIONS.prayerTimes, (q) =>
-    q.where("date", ">=", startOfMonth).where("date", "<=", endOfMonth),
+    q.where("date", ">=", start).where("date", "<", endExclusive),
   );
 }
 
 export async function fetchMosqueAttendanceForMonth(
   month: string,
 ): Promise<MosqueAttendanceDoc[]> {
-  const startOfMonth = new Date(`${month}-01T00:00:00Z`).toISOString();
-  const endOfMonth = new Date(
-    new Date(`${month}-01T00:00:00Z`).setMonth(
-      new Date(`${month}-01`).getMonth() + 1,
-    ),
-  ).toISOString();
-
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return [];
+  const { start, endExclusive } = monthDateBounds(month);
   return listAllDocs<MosqueAttendanceDoc>(COLLECTIONS.mosqueAttendance, (q) =>
-    q.where("date", ">=", startOfMonth).where("date", "<=", endOfMonth),
+    q.where("date", ">=", start).where("date", "<", endExclusive),
   );
 }
 
@@ -1497,6 +1518,8 @@ export async function createOvertimeRequest(data: {
   const payload = withTimestamps(
     {
       ...data,
+      // Lets request history find one employee's OT without reading every request.
+      employeeIds: data.employees.map((employee) => employee.employeeId),
       createdAt: new Date().toISOString(),
       approvalStatus: "Pending",
     },

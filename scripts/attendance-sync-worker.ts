@@ -5,13 +5,22 @@ dotenv.config({ path: ".env.local", override: true });
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Write the ZK heartbeat at least this often while nothing changes. */
+const ZK_HEARTBEAT_MS = 2 * 60_000;
+/** Polls only reconcile changed days, so today is repaired this often anyway. */
+const TODAY_REPAIR_MS = 60 * 60_000;
+/** ...and the two days before today this often. */
+const RECENT_REPAIR_MS = 6 * 60 * 60_000;
+/** Records re-read past the last imported device count, in case the saved count lags. */
+const ZK_CATCHUP_MARGIN = 50;
+
 async function main() {
   const { getRequiredZkConfig } = await import("../lib/zk/config");
   const { ZkDeviceClient } = await import("../lib/zk/client");
   const { importLatestZktecoRecords } = await import(
     "../lib/attendance-sync/import-zkteco"
   );
-  const { importEtimePunches } = await import("../lib/attendance-sync/import-etime");
+  const { getEtimeStatus, importEtimePunches } = await import("../lib/attendance-sync/import-etime");
   const { ensureMosqueAttendanceSheets, ensureMissingDates } = await import(
     "../lib/attendance-sync/ensure-sheets"
   );
@@ -30,7 +39,8 @@ async function main() {
     updateReconcileStatus, updateSheetsStatus } = await import(
     "../lib/attendance-sync/status"
   );
-  const { updateZkStatus } = await import("../lib/zk/punch-repository");
+  const { getZkStatus, updateZkStatus } = await import("../lib/zk/punch-repository");
+  const { enableProcessReadCache } = await import("../lib/firebase/hr");
   const {
     addDaysIso,
     isPastDailyCreationTime,
@@ -44,6 +54,8 @@ async function main() {
 
   const zkConfig = getRequiredZkConfig();
   process.env.TZ = zkConfig.timezone;
+  // Every poll needs the employee list and holidays; edits reach the worker within 5 minutes.
+  enableProcessReadCache(5 * 60_000);
 
   let stopping = false;
   process.on("SIGINT", () => {
@@ -56,7 +68,7 @@ async function main() {
   let hasLease = false;
   while (!stopping && !hasLease) {
     try {
-      hasLease = await tryAcquireWorkerLease();
+      hasLease = await tryAcquireWorkerLease({ sameHostTakeover: true });
       if (!hasLease) console.warn("Waiting for the attendance-sync worker lease");
     } catch (error) {
       console.error("Could not acquire worker lease; retrying:", error);
@@ -73,6 +85,14 @@ async function main() {
   let recoveredEtimeHistory = false;
   let nextEtimeHistoryDate = "";
   let etimeRetryMs = 60_000;
+  let lastTodayRepair = Date.now();
+  let lastRecentRepair = Date.now();
+  // Device punches this process has already stored (see importLatestZktecoRecords).
+  const knownPunchKeys = new Set<string>();
+  // Device log count already imported; kept across ZK reconnects.
+  let importedLogCount: number | null = null;
+  let lastZkStatusWrite = 0;
+  let lastZkStatusKey = "";
 
   const catchUpSheets = async () => {
     const today = todayMaldivesIso();
@@ -88,7 +108,6 @@ async function main() {
       : today;
     for (const date of enumerateIsoDates(councilFrom, today)) {
       await ensureCouncilAttendanceSheets(date, { preview: false });
-      await reconcileCouncilAttendanceDate(date, { preview: false });
     }
     await updateCouncilSheetsStatus({
       lastSuccessAt: new Date().toISOString(),
@@ -96,8 +115,8 @@ async function main() {
       lastHeartbeatAt: new Date().toISOString(),
     });
     // Sheets may have been created after their punches were already imported.
-    for (const date of enumerateIsoDates(from, today)) {
-      await reconcileMosqueAttendanceDate(date, undefined, { preview: false });
+    for (const date of enumerateIsoDates(councilFrom < from ? councilFrom : from, today)) {
+      if (date >= from) await reconcileMosqueAttendanceDate(date, undefined, { preview: false });
       await reconcileCouncilAttendanceDate(date, { preview: false });
     }
     await updateSheetsStatus({
@@ -137,6 +156,28 @@ async function main() {
     throw error;
   }
 
+  // After a restart, re-read eTime from shortly before the last successful poll
+  // (at most back to the start of last month) rather than all of last month.
+  const lastEtimeDate = isEtimeEnabled()
+    ? (await getEtimeStatus().catch(() => null))?.lastSuccessfulDate ?? null
+    : null;
+  const etimeRecoveryStart = (today: string) => {
+    const earliest = mosqueRecoveryStartDate(today);
+    if (!lastEtimeDate || !/^\d{4}-\d{2}-\d{2}$/.test(lastEtimeDate)) return earliest;
+    const fromLast = addDaysIso(lastEtimeDate, -2);
+    return fromLast > earliest ? fromLast : earliest;
+  };
+
+  // The ZK status doc is the admin panel's heartbeat: write it when something
+  // changes, otherwise every ZK_HEARTBEAT_MS.
+  const writeZkHeartbeat = async (patch: { lastLogCount: number; lastError: string | null }) => {
+    const key = `${patch.lastLogCount}|${patch.lastError ?? ""}`;
+    if (key === lastZkStatusKey && Date.now() - lastZkStatusWrite < ZK_HEARTBEAT_MS) return;
+    await updateZkStatus({ running: true, ...patch, lastHeartbeatAt: new Date().toISOString() });
+    lastZkStatusKey = key;
+    lastZkStatusWrite = Date.now();
+  };
+
   const runEtimePoll = async (from: string, to: string) => {
     if (!isEtimeEnabled()) return false;
     const config = getEtimeConfig();
@@ -146,8 +187,13 @@ async function main() {
     }
 
     try {
-      console.log(`eTime poll: ${from} through ${to}`);
-      await importEtimePunches({ from, to, reconcile: true });
+      const result = await importEtimePunches({ from, to, reconcile: true, incremental: true });
+      // Quiet polls (nothing new on the eTime page) aren't logged.
+      if (result.written > 0 || (result.voided ?? 0) > 0 || result.affectedDates.length > 0) {
+        console.log(
+          `eTime poll ${from} through ${to}: written=${result.written}, voided=${result.voided ?? 0}, reconciled=${result.affectedDates.join(",") || "none"}`,
+        );
+      }
       etimeRetryMs = 60_000;
       return true;
     } catch (error) {
@@ -171,18 +217,32 @@ async function main() {
           : 0;
       let logCountReset = false;
 
+      // Read before this connect overwrites it with the current device count.
+      if (importedLogCount === null) {
+        const saved = (await getZkStatus().catch(() => null))?.lastLogCount;
+        importedLogCount = typeof saved === "number" && Number.isFinite(saved) ? saved : null;
+      }
+
+      // lastLogCount is saved by the heartbeat once the catch-up below has
+      // imported those records, so a crash mid-import re-imports them next start.
       await updateZkStatus({
         enabled: true,
         running: true,
         deviceIp: zkConfig.ip,
         devicePort: zkConfig.port,
         deviceSerial: serial,
-        lastLogCount,
         lastHeartbeatAt: new Date().toISOString(),
-        lastError: logCountReset ? "Device log count reset detected" : null,
+        lastError: null,
       });
+      lastZkStatusKey = "";
 
-      const catchupCount = Math.min(lastLogCount, zkConfig.startupCatchupRecords);
+      // Import only records added since the last import (this run, or the count
+      // saved before a restart), plus a margin. Without a usable count, e.g.
+      // after the device log was cleared, fall back to the full catch-up.
+      const sinceImported = importedLogCount !== null && lastLogCount >= importedLogCount
+        ? lastLogCount - importedLogCount + ZK_CATCHUP_MARGIN
+        : lastLogCount;
+      const catchupCount = Math.min(lastLogCount, sinceImported, zkConfig.startupCatchupRecords);
       if (catchupCount > 0) {
         const recentCount = Math.min(catchupCount, 75);
         console.log(`Importing ${recentCount} newest device records first`);
@@ -191,6 +251,7 @@ async function main() {
           recentRecords,
           serial,
           zkConfig.timezone,
+          { incremental: true, knownPunchKeys },
         );
         console.log(
           `ZK recent: written=${recent.written}, skipped=${recent.skipped}, unmatched=${recent.unmatched}`,
@@ -203,11 +264,13 @@ async function main() {
           records,
           serial,
           zkConfig.timezone,
+          { incremental: true, knownPunchKeys },
         );
         console.log(
           `ZK catch-up: written=${catchup.written}, skipped=${catchup.skipped}, unmatched=${catchup.unmatched}`,
         );
       }
+      importedLogCount = lastLogCount;
 
       while (!stopping) {
         const now = Date.now();
@@ -246,6 +309,22 @@ async function main() {
           lastReconcileDate = today;
         }
 
+        // Imports only reconcile days whose punches changed. Repair recent days
+        // on a timer too, in case a sheet changed some other way (a new
+        // employee, a cleared row, a leave edit).
+        if (now - lastTodayRepair >= TODAY_REPAIR_MS) {
+          await reconcileMosqueAttendanceDate(today, undefined, { preview: false });
+          await reconcileCouncilAttendanceDate(today, { preview: false, ensureToday: true });
+          lastTodayRepair = now;
+        }
+        if (now - lastRecentRepair >= RECENT_REPAIR_MS) {
+          for (const date of [addDaysIso(today, -2), yesterday]) {
+            await reconcileMosqueAttendanceDate(date, undefined, { preview: false });
+            await reconcileCouncilAttendanceDate(date, { preview: false });
+          }
+          lastRecentRepair = now;
+        }
+
         if (isEtimeEnabled()) {
           const etimeConfig = getEtimeConfig();
           if (now - lastEtimeTodayPoll >= etimeConfig.pollTodayMs) {
@@ -269,24 +348,20 @@ async function main() {
             records,
             serial,
             zkConfig.timezone,
+            { incremental: true, knownPunchKeys },
           );
+          importedLogCount = count;
           console.log(
             `ZK delta +${delta}: written=${result.written}, skipped=${result.skipped}`,
           );
         } else if (count < lastLogCount) {
           logCountReset = true;
           lastLogCount = count;
-          await updateZkStatus({
-            lastLogCount,
-            lastError: "Device log count reset detected",
-            lastHeartbeatAt: new Date().toISOString(),
-          });
+          importedLogCount = count;
         }
 
-        await updateZkStatus({
-          running: true,
+        await writeZkHeartbeat({
           lastLogCount,
-          lastHeartbeatAt: new Date().toISOString(),
           lastError: logCountReset ? "Device log count reset detected" : null,
         });
 
@@ -294,7 +369,7 @@ async function main() {
         if (isEtimeEnabled()) {
           const etimeConfig = getEtimeConfig();
           if (!recoveredEtimeHistory) {
-            if (!nextEtimeHistoryDate) nextEtimeHistoryDate = mosqueRecoveryStartDate(today);
+            if (!nextEtimeHistoryDate) nextEtimeHistoryDate = etimeRecoveryStart(today);
             if (nextEtimeHistoryDate > yesterday) {
               recoveredEtimeHistory = true;
               lastEtimeHistoryPoll = Date.now();
@@ -327,6 +402,7 @@ async function main() {
         lastError: message,
         lastHeartbeatAt: new Date().toISOString(),
       }).catch(() => undefined);
+      lastZkStatusKey = "";
       if (!stopping) await sleep(zkConfig.reconnectMs);
     }
   }

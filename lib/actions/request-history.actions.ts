@@ -51,7 +51,7 @@ export async function listEmployeeRequestHistory(employeeId: string): Promise<Re
   const [familySnap, annualSnap, overtimeSnap, sameNameSnap] = await Promise.all([
     db.collection(COLLECTIONS.familyLeaveRequests).where("employeeId", "==", employeeId).get(),
     db.collection(COLLECTIONS.annualLeaveRequests).where("employeeId", "==", employeeId).get(),
-    db.collection(COLLECTIONS.overtimeRequests).get(),
+    db.collection(COLLECTIONS.overtimeRequests).where("employeeIds", "array-contains", employeeId).get(),
     db.collection(COLLECTIONS.employees).where("name", "==", employee.name).limit(2).get(),
   ]);
   // Older annual requests have a name but no employee ID. Match them only when the name is unique.
@@ -88,8 +88,9 @@ export async function listEmployeeRequestHistory(employeeId: string): Promise<Re
       kind: "annual",
       status,
       submittedAt: isoDateTime(request.createdAt) || `${request.startDate}T00:00:00.000Z`,
-      reviewedAt: isoDateTime(request.approvedAt) || request.approver?.assignedDate,
-      reviewer: request.approver?.name || request.actionBy,
+      reviewedAt: isoDateTime(request.approvedAt) || isoDateTime(request.rejectedAt) || request.approver?.assignedDate,
+      // A rejection names whoever declined it; an approval names the signing supervisor.
+      reviewer: status === "Rejected" ? request.actionBy || request.approver?.name : request.approver?.name || request.actionBy,
       startDate: request.startDate,
       endDate: request.endDate,
       totalDays: request.totalDays,

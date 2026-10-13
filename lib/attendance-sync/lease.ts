@@ -4,7 +4,7 @@ import { COLLECTIONS, getFirestoreDb } from "@/lib/firebase/admin";
 import { getWorkerInstanceId } from "@/lib/attendance-sync/runtime";
 
 const LEASE_DOC_ID = "attendance-sync-worker";
-const LEASE_TTL_MS = 60_000;
+const LEASE_TTL_MS = 5 * 60_000;
 
 export type WorkerLease = {
   ownerId: string;
@@ -13,7 +13,15 @@ export type WorkerLease = {
   renewedAt: string;
 };
 
-export async function tryAcquireWorkerLease(): Promise<boolean> {
+/** Owner ids are "host:pid". */
+function workerHost(ownerId: string): string {
+  const separator = ownerId.lastIndexOf(":");
+  return separator > 0 ? ownerId.slice(0, separator) : ownerId;
+}
+
+export async function tryAcquireWorkerLease(
+  options: { sameHostTakeover?: boolean } = {},
+): Promise<boolean> {
   const db = getFirestoreDb();
   const ref = db.collection(COLLECTIONS.integrationStatus).doc(LEASE_DOC_ID);
   const ownerId = getWorkerInstanceId();
@@ -24,7 +32,11 @@ export async function tryAcquireWorkerLease(): Promise<boolean> {
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const current = snap.data() as WorkerLease | undefined;
-    if (current && current.expiresAt > nowIso && current.ownerId !== ownerId) {
+    // At startup, a restart on the same PC takes over at once: the old process
+    // is gone (or exits when its next renewal fails), so it needn't wait out the lease.
+    const takeover = options.sameHostTakeover && current &&
+      workerHost(current.ownerId) === workerHost(ownerId);
+    if (current && current.expiresAt > nowIso && current.ownerId !== ownerId && !takeover) {
       return false;
     }
 
@@ -89,4 +101,4 @@ export async function getWorkerLease(): Promise<WorkerLease | null> {
   return snap.data() as WorkerLease;
 }
 
-export const WORKER_LEASE_RENEW_MS = 20_000;
+export const WORKER_LEASE_RENEW_MS = 2 * 60_000;

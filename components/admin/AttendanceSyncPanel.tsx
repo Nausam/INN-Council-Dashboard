@@ -141,7 +141,8 @@ export function AttendanceSyncPanel() {
   const staleWarnings = useMemo(() => {
     if (!status) return [];
     const warnings: string[] = [];
-    if (isStale(status.zk.status?.lastHeartbeatAt, 60_000)) {
+    // The worker writes its heartbeat every 2 minutes.
+    if (isStale(status.zk.status?.lastHeartbeatAt)) {
       warnings.push("ZKTeco heartbeat is stale — restart the attendance-sync worker.");
     }
     if (

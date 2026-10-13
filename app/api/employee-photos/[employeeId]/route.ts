@@ -10,7 +10,7 @@ import { getPresignedViewUrl, isR2Configured } from "@/lib/r2";
  * Employee Profile session, by redirecting to a short-lived R2 URL.
  */
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { employeeId: string } },
 ) {
   const { employeeId } = params;
@@ -21,8 +21,12 @@ export async function GET(
     return NextResponse.json({ error: "File storage is not configured" }, { status: 503 });
   }
 
-  const snap = await getFirestoreDb().collection(COLLECTIONS.employees).doc(employeeId).get();
-  const photoKey = snap.get("photoKey");
+  // Photo URLs carry the file name (see employeePhotoUrl), so the key is known
+  // without reading the employee record. Bare URLs still look it up.
+  const version = request.nextUrl.searchParams.get("v") ?? "";
+  const photoKey = /^[\w.-]{1,200}$/.test(version) && !version.startsWith(".")
+    ? `${EMPLOYEE_PHOTO_PREFIX}${employeeId}/${version}`
+    : (await getFirestoreDb().collection(COLLECTIONS.employees).doc(employeeId).get()).get("photoKey");
   if (typeof photoKey !== "string" || !photoKey.startsWith(`${EMPLOYEE_PHOTO_PREFIX}${employeeId}/`)) {
     return NextResponse.json({ error: "No photo" }, { status: 404 });
   }

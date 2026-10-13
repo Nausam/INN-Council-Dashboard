@@ -36,6 +36,8 @@ export type OvertimeRequest = LegacyDocument & {
   endTime: string;
   durationMinutes: number;
   employees: OvertimeRequestEmployee[];
+  /** employees[].employeeId, for array-contains lookups. */
+  employeeIds?: string[];
   approvalStatus: string;
   createdAt?: string;
   actionBy?: string;

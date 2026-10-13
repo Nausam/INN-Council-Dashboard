@@ -6,6 +6,8 @@ import type { AttendancePunchDoc, AttendancePunchSource } from "@/lib/attendance
 
 export type PunchWriteResult = {
   written: boolean;
+  /** True when a new punch was stored or an existing one's matching/void state changed. */
+  changed: boolean;
   punch: AttendancePunchDoc;
   docId: string;
 };
@@ -91,9 +93,14 @@ async function queryLegacyZkPunches(
   const startMs = new Date(startUtc).getTime();
   const endMs = new Date(endUtc).getTime();
 
+  // Only this day's punches: timestamps are stored as ISO strings, so a string
+  // range on the deviceUserId+timestamp index finds the same docs as the old
+  // whole-history read filtered in memory.
   const snap = await getFirestoreDb()
     .collection(COLLECTIONS.punchLogs)
     .where("deviceUserId", "==", zkUserId)
+    .where("timestamp", ">=", startUtc)
+    .where("timestamp", "<=", endUtc)
     .limit(500)
     .get();
 
@@ -135,19 +142,26 @@ export async function writeCanonicalPunchIfNew(
   const existing = await ref.get();
 
   if (existing.exists) {
-    await ref.set(
-      {
-        lastSeenAt: punch.lastSeenAt,
-        employeeId: punch.employeeId ?? existing.data()?.employeeId ?? null,
-        eligible: punch.eligible,
-        ignoredReason: punch.ignoredReason,
-        voidedAt: punch.voidedAt,
-      },
-      { merge: true },
-    );
+    const current = existing.data() as Partial<AttendancePunchDoc>;
+    const next = {
+      employeeId: punch.employeeId ?? current.employeeId ?? null,
+      eligible: punch.eligible,
+      ignoredReason: punch.ignoredReason ?? null,
+      voidedAt: punch.voidedAt ?? null,
+    };
+    // Re-seeing an unchanged punch costs no write.
+    const changed =
+      next.employeeId !== (current.employeeId ?? null) ||
+      next.eligible !== current.eligible ||
+      next.ignoredReason !== (current.ignoredReason ?? null) ||
+      next.voidedAt !== (current.voidedAt ?? null);
+    if (changed) {
+      await ref.set({ ...next, lastSeenAt: punch.lastSeenAt }, { merge: true });
+    }
     return {
       written: false,
-      punch: { ...punch, ...(existing.data() as AttendancePunchDoc) },
+      changed,
+      punch: { ...punch, ...current, ...next } as AttendancePunchDoc,
       docId,
     };
   }
@@ -162,7 +176,7 @@ export async function writeCanonicalPunchIfNew(
   };
 
   await ref.set(payload);
-  return { written: true, punch: payload, docId };
+  return { written: true, changed: true, punch: payload, docId };
 }
 
 export async function voidPunch(docId: string, voidedAt: string): Promise<void> {
@@ -242,13 +256,15 @@ export async function touchPunchLastSeen(docId: string): Promise<void> {
 
 export async function countUnmatchedPunches(limit = 100): Promise<number> {
   try {
+    // A count query bills one read per 1,000 matches instead of one per doc.
     const snap = await getFirestoreDb()
       .collection(COLLECTIONS.punchLogs)
       .where("employeeId", "==", null)
       .where("eligible", "==", true)
       .limit(limit)
+      .count()
       .get();
-    return snap.size;
+    return snap.data().count;
   } catch {
     const snap = await getFirestoreDb()
       .collection(COLLECTIONS.punchLogs)

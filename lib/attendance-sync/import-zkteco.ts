@@ -39,6 +39,19 @@ export function assertImportDateRange(from?: string, to?: string): void {
   if (from && to && from > to) throw new Error("From date must be before to date.");
 }
 
+export type ZkIncrementalOptions = {
+  /**
+   * For the always-on worker: reconcile only dates whose punches changed
+   * (the worker repairs unchanged days on its own hourly pass).
+   */
+  incremental?: boolean;
+  /**
+   * Punches already stored by this process (dedupe key + matched employee).
+   * Device punches never change, so these are skipped without a Firestore read.
+   */
+  knownPunchKeys?: Set<string>;
+};
+
 function matchEmployeeForZkUser(
   userId: string,
   maps: ReturnType<typeof buildSourceEmployeeMaps>,
@@ -56,7 +69,7 @@ export async function importZktecoPunches(options: {
   to?: string;
   timezone?: string;
   reconcile?: boolean;
-}): Promise<ImportResult> {
+} & ZkIncrementalOptions): Promise<ImportResult> {
   assertImportDateRange(options.from, options.to);
   const deviceSn = options.deviceSerial || "unknown";
   const timezone = options.timezone ?? "Indian/Maldives";
@@ -147,8 +160,14 @@ export async function importZktecoPunches(options: {
   const writeNext = async () => {
     while (nextPunch < preparedPunches.length) {
       const { punch, matchedDate } = preparedPunches[nextPunch++]!;
+      const knownKey = `${punch.dedupeKey}|${punch.employeeId ?? ""}`;
+      if (options.knownPunchKeys?.has(knownKey)) {
+        skipped += 1;
+        continue;
+      }
       const result = await writeCanonicalPunchIfNew(punch);
-      if (matchedDate) affectedDates.add(matchedDate);
+      options.knownPunchKeys?.add(knownKey);
+      if (matchedDate && (!options.incremental || result.changed)) affectedDates.add(matchedDate);
       if (result.written) written += 1;
       else skipped += 1;
     }
@@ -210,10 +229,12 @@ export async function importLatestZktecoRecords(
   records: ZkAttendanceRecord[],
   deviceSerial: string | null,
   timezone: string,
+  options: ZkIncrementalOptions = {},
 ): Promise<ImportResult> {
   return importZktecoPunches({
     records,
     deviceSerial,
     timezone,
+    ...options,
   });
 }

@@ -1,6 +1,7 @@
 import { FieldValue } from "firebase-admin/firestore";
 
 import { COLLECTIONS, getFirestoreDb } from "@/lib/firebase/admin";
+import { fetchAllEmployees } from "@/lib/firebase/hr";
 import type { EmployeeDoc, PunchLogRaw } from "@/lib/firebase/types";
 import {
   normalizeHumanName,
@@ -59,11 +60,11 @@ function pickEmployeeDeviceKey(employee: EmployeeDoc): string | null {
 export async function loadEmployeePunchMap(): Promise<
   Map<string, EmployeePunchMatch>
 > {
-  const snap = await getFirestoreDb().collection(COLLECTIONS.employees).get();
+  // Shares the worker's in-memory employee list (see enableProcessReadCache).
+  const employees = await fetchAllEmployees();
   const map = new Map<string, EmployeePunchMatch>();
 
-  for (const doc of snap.docs) {
-    const employee = { $id: doc.id, ...doc.data() } as EmployeeDoc;
+  for (const employee of employees) {
     const key = pickEmployeeDeviceKey(employee);
     const name = employee.name?.trim();
     if (!key || !name) continue;

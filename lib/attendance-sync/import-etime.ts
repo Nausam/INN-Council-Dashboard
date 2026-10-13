@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { FieldValue } from "firebase-admin/firestore";
 
 import { fetchAllEmployees } from "@/lib/firebase/hr";
@@ -21,6 +22,30 @@ import type { AttendancePunchDoc, ImportResult } from "@/lib/attendance-sync/typ
 import { ETIME_MAX_DAYS, MALDIVES_TIMEZONE } from "@/lib/attendance-sync/types";
 
 const STATUS_DOC_ID = "etime-portal";
+/** Status doc heartbeat while polls find nothing new; the admin panel calls eTime stale after 15 min. */
+const QUIET_STATUS_INTERVAL_MS = 5 * 60_000;
+
+// Incremental (worker) polls remember each date's last snapshot so an unchanged
+// eTime page costs no Firestore reads or writes.
+const lastSnapshotHashByDate = new Map<string, string>();
+let lastStatusWriteAt = 0;
+
+function snapshotHash(
+  rows: Array<{ employeeCode: string; departmentId: string; timestampUtc?: string | null; sourceRecordId?: string | null; ignored?: boolean; ignoredReason?: string | null }>,
+  maps: ReturnType<typeof buildSourceEmployeeMaps>,
+): string {
+  // Includes the employee mapping, so a newly mapped eTime code re-matches its punches.
+  const mapping = Array.from(maps.etimeByCode.entries())
+    .map(([code, entry]) => [code, entry.employee.$id, entry.config.etime?.departmentId ?? ""])
+    .sort();
+  const rowKeys = rows
+    .map((row) => [row.employeeCode, row.departmentId, row.timestampUtc ?? "", row.sourceRecordId ?? "",
+      Boolean(row.ignored), row.ignoredReason ?? ""])
+    .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  return createHash("sha1")
+    .update(JSON.stringify([rowKeys, mapping, Array.from(maps.byEmployeeId.keys()).sort()]))
+    .digest("hex");
+}
 
 export type EtimeIntegrationStatus = {
   enabled?: boolean;
@@ -81,7 +106,14 @@ export async function importEtimePunches(options: {
   to?: string;
   reconcile?: boolean;
   client?: EtimeClient;
+  /**
+   * For the always-on worker: skip dates whose eTime snapshot matches the
+   * previous poll, reconcile only dates whose punches changed, and write the
+   * status doc only when something changed or every few minutes.
+   */
+  incremental?: boolean;
 }): Promise<ImportResult> {
+  const incremental = options.incremental === true;
   const config = getEtimeConfig();
   if (!config.enabled) {
     throw new Error("eTime integration is disabled. Set ETIME_ENABLED=1.");
@@ -115,11 +147,16 @@ export async function importEtimePunches(options: {
   const affectedDates = new Set<string>();
   const parserErrors: string[] = [];
 
-  await updateEtimeStatus({
-    enabled: true,
-    lastImportStartedAt: new Date().toISOString(),
-    lastError: null,
-  });
+  const importStartedAt = new Date().toISOString();
+  if (!incremental) {
+    await updateEtimeStatus({
+      enabled: true,
+      lastImportStartedAt: importStartedAt,
+      lastError: null,
+    });
+  }
+  let changedAnything = false;
+  const completedHashes = new Map<string, string>();
 
   try {
     for (const date of dates) {
@@ -132,6 +169,8 @@ export async function importEtimePunches(options: {
         parserErrors.push(`Incomplete eTime snapshot for ${date}; skipping void pass.`);
         continue;
       }
+      const hash = incremental ? snapshotHash(snapshot.rows, maps) : "";
+      if (incremental && lastSnapshotHashByDate.get(date) === hash) continue;
 
       const seenDocIds = new Set<string>();
       const now = new Date().toISOString();
@@ -165,8 +204,14 @@ export async function importEtimePunches(options: {
 
         const result = await writeCanonicalPunchIfNew(punch);
         seenDocIds.add(result.docId);
-        // A repeated import must also repair attendance from existing punches.
-        if (matched && punch.eligible) affectedDates.add(localDate);
+        if (result.changed) changedAnything = true;
+        if (incremental) {
+          // The worker repairs unchanged days on its own hourly pass.
+          if (result.changed) affectedDates.add(localDate);
+        } else if (matched && punch.eligible) {
+          // A repeated import must also repair attendance from existing punches.
+          affectedDates.add(localDate);
+        }
         if (result.written) {
           written += 1;
         } else {
@@ -180,18 +225,27 @@ export async function importEtimePunches(options: {
         if (doc.employeeId && !maps.byEmployeeId.has(doc.employeeId)) continue;
         await voidPunch(doc.$id, now);
         voided += 1;
+        changedAnything = true;
         if (doc.employeeId) affectedDates.add(date);
       }
+      if (incremental) completedHashes.set(date, hash);
     }
 
-    await updateEtimeStatus({
-      lastImportCompletedAt: new Date().toISOString(),
-      lastSuccessfulDate: to,
-      lastHeartbeatAt: new Date().toISOString(),
-      parserErrors: parserErrors.slice(-20),
-      unmatched,
-      lastError: parserErrors.length > 0 ? parserErrors[parserErrors.length - 1]! : null,
-    });
+    const quiet = incremental && !changedAnything && parserErrors.length === 0 &&
+      Date.now() - lastStatusWriteAt < QUIET_STATUS_INTERVAL_MS;
+    if (!quiet) {
+      await updateEtimeStatus({
+        enabled: true,
+        lastImportStartedAt: importStartedAt,
+        lastImportCompletedAt: new Date().toISOString(),
+        lastSuccessfulDate: to,
+        lastHeartbeatAt: new Date().toISOString(),
+        parserErrors: parserErrors.slice(-20),
+        unmatched,
+        lastError: parserErrors.length > 0 ? parserErrors[parserErrors.length - 1]! : null,
+      });
+      lastStatusWriteAt = Date.now();
+    }
   } catch (error) {
     await updateEtimeStatus({
       lastError: error instanceof Error ? error.message : String(error),
@@ -206,6 +260,8 @@ export async function importEtimePunches(options: {
       await reconcileCouncilAttendanceDate(date, { preview: false, ensureToday: true });
     }
   }
+  // Remembered only once the punches are stored and reconciled, so a failed poll retries.
+  for (const [date, hash] of completedHashes) lastSnapshotHashByDate.set(date, hash);
 
   return {
     scanned,

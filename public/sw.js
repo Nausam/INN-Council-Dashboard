@@ -10,6 +10,10 @@ const PROFILE_HOME = "/employees/details";
 // After opening the saved copy, the next load within this window goes to the
 // server. That covers the page reloading itself after a deploy.
 const SAVED_COPY_WINDOW_MS = 15000;
+// The page refreshes its own records after opening the saved copy, so the saved
+// copy itself only needs re-downloading occasionally (each download is a full
+// server render with its database reads).
+const SAVED_COPY_REFRESH_MS = 60 * 60 * 1000;
 const savedCopyServedAt = new Map();
 
 const isLocalDev =
@@ -94,7 +98,7 @@ async function handleNavigation(event) {
     }
 
     if (url.pathname === ownerPath) {
-      const fresh = fetch(request).then(async (response) => {
+      const download = () => fetch(request).then(async (response) => {
         if (isCacheablePage(response)) {
           await cache.put(ownerPath, response.clone());
           await cachePageAssets(response.clone());
@@ -110,10 +114,13 @@ async function handleNavigation(event) {
       if (saved) {
         // Show the saved copy now; the page refreshes its records itself.
         savedCopyServedAt.set(ownerPath, Date.now());
-        event.waitUntil(fresh.catch(() => undefined));
+        const savedAt = Date.parse(saved.headers.get("date") || "");
+        if (!(Date.now() - savedAt < SAVED_COPY_REFRESH_MS)) {
+          event.waitUntil(download().catch(() => undefined));
+        }
         return saved;
       }
-      return fresh.catch(async () => (await cache.match(ownerPath)) || caches.match("/offline.html"));
+      return download().catch(async () => (await cache.match(ownerPath)) || caches.match("/offline.html"));
     }
   }
 

@@ -138,10 +138,16 @@ export async function reconcileCouncilAttendanceDate(
 ): Promise<CouncilReconcileResult> {
   assertIsoDate(date);
   const preview = options.preview ?? !isAttendanceSyncAutoWriteEnabled();
+  const [employees, initialRows] = await Promise.all([fetchAllEmployees(), fetchAttendanceForDate(date)]);
+  let rows = initialRows;
+  // Today's sheet is created at midnight; only fill it in again if someone is missing a row.
   if (options.ensureToday && date === todayMaldivesIso()) {
-    await ensureCouncilAttendanceSheets(date, { preview });
+    const withRows = new Set(rows.map((row) => row.employeeId));
+    if (listCouncilEmployees(employees).some((employee) => !withRows.has(employee.$id))) {
+      const ensured = await ensureCouncilAttendanceSheets(date, { preview });
+      if (ensured.created > 0) rows = await fetchAttendanceForDate(date);
+    }
   }
-  const [employees, rows] = await Promise.all([fetchAllEmployees(), fetchAttendanceForDate(date)]);
   const councilIds = new Set(listCouncilEmployees(employees).map((employee) => employee.$id));
   const mappings = buildSourceEmployeeMaps(employees, date);
   const entryById = new Map(

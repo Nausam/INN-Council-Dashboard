@@ -1,7 +1,7 @@
-import { fetchEmployeeById, fetchAttendanceForPayPeriod } from "@/lib/firebase/hr";
+import { fetchEmployeeById, fetchAttendanceForEmployeeRange } from "@/lib/firebase/hr";
 import { hasEmployeeProfileAccess } from "@/lib/auth/employee-profile-session";
 import { buildEmployeeLeaveDays } from "@/lib/salary-slips/employee-leave-days";
-import { formatPayPeriodRange } from "@/lib/salary-slips/pay-period";
+import { formatPayPeriodRange, getPayPeriodBounds } from "@/lib/salary-slips/pay-period";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -27,9 +27,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // Only this employee's rows, not the whole council's for the period.
+    const bounds = getPayPeriodBounds(period)!;
+    const dayAfterEnd = new Date(Date.parse(`${bounds.endIso}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
     const [employee, attendance] = await Promise.all([
       fetchEmployeeById(employeeId),
-      fetchAttendanceForPayPeriod(period),
+      fetchAttendanceForEmployeeRange(employeeId, bounds.startIso, dayAfterEnd),
     ]);
 
     const leaveDays = buildEmployeeLeaveDays(employee, attendance, period);
