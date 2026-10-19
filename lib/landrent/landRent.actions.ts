@@ -17,7 +17,8 @@ import {
   uploadBufferToR2,
 } from "@/lib/firebase/repository";
 import { requireAdmin } from "@/lib/auth/require-admin";
-import { fineBetweenDates, fineBetweenDatesByRate, firstMonthFromSavedUnpaidCount, monthlyRentChargeByRate, olderFineMonthStartCorrection, reconstructStatementRateBreakdown, usesPostAugustMonthlyFine } from "@/lib/landrent/landRent.ratePeriods";
+import { fineBetweenDates, fineBetweenDatesByRate, firstMonthFromSavedUnpaidCount, fixedMonthlyFineIsDue, leaseFineSettings, monthlyRentChargeByRate, olderFineMonthStartCorrection, reconstructStatementRateBreakdown, usesPostAugustMonthlyFine } from "@/lib/landrent/landRent.ratePeriods";
+import type { LandLeaseFineType } from "@/lib/landrent/landRent.ratePeriods";
 import type {
   LandLeaseDoc,
   LandParcelDoc,
@@ -59,6 +60,8 @@ export type LandRentOverviewRow = {
   paymentDueDay: number;
   rateLariPerSqft: number;
   fineLariPerDay?: number | null;
+  fineType: LandLeaseFineType;
+  fixedMonthlyFine: number;
 
   sizeSqft: number;
   monthlyRent: number;
@@ -437,6 +440,7 @@ function savedStatementOlderFineCorrection(args: {
   fineAmount: number;
 }) {
   if (args.statement.kind === "FINE_ONLY") return null;
+  if (leaseFineSettings(args.lease).fineType === "FIXED_MONTHLY") return null;
   if (Number(args.statement.snapshot_legacyFineStartRuleVersion ?? 0) >= LEGACY_FINE_START_RULE_VERSION) {
     return null;
   }
@@ -471,6 +475,18 @@ function savedStatementOlderFineCorrection(args: {
     savedFineDays: args.fineDays,
     savedFineAmount: args.fineAmount,
   });
+}
+
+function validatedFineSettings(fineType: unknown, fixedMonthlyFine: unknown) {
+  if (fineType !== "DAILY_RATE" && fineType !== "FIXED_MONTHLY") {
+    throw new Error("Invalid fine calculation type.");
+  }
+  if (fineType === "DAILY_RATE") return leaseFineSettings({ fineType });
+  const amount = round2(Number(fixedMonthlyFine));
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("Enter a fixed monthly fine greater than 0.");
+  }
+  return leaseFineSettings({ fineType, fixedMonthlyFine: amount });
 }
 
 const fmtMonthYearUTC = (ms: Date) =>
@@ -557,6 +573,9 @@ export const updateLandRentLease = async (input: {
   rate: number;
   paymentDueDay: number;
   finePerDay: number;
+  /** Leave out to keep the lease's current fine type. */
+  fineType?: LandLeaseFineType;
+  fixedMonthlyFine?: number;
 }) => {
   await requireAdmin();
 
@@ -591,7 +610,10 @@ export const updateLandRentLease = async (input: {
   const sizeSqft = Math.max(0, Number(input.sizeSqft ?? 0));
   const rate = Math.max(0, Number(input.rate ?? 0));
   const paymentDueDay = clampInt(Number(input.paymentDueDay ?? 10), 1, 28);
-  const finePerDay = round2((sizeSqft * rate / 30) * 0.25);
+  const fine = input.fineType
+    ? validatedFineSettings(input.fineType, input.fixedMonthlyFine)
+    : leaseFineSettings(lease);
+  const finePerDay = fine.fineType === "FIXED_MONTHLY" ? 0 : round2((sizeSqft * rate / 30) * 0.25);
 
   await Promise.all([
     updateDocument(COLLECTIONS.landParcels, lease.parcelId, {
@@ -611,6 +633,8 @@ export const updateLandRentLease = async (input: {
       rateLariPerSqft: rate,
       paymentDueDay,
       fineLariPerDay: finePerDay,
+      fineType: fine.fineType,
+      fixedMonthlyFine: fine.fineType === "FIXED_MONTHLY" ? fine.fixedMonthlyFine : null,
       monthlyRent: round2(sizeSqft * rate),
     } as any),
   ]);
@@ -783,6 +807,7 @@ const computeStatementFromBaseline = async (args: {
   const rate = Number(lease.rateLariPerSqft ?? 0);
   const monthlyRent = round2(sizeSqft * rate);
   const fineLariPerDay = round2((monthlyRent / 30) * 0.25);
+  const fine = leaseFineSettings(lease);
 
   const rentStart = safeDateUTC((lease as any).startDate ?? null);
   const rentEnd = safeDateUTC((lease as any).endDate ?? null);
@@ -928,9 +953,11 @@ const computeStatementFromBaseline = async (args: {
     released,
     effectiveCap,
     payments: pays,
+    // Fixed-fine leases bill the full rent for the first and last months.
+    fullMonthRent: fine.fineType === "FIXED_MONTHLY",
   });
 
-  const generatedAdjustmentRows = computePostCutoffFineRows({
+  const fineRowArgs = {
     fromMonth,
     toMonth,
     effectiveCap: effectiveFineCap,
@@ -944,7 +971,10 @@ const computeStatementFromBaseline = async (args: {
     rentRate: rate,
     sizeSqft,
     payments: pays,
-  });
+  };
+  const generatedAdjustmentRows = fine.fineType === "FIXED_MONTHLY"
+    ? computeFixedMonthlyFineRows({ ...fineRowArgs, fixedMonthlyFine: fine.fixedMonthlyFine })
+    : computePostCutoffFineRows(fineRowArgs);
 
   const latestPay = pays.length
     ? pays
@@ -954,15 +984,18 @@ const computeStatementFromBaseline = async (args: {
         )[0]
     : null;
 
-  const continuousFine = computeContinuousFineFromLastPayment({
-    fromMonth,
-    rentStart,
-    rentEnd,
-    doubleRateAfterEnd: lease.doubleRateAfterEnd === true,
-    released,
-    effectiveCap: effectiveFineCap,
-    monthlyRent,
-  });
+  // A fixed monthly fine replaces the daily-rate fines for every period.
+  const continuousFine = fine.fineType === "FIXED_MONTHLY"
+    ? noContinuousFine()
+    : computeContinuousFineFromLastPayment({
+        fromMonth,
+        rentStart,
+        rentEnd,
+        doubleRateAfterEnd: lease.doubleRateAfterEnd === true,
+        released,
+        effectiveCap: effectiveFineCap,
+        monthlyRent,
+      });
 
   const rateBreakdown: LandRentRateBreakdownRow[] = ([1, 2] as const).map((multiplier) => {
     const normal = multiplier === 1;
@@ -1438,7 +1471,7 @@ export const getLandStatementDetails = async (params: {
     const today = dateOnlyInTimeZoneUTC(new Date());
     const issuedAt = safeDateUTC(statement.recalculatedAt ?? statement.createdAt ?? statement.$createdAt);
     const fineCap = minDate(today, issuedAt) ?? today;
-    snapshot_generatedAdjustmentRows = computePostCutoffFineRows({
+    const fineRowArgs = {
       fromMonth,
       toMonth: startOfMonthUTC(safeDateUTC(`${statement.monthKey}-01`) ?? today),
       effectiveCap: statementReleased
@@ -1454,7 +1487,11 @@ export const getLandStatementDetails = async (params: {
       rentRate,
       sizeSqft,
       payments: [],
-    });
+    };
+    const fine = leaseFineSettings(lease);
+    snapshot_generatedAdjustmentRows = fine.fineType === "FIXED_MONTHLY"
+      ? computeFixedMonthlyFineRows({ ...fineRowArgs, fixedMonthlyFine: fine.fixedMonthlyFine })
+      : computePostCutoffFineRows(fineRowArgs);
   }
 
   const olderFineCorrection = hasSnapshot ? savedStatementOlderFineCorrection({
@@ -1671,6 +1708,9 @@ export const recalculateLandStatementFines = async (params: {
     snapshot_capToEndDate: !!params.capToEndDate,
   });
 
+  // Payments counted in the new totals can settle the statement.
+  await maybeMarkStatementPaid(params.statementId, params.capToEndDate);
+
   return { ok: true };
 };
 
@@ -1739,6 +1779,24 @@ export const fetchLatestLandStatementDetails = async (leaseId: string) => {
   const latest = statements[statements.length - 1];
   if (!latest) return null;
   return getLandStatementDetails({ statementId: latest.$id, capToEndDate: false });
+};
+
+/** Fixed-fine leases fine only rent still unpaid after the due day, so the payment date decides the fine. */
+const settleStatementAfterPayment = async (
+  statement: LandStatementDoc,
+  capToEndDate?: boolean,
+) => {
+  if (statement.status === "OPEN" && statement.kind !== "FINE_ONLY") {
+    const lease = await getDocument<LandLeaseDoc>(COLLECTIONS.landLeases, statement.leaseId);
+    if (leaseFineSettings(lease).fineType === "FIXED_MONTHLY") {
+      await recalculateLandStatementFines({
+        statementId: statement.$id,
+        capToEndDate: capToEndDate ?? !!statement.snapshot_capToEndDate,
+      });
+      return;
+    }
+  }
+  await maybeMarkStatementPaid(statement.$id, capToEndDate);
 };
 
 const maybeMarkStatementPaid = async (
@@ -1811,7 +1869,7 @@ export const createLandRentPayment = async (input: {
   });
 
   // After saving payment, mark statement PAID if fully settled
-  await maybeMarkStatementPaid(input.statementId, input.capToEndDate);
+  await settleStatementAfterPayment(st, input.capToEndDate);
 
   return created;
 };
@@ -1849,7 +1907,7 @@ export const updateLandRentPayment = async (input: {
   }
 
   const payment = await getDocument<LandPaymentDoc>(COLLECTIONS.landPayments, paymentId);
-  await getDocument<LandStatementDoc>(COLLECTIONS.landStatements, payment.statementId);
+  const statement = await getDocument<LandStatementDoc>(COLLECTIONS.landStatements, payment.statementId);
 
   const uploaded = input.slipDataUrl && input.slipFilename
     ? await uploadSlipFromDataUrl(input.slipDataUrl, input.slipFilename)
@@ -1881,7 +1939,7 @@ export const updateLandRentPayment = async (input: {
     });
   }
 
-  await maybeMarkStatementPaid(payment.statementId);
+  await settleStatementAfterPayment(statement);
   return getDocument<LandPaymentDoc>(COLLECTIONS.landPayments, paymentId);
 };
 
@@ -1899,6 +1957,10 @@ const computeBucketsWithPaymentsUTC = (args: {
   released: Date | null;
   effectiveCap: Date;
   payments: Array<{ paidAt: string; amount: number }>;
+  /** Charge this flat amount per overdue month instead of the daily rate. */
+  fixedMonthlyFine?: number;
+  /** Bill the whole monthly rent for partly covered months. */
+  fullMonthRent?: boolean;
 }) => {
   type Bucket = {
     key: string;
@@ -1940,6 +2002,7 @@ const computeBucketsWithPaymentsUTC = (args: {
       rentEnd: args.rentEnd,
       doubleRateAfterEnd: args.doubleRateAfterEnd,
       released: args.released,
+      fullMonth: args.fullMonthRent,
     });
     const principalDue = rent.total;
     if (principalDue <= 0) continue;
@@ -1982,6 +2045,18 @@ const computeBucketsWithPaymentsUTC = (args: {
   const accrueFineThrough = (b: Bucket, thruDate: Date) => {
     // Fine accrues only while principal is unpaid
     if (b.principalRemaining <= 0) return;
+    if (args.fixedMonthlyFine) {
+      if (b.fineAccrued > 0) return;
+      if (!fixedMonthlyFineIsDue({
+        monthStart: b.monthStart,
+        paymentDueDay: args.paymentDueDay,
+        through: thruDate,
+        released: args.released,
+      })) return;
+      b.fineAccrued = round2(args.fixedMonthlyFine);
+      b.fineRemaining = round2(b.fineAccrued - b.finePaid);
+      return;
+    }
     if (!usesPostAugustMonthlyFine(b.monthStart)) return;
 
     const thru = dateOnlyUTC(thruDate);
@@ -2169,6 +2244,59 @@ function computePostCutoffFineRows(args: {
     },
   ];
 }
+
+function computeFixedMonthlyFineRows(
+  args: Parameters<typeof computePostCutoffFineRows>[0] & { fixedMonthlyFine: number },
+): LandRentGeneratedAdjustmentRow[] {
+  const fromMonth = startOfMonthUTC(args.fromMonth);
+  const toMonth = startOfMonthUTC(args.toMonth);
+  if (toMonth.getTime() < fromMonth.getTime()) return [];
+
+  const computed = computeBucketsWithPaymentsUTC({
+    fromMonth,
+    toMonth,
+    paymentDueDay: args.paymentDueDay,
+    monthlyRent: args.monthlyRent,
+    fineLariPerDay: args.fineLariPerDay,
+    rentStart: args.rentStart,
+    rentEnd: args.rentEnd,
+    doubleRateAfterEnd: args.doubleRateAfterEnd,
+    released: args.released,
+    effectiveCap: dateOnlyUTC(args.effectiveCap),
+    payments: args.payments,
+    fixedMonthlyFine: args.fixedMonthlyFine,
+    fullMonthRent: true,
+  });
+
+  const finedBuckets = computed.buckets.filter((bucket) => bucket.fineAccrued > 0);
+  if (finedBuckets.length === 0) return [];
+
+  const amount = args.fixedMonthlyFine.toFixed(2);
+  const periodLabel = `މަހަކު ${amount} ރުފިޔާގެ ޖޫރިމަނާ (${finedBuckets[0].key}–${finedBuckets[finedBuckets.length - 1].key})`;
+
+  return [
+    {
+      key: "generated-fixed-monthly-fine",
+      total: computed.grossFineAmount,
+      rentAmount: 0,
+      unpaidMonths: finedBuckets.length,
+      fineAmount: computed.grossFineAmount,
+      fineDays: 0,
+      periodLabel,
+      rentRate: round2(args.rentRate),
+      sizeOfLand: round2(args.sizeSqft),
+      description: periodLabel,
+      displayMode: "description",
+    },
+  ];
+}
+
+const noContinuousFine = () => ({
+  numberOfFineDays: 0,
+  fineAmount: 0,
+  byRate: { normalDays: 0, doubleDays: 0, normalAmount: 0, doubleAmount: 0, total: 0 },
+  fineBreakdown: [] as Array<{ key: string; label: string; days: number; fine: number }>,
+});
 
 function computeContinuousFineFromLastPayment(args: {
   fromMonth: Date;
@@ -2368,6 +2496,7 @@ export const fetchLandRentOverview = async (params?: {
       paymentDueDay: Number(lease.paymentDueDay ?? 10),
       rateLariPerSqft: rate,
       fineLariPerDay: round2((round2(sizeSqft * rate) / 30) * 0.25),
+      ...leaseFineSettings(lease),
       sizeSqft,
       monthlyRent: round2(sizeSqft * rate),
       lastPaymentDate: latestPayment?.paidAt
@@ -2424,6 +2553,7 @@ export const fetchLandRentOverview = async (params?: {
         paymentDueDay: Number(l.paymentDueDay ?? 10),
         rateLariPerSqft: rate,
         fineLariPerDay: round2((monthlyRent / 30) * 0.25),
+        ...leaseFineSettings(l),
         sizeSqft,
         monthlyRent,
 
@@ -2494,6 +2624,9 @@ export const createLandRentHolder = async (input: {
 
   paymentDueDay: number;
   finePerDay: number;
+  /** Older callers leave this out and get the daily rate. */
+  fineType?: LandLeaseFineType;
+  fixedMonthlyFine?: number;
 
   // Opening snapshot (optional but you're sending them)
   lastPaymentDate: string | null; // "YYYY-MM-DD" or ISO or null
@@ -2528,7 +2661,8 @@ export const createLandRentHolder = async (input: {
   const monthlyRent = round2(sizeSqft * rate);
 
   const paymentDueDay = clampInt(Number(input.paymentDueDay ?? 10), 1, 28);
-  const finePerDay = round2((monthlyRent / 30) * 0.25);
+  const fine = validatedFineSettings(input.fineType ?? "DAILY_RATE", input.fixedMonthlyFine);
+  const finePerDay = fine.fineType === "FIXED_MONTHLY" ? 0 : round2((monthlyRent / 30) * 0.25);
 
   // Upload PDF if provided
   let agreementPdfFileId: string | null = null;
@@ -2540,7 +2674,8 @@ export const createLandRentHolder = async (input: {
       );
     } catch (error) {
       console.error("Failed to upload PDF:", error);
-      throw new Error("Failed to upload agreement PDF. Please try again.");
+      const reason = error instanceof Error && error.message ? ` (${error.message})` : "";
+      throw new Error(`Failed to upload agreement PDF${reason}. Please try again.`);
     }
   }
 
@@ -2577,6 +2712,8 @@ export const createLandRentHolder = async (input: {
       rateLariPerSqft: rate,
       paymentDueDay,
       fineLariPerDay: finePerDay,
+      fineType: fine.fineType,
+      fixedMonthlyFine: fine.fineType === "FIXED_MONTHLY" ? fine.fixedMonthlyFine : null,
 
       agreementPdfFileId,
       agreementPdfFilename: input.agreementPdfFilename,

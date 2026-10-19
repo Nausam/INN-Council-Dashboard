@@ -282,6 +282,9 @@ export type LandLeaseDoc = LegacyDocument & {
   rateLariPerSqft: number;
   paymentDueDay?: number;
   fineLariPerDay?: number;
+  /** Missing on older leases, which use the daily rate. */
+  fineType?: "DAILY_RATE" | "FIXED_MONTHLY";
+  fixedMonthlyFine?: number | null;
   agreementPdfFileId?: string | null;
   agreementPdfFilename?: string | null;
   fixedAdjustmentRowsJson?: string | null;

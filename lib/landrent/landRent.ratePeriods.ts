@@ -10,6 +10,32 @@ export function usesPostAugustMonthlyFine(monthStart: Date): boolean {
   return dayUTC(monthStart) >= FINE_CHANGE_DATE;
 }
 
+export type LandLeaseFineType = "DAILY_RATE" | "FIXED_MONTHLY";
+
+/** Leases saved before fine types existed use the daily rate. */
+export function leaseFineSettings(lease: { fineType?: unknown; fixedMonthlyFine?: unknown }): {
+  fineType: LandLeaseFineType;
+  fixedMonthlyFine: number;
+} {
+  const amount = round2(Number(lease.fixedMonthlyFine ?? 0));
+  if (lease.fineType === "FIXED_MONTHLY" && Number.isFinite(amount) && amount > 0) {
+    return { fineType: "FIXED_MONTHLY", fixedMonthlyFine: amount };
+  }
+  return { fineType: "DAILY_RATE", fixedMonthlyFine: 0 };
+}
+
+/** A fixed monthly fine is charged once for a rent month still unpaid after its due day. */
+export function fixedMonthlyFineIsDue(args: {
+  monthStart: Date;
+  paymentDueDay: number;
+  through: Date;
+  released: Date | null;
+}): boolean {
+  const fineStart = Date.UTC(args.monthStart.getUTCFullYear(), args.monthStart.getUTCMonth(), args.paymentDueDay + 1);
+  if (dayUTC(args.through) < fineStart) return false;
+  return !args.released || fineStart < dayUTC(args.released);
+}
+
 export function todayInMaldives(): Date {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Indian/Maldives",
@@ -34,6 +60,8 @@ export function monthlyRentChargeByRate(args: {
   rentEnd: Date | null;
   doubleRateAfterEnd?: boolean;
   released: Date | null;
+  /** Charge the whole month when the lease covers any day of it, instead of prorating. */
+  fullMonth?: boolean;
 }): {
   normalAmount: number;
   doubleAmount: number;
@@ -60,6 +88,15 @@ export function monthlyRentChargeByRate(args: {
       normalAmount += normalMonthlyRent / daysInMonth;
       normalDays += 1;
     }
+  }
+
+  const chargedDays = normalDays + doubleDays;
+  if (args.fullMonth && chargedDays > 0) {
+    // Spread one whole month over the charged days, keeping any double-rate share.
+    normalAmount = (normalMonthlyRent * normalDays) / chargedDays;
+    doubleAmount = (normalMonthlyRent * 2 * doubleDays) / chargedDays;
+    normalDays = (daysInMonth * normalDays) / chargedDays;
+    doubleDays = daysInMonth - normalDays;
   }
 
   const total = round2(normalAmount + doubleAmount);

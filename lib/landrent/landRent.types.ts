@@ -16,6 +16,8 @@ export type LandRentOverviewRow = {
   rateLariPerSqft?: number | null;
   paymentDueDay?: number | null;
   fineLariPerDay?: number | null;
+  fineType?: "DAILY_RATE" | "FIXED_MONTHLY";
+  fixedMonthlyFine?: number | null;
 
   startDate?: string | null;
   endDate?: string | null;

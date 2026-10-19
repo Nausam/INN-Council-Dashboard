@@ -12,9 +12,11 @@ import { useToast } from "@/hooks/use-toast";
 import { createLandRentHolder } from "@/lib/landrent/landRent.actions";
 import {
   fineBetweenDates,
+  fixedMonthlyFineIsDue,
   monthlyRentCharge,
   todayInMaldives,
   usesPostAugustMonthlyFine,
+  type LandLeaseFineType,
 } from "@/lib/landrent/landRent.ratePeriods";
 import { cn } from "@/lib/utils";
 import {
@@ -60,7 +62,25 @@ type BreakdownRow = {
   label: string;
   days: number;
   fine: number;
+  fixed?: boolean;
 };
+
+const FINE_TYPE_OPTIONS: {
+  value: LandLeaseFineType;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: "DAILY_RATE",
+    label: "Daily rate (standard)",
+    description: "Calculated from the monthly rent for each overdue day.",
+  },
+  {
+    value: "FIXED_MONTHLY",
+    label: "Fixed amount per month",
+    description: "A flat fine for each month's rent still unpaid after the due day.",
+  },
+];
 
 const formGrid = "grid gap-5 md:grid-cols-2";
 const inputClass =
@@ -193,6 +213,10 @@ export default function Page() {
     return Number.isFinite(v) ? v : 0;
   }, [monthlyRent]);
 
+  const [fineType, setFineType] = useState<LandLeaseFineType>("DAILY_RATE");
+  const [fixedMonthlyFine, setFixedMonthlyFine] = useState("");
+  const isFixedFine = fineType === "FIXED_MONTHLY";
+
   const [lastPaymentDate, setLastPaymentDate] = useState<string>("");
 
   const [openingFineDays, setOpeningFineDays] = useState("0");
@@ -270,6 +294,8 @@ export default function Page() {
     setSizeSqft("1800");
     setRate("1.7");
     setPaymentDueDay("10");
+    setFineType("DAILY_RATE");
+    setFixedMonthlyFine("");
 
     setAgreementPdf(null);
     setAgreementPdfBase64("");
@@ -298,6 +324,9 @@ export default function Page() {
     if (!rentStartDate) return fail("Rent duration start is required.");
     if (!untilWorkFinished && !rentEndDate) return fail("Choose a rent end date or select Until work is finished.");
     if (!agreementNumber.trim()) return fail("Agreement number is required.");
+    if (isFixedFine && num(fixedMonthlyFine) <= 0) {
+      return fail("Enter a fixed monthly fine greater than 0.");
+    }
 
     const due = clampInt(num(paymentDueDay), 1, 28);
     if (String(due) !== paymentDueDay) setPaymentDueDay(String(due));
@@ -323,7 +352,9 @@ export default function Page() {
         monthlyRent,
 
         paymentDueDay: due,
-        finePerDay,
+        finePerDay: isFixedFine ? 0 : finePerDay,
+        fineType,
+        fixedMonthlyFine: isFixedFine ? num(fixedMonthlyFine) : undefined,
 
         lastPaymentDate: lastPaymentDate ? toISODate(lastPaymentDate) : null,
         openingFineDays: Math.floor(num(openingFineDays)),
@@ -383,7 +414,8 @@ export default function Page() {
     let totalFine = 0;
     let outstandingFees = 0;
     let monthCount = 0;
-    const legacyFine = fineBetweenDates({
+    const fixedFine = fineType === "FIXED_MONTHLY" ? Math.round(num(fixedMonthlyFine) * 100) / 100 : 0;
+    const legacyFine = fineType === "FIXED_MONTHLY" ? { days: 0, amount: 0 } : fineBetweenDates({
       from: fromMonth,
       through: today,
       normalMonthlyRent,
@@ -416,10 +448,29 @@ export default function Page() {
         rentEnd: end,
         doubleRateAfterEnd,
         released: letGo,
+        fullMonth: fineType === "FIXED_MONTHLY",
       });
       if (principal <= 0) continue;
       monthCount += 1;
       outstandingFees += principal;
+      if (fineType === "FIXED_MONTHLY") {
+        if (fixedFine > 0 && fixedMonthlyFineIsDue({
+          monthStart: month,
+          paymentDueDay: dueDay,
+          through: today,
+          released: letGo,
+        })) {
+          totalFine += fixedFine;
+          rows.push({
+            key: `${month.getUTCFullYear()}-${String(month.getUTCMonth() + 1).padStart(2, "0")}`,
+            label: fmtMonthYear(month),
+            days: 0,
+            fine: fixedFine,
+            fixed: true,
+          });
+        }
+        continue;
+      }
       if (!usesPostAugustMonthlyFine(month)) continue;
       const fine = fineBetweenDates({
         from: new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), dueDay + 1)),
@@ -457,6 +508,8 @@ export default function Page() {
     paymentDueDay,
     monthlyRent,
     finePerDay,
+    fineType,
+    fixedMonthlyFine,
   ]);
 
   const pdfInputId = "land-rent-agreement-pdf";
@@ -645,7 +698,11 @@ export default function Page() {
         <FormSectionCard
           icon={Banknote}
           title="Rent & fines"
-          description="Enter the normal rate. Select the checkbox above to double rent and the rate used for fines after the rent end date."
+          description={
+            isFixedFine
+              ? "Enter the normal rate and the fixed fine charged for each overdue month."
+              : "Enter the normal rate. Select the checkbox above to double rent and the rate used for fines after the rent end date."
+          }
         >
           <div className={formGrid}>
             <FormField label="Size (sqft)">
@@ -679,15 +736,81 @@ export default function Page() {
             </FormField>
           </div>
 
+          <FormField label="Fine calculation">
+            <div
+              role="radiogroup"
+              aria-label="Fine calculation"
+              className="grid gap-3 sm:grid-cols-2"
+            >
+              {FINE_TYPE_OPTIONS.map((option) => {
+                const selected = fineType === option.value;
+                return (
+                  <label
+                    key={option.value}
+                    className={cn(
+                      "flex cursor-pointer items-start gap-3 rounded-xl px-4 py-3 ring-1 transition-colors",
+                      selected
+                        ? "bg-teal-50/60 ring-teal-300"
+                        : "bg-white ring-slate-200 hover:ring-teal-200",
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="fine-type"
+                      value={option.value}
+                      checked={selected}
+                      onChange={() => setFineType(option.value)}
+                      className="mt-0.5 h-4 w-4 accent-teal-600"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold text-slate-800">
+                        {option.label}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-slate-500">
+                        {option.description}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </FormField>
+
+          {isFixedFine ? (
+            <div className={formGrid}>
+              <FormField
+                label="Fixed fine per month (MVR)"
+                htmlFor="land-rent-fixed-monthly-fine"
+                hint="Charged once for each month whose rent is unpaid after the due day."
+              >
+                <input
+                  id="land-rent-fixed-monthly-fine"
+                  value={fixedMonthlyFine}
+                  onChange={(e) => setFixedMonthlyFine(e.target.value)}
+                  inputMode="decimal"
+                  className={inputClass}
+                  placeholder="e.g. 500"
+                />
+              </FormField>
+            </div>
+          ) : null}
+
           <div className="grid gap-3 sm:grid-cols-2">
             <ComputedStat
               label="Monthly rent"
               value={monthlyRent.toFixed(2)}
             />
-            <ComputedStat
-              label="Fine per day at normal rate (from August 2025)"
-              value={finePerDay.toFixed(2)}
-            />
+            {isFixedFine ? (
+              <ComputedStat
+                label="Fine per overdue month"
+                value={num(fixedMonthlyFine).toFixed(2)}
+              />
+            ) : (
+              <ComputedStat
+                label="Fine per day at normal rate (from August 2025)"
+                value={finePerDay.toFixed(2)}
+              />
+            )}
           </div>
         </FormSectionCard>
 
@@ -722,7 +845,7 @@ export default function Page() {
                       {b.label}
                     </span>
                     <span className="shrink-0 font-semibold tabular-nums text-slate-900">
-                      {b.days} days · {b.fine.toFixed(2)} MVR
+                      {b.fixed ? "Fixed" : `${b.days} days`} · {b.fine.toFixed(2)} MVR
                     </span>
                   </li>
                 ))}

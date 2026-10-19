@@ -37,6 +37,8 @@ type LeaseFormState = {
   sizeSqft: string;
   rate: string;
   paymentDueDay: string;
+  fineType: "DAILY_RATE" | "FIXED_MONTHLY";
+  fixedMonthlyFine: string;
 };
 
 function dateInputValue(iso: string | null | undefined) {
@@ -65,6 +67,8 @@ function formFromLease(row: LandRentOverviewUIRow): LeaseFormState {
     sizeSqft: numberText(row.sizeSqft),
     rate: numberText(row.rateLariPerSqft),
     paymentDueDay: numberText(row.paymentDueDay ?? 10) || "10",
+    fineType: row.fineType === "FIXED_MONTHLY" ? "FIXED_MONTHLY" : "DAILY_RATE",
+    fixedMonthlyFine: numberText(row.fixedMonthlyFine),
   };
 }
 
@@ -139,6 +143,10 @@ export function LandRentOverviewView({
       setActionError("Choose a rent end date or select Until work is finished.");
       return;
     }
+    if (form.fineType === "FIXED_MONTHLY" && parseNumber(form.fixedMonthlyFine) <= 0) {
+      setActionError("Enter a fixed monthly fine greater than 0.");
+      return;
+    }
 
     setBusy(true);
     setActionError(null);
@@ -157,6 +165,8 @@ export function LandRentOverviewView({
         rate: parseNumber(form.rate),
         paymentDueDay: parseNumber(form.paymentDueDay),
         finePerDay: (parseNumber(form.sizeSqft) * parseNumber(form.rate) / 30) * 0.25,
+        fineType: form.fineType,
+        fixedMonthlyFine: form.fineType === "FIXED_MONTHLY" ? parseNumber(form.fixedMonthlyFine) : undefined,
       });
       await refetch();
       setEditingLease(null);
@@ -408,13 +418,36 @@ export function LandRentOverviewView({
                 className={editInputClass}
               />
             </EditField>
-            <EditField label="Fine per day at normal rate (calculated)">
-              <input
-                value={((parseNumber(form.sizeSqft) * parseNumber(form.rate) / 30) * 0.25).toFixed(2)}
-                readOnly
+            <EditField label="Fine calculation">
+              <select
+                value={form.fineType}
+                onChange={(e) =>
+                  updateForm({ fineType: e.target.value as LeaseFormState["fineType"] })
+                }
                 className={editInputClass}
-              />
+              >
+                <option value="DAILY_RATE">Daily rate (standard)</option>
+                <option value="FIXED_MONTHLY">Fixed amount per month</option>
+              </select>
             </EditField>
+            {form.fineType === "FIXED_MONTHLY" ? (
+              <EditField label="Fixed fine per month (MVR)">
+                <input
+                  value={form.fixedMonthlyFine}
+                  onChange={(e) => updateForm({ fixedMonthlyFine: e.target.value })}
+                  inputMode="decimal"
+                  className={editInputClass}
+                />
+              </EditField>
+            ) : (
+              <EditField label="Fine per day at normal rate (calculated)">
+                <input
+                  value={((parseNumber(form.sizeSqft) * parseNumber(form.rate) / 30) * 0.25).toFixed(2)}
+                  readOnly
+                  className={editInputClass}
+                />
+              </EditField>
+            )}
           </div>
 
           {actionError ? (
