@@ -21,6 +21,7 @@ export const SIGNATURE_CONFIG: Partial<Record<ImamOptionKey, SignatureConfig>> =
     Shahidh: { alternating: true },
     Zahidh: { alternating: true },
     Umair: { src: "/assets/images/umair.png" },
+    Ibraheem: { src: "/assets/images/ibraheem-haleem-sign.png" },
     Waseem: { src: "/assets/images/waseem-sign.png", requiresStartDate: true },
   };
 
@@ -29,6 +30,7 @@ export const SIGNATURE_HEIGHT_CLASSES: Partial<Record<ImamOptionKey, string>> =
     Shahidh: "h-8",
     Zahidh: "h-8",
     Umair: "h-8",
+    Ibraheem: "h-8",
     // waseem-sign.png is 1024×1024 with extra canvas padding; scale up to match others
     Waseem: "h-16",
   };

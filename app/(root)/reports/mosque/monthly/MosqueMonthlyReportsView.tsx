@@ -26,11 +26,13 @@ import {
   fetchMosqueAssistants,
   fetchMosqueAttendanceForPeriod,
 } from "@/lib/actions/hr.actions";
+import { reverseLeaveTypeMapping } from "@/constants";
 import type { EmployeeDoc } from "@/lib/firebase/types";
 import { isOnAttendanceLeave } from "@/lib/salary-slips/pay-period";
 import { cn } from "@/lib/utils";
 import {
   AlarmClock,
+  CalendarOff,
   CalendarRange,
   CalendarSearch,
   Clock3,
@@ -124,6 +126,12 @@ type ReportPeriod = {
   endDate: string;
 };
 
+type LeaveDetailEntry = {
+  name: string;
+  total: number;
+  byType: Array<{ label: string; count: number }>;
+};
+
 const prayerColumns = [
   { key: "fathisMinutesLate", label: "Fajr" },
   { key: "mendhuruMinutesLate", label: "Dhuhr" },
@@ -150,6 +158,9 @@ const MOSQUE_REPORT_STAFF_ORDER = [
 ] as const;
 
 const ABSENT_PRAYER_LATE_MINUTES = 60;
+
+/** Imams listed in the Leave details section, in display order. */
+const LEAVE_DETAIL_STAFF = ["Ahmed Zahidh", "Mohamed Shahidh"] as const;
 
 const allowanceColumns = [
   { key: "fathis", label: "Fathis" },
@@ -638,6 +649,41 @@ function buildLateAbsentReport(
   );
 }
 
+/** Leave count per listed imam (one per date), broken down by leave type. */
+function buildLeaveDetails(
+  period: ReportPeriod,
+  raw: unknown,
+  employeesById: Map<string, { name: string; designation: string }>,
+): LeaveDetailEntry[] {
+  const leaveByStaff = new Map<string, Map<string, string>>(
+    LEAVE_DETAIL_STAFF.map((name) => [name.toLowerCase(), new Map()]),
+  );
+
+  for (const attendance of normalizeAttendance(raw)) {
+    const date = attendance.date.slice(0, 10);
+    if (date < period.startDate || date > period.endDate) continue;
+    if (!isOnAttendanceLeave(attendance.leaveType)) continue;
+    const identity = resolveEmployeeIdentity(attendance, employeesById);
+    const dates = identity && leaveByStaff.get(identity.name.trim().toLowerCase());
+    if (!dates) continue;
+    const type = attendance.leaveType!.trim();
+    dates.set(date, reverseLeaveTypeMapping[type] ?? type);
+  }
+
+  return LEAVE_DETAIL_STAFF.map((name) => {
+    const labels = Array.from(leaveByStaff.get(name.toLowerCase())?.values() ?? []);
+    const counts = new Map<string, number>();
+    for (const label of labels) counts.set(label, (counts.get(label) ?? 0) + 1);
+    return {
+      name,
+      total: labels.length,
+      byType: Array.from(counts, ([label, count]) => ({ label, count })).sort(
+        (a, b) => b.count - a.count || a.label.localeCompare(b.label),
+      ),
+    };
+  });
+}
+
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   return parts
@@ -765,6 +811,11 @@ export function MosqueMonthlyReportsView({
 
   const reportData = useMemo(
     () => buildMosqueReport(reportPeriod, rawAttendance, employeesById),
+    [reportPeriod, rawAttendance, employeesById],
+  );
+
+  const leaveDetails = useMemo(
+    () => buildLeaveDetails(reportPeriod, rawAttendance, employeesById),
     [reportPeriod, rawAttendance, employeesById],
   );
 
@@ -1311,6 +1362,74 @@ export function MosqueMonthlyReportsView({
                 </TableRow>
               </TableFooter>
             </Table>
+          )}
+        </CouncilCard>
+
+        <CouncilCard interactive="none" className="mt-6 overflow-hidden p-0">
+          <div className="flex items-start gap-3 border-b border-slate-100 px-5 py-5 sm:px-6">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
+              <CalendarOff className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-950">Leave details</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Leave taken by Zahidh and Shahidh, {formatPeriod(reportPeriod)}
+              </p>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="p-5 sm:p-6">
+              <SkeletonReportsTable />
+            </div>
+          ) : isError ? (
+            <p className="p-5 text-sm text-slate-500 sm:p-6">
+              Leave details could not be loaded.
+            </p>
+          ) : (
+            <div className="grid gap-4 p-5 sm:p-6 md:grid-cols-2">
+              {leaveDetails.map((staff) => (
+                <div
+                  key={staff.name}
+                  className="rounded-2xl border border-slate-100 bg-gradient-to-br from-violet-50/60 via-white to-white p-5"
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-xs font-bold text-violet-700">
+                        {initials(staff.name)}
+                      </div>
+                      <p className="font-semibold text-slate-900">{staff.name}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold tracking-tight text-slate-950">
+                        {staff.total}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        leave{staff.total === 1 ? "" : "s"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {staff.total === 0 ? (
+                    <p className="mt-4 text-sm text-slate-500">
+                      No leave taken in this period.
+                    </p>
+                  ) : (
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {staff.byType.map((type) => (
+                        <span
+                          key={type.label}
+                          className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700 ring-1 ring-inset ring-violet-100"
+                        >
+                          {type.label}
+                          <span className="font-bold">{type.count}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
         </CouncilCard>
 
