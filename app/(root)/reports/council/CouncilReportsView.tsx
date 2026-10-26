@@ -135,6 +135,7 @@ const ALLOWED_SECTIONS = new Set([
   "admin",
   "wdc",
   "waste management",
+  "pre-school",
 ]);
 
 const nameKey = (s: string) =>
@@ -430,6 +431,7 @@ export function CouncilReportsView({
             <option value="Admin">Admin</option>
             <option value="WDC">WDC</option>
             <option value="Waste Management">Waste Management</option>
+            <option value="Pre-School">Pre-School</option>
           </select>
         </div>
 

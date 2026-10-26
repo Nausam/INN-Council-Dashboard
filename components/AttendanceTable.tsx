@@ -53,6 +53,7 @@ import {
   AlertCircle,
   Briefcase,
   Building2,
+  GraduationCap,
   Recycle,
   Save,
   Trash2,
@@ -535,6 +536,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
     | "Admin"
     | "WDC"
     | "Waste Management"
+    | "Pre-School"
     | "Other";
   const getCanonicalSection = (raw?: string): CanonicalSection => {
     const n = clean(raw);
@@ -562,6 +564,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
       ].includes(n)
     )
       return "Waste Management";
+    if (n === "preschool") return "Pre-School";
     return "Other";
   };
 
@@ -571,6 +574,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
       Admin: [],
       WDC: [],
       "Waste Management": [],
+      "Pre-School": [],
       Other: [],
     };
     for (const r of attendanceUpdates) {
@@ -861,6 +865,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
   const admin = grouped["Admin"];
   const wdc = grouped["WDC"];
   const waste = grouped["Waste Management"];
+  const preSchool = grouped["Pre-School"];
   const other = grouped["Other"];
 
   return (
@@ -889,6 +894,7 @@ const AttendanceTable = ({ date, data }: AttendanceTableProps) => {
             {renderSection("WDC", wdc, Building2)}
             {renderSection("Admin", admin, Briefcase)}
             {renderSection("Waste Management", waste, Recycle)}
+            {renderSection("Pre-School", preSchool, GraduationCap)}
             {renderSection("Other", sortWithin(other), UserCheck)}
           </TableBody>
         </Table>

@@ -12,6 +12,7 @@ export const DESIGNATION_OPTIONS: CouncilSelectOption[] = [
   { value: "A. Council Officer", label: "A. Council Officer" },
   { value: "Council Assistant", label: "Council Assistant" },
   { value: "Imam", label: "Imam" },
+  { value: "Pre-School Teacher", label: "Pre-School Teacher" },
 ];
 
 export const SECTION_OPTIONS: CouncilSelectOption[] = [
@@ -20,4 +21,5 @@ export const SECTION_OPTIONS: CouncilSelectOption[] = [
   { value: "WDC", label: "WDC" },
   { value: "Mosque", label: "Mosque" },
   { value: "Waste Management", label: "Waste Management" },
+  { value: "Pre-School", label: "Pre-School" },
 ];
