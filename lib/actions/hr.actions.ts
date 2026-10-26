@@ -4,6 +4,7 @@ import * as hr from "@/lib/firebase/hr";
 import { requireAdmin } from "@/lib/auth/require-admin";
 import { hasEmployeeProfileAccess } from "@/lib/auth/employee-profile-session";
 import { getSessionAuthProfile } from "@/lib/auth/session-profile";
+import * as attendanceReport from "@/lib/attendance/attendance-report";
 
 async function requireStaffSession(): Promise<void> {
   if (!(await getSessionAuthProfile())) throw new Error("Unauthorized");
@@ -73,6 +74,13 @@ export async function fetchAttendanceForEmployeeMonth(
 ) {
   if (!(await hasEmployeeProfileAccess(args[1]))) throw new Error("Unauthorized");
   return hr.fetchAttendanceForEmployeeMonth(...args);
+}
+
+export async function fetchAttendanceReport(
+  ...args: Parameters<typeof attendanceReport.fetchAttendanceReport>
+) {
+  await requireStaffSession();
+  return attendanceReport.fetchAttendanceReport(...args);
 }
 
 export async function fetchAttendanceForMonth(

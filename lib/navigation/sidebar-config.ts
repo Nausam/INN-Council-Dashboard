@@ -90,6 +90,7 @@ export const councilSidebarNav: SidebarNavItem[] = [
       { title: "Council Report", url: "/reports/council" },
       { title: "Mosque Daily Report", url: "/reports/mosque/daily" },
       { title: "Mosque Monthly Report", url: "/reports/mosque/monthly" },
+      { title: "Attendance Report", url: "/reports/attendance" },
     ],
   },
   {
