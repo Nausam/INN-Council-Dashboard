@@ -75,10 +75,10 @@ export function MissingLeaveFormsPanel() {
   useEffect(() => setReminded(new Set()), [range]);
 
   const employees = useMemo(() => list?.employees ?? [], [list]);
-  const reachable = employees.filter((row) => row.alertsOn && !reminded.has(row.employeeId));
-  const unreachable = employees.filter((row) => !row.alertsOn);
+  const pending = employees.filter((row) => !reminded.has(row.employeeId));
+  const noAlerts = employees.filter((row) => !row.alertsOn);
   const totalDays = employees.reduce((total, row) => total + row.dates.length, 0);
-  const canSend = Boolean(list?.configured) && !sending && !loading;
+  const canSend = !sending && !loading;
 
   const choosePreset = (next: (typeof PRESETS)[number]) => {
     setPreset(next.id);
@@ -91,27 +91,27 @@ export function MissingLeaveFormsPanel() {
   };
 
   async function remind(employeeIds: string[] | null) {
-    const count = employeeIds ? employeeIds.length : reachable.length;
+    const count = employeeIds ? employeeIds.length : pending.length;
     if (!employeeIds && !window.confirm(`Send leave form reminders to ${count} ${count === 1 ? "employee" : "employees"}?`)) return;
     setSending(employeeIds ? employeeIds[0] : "all");
     try {
-      const result = await remindMissingLeaveForms(range.start, range.end, employeeIds ?? reachable.map((row) => row.employeeId));
+      const result = await remindMissingLeaveForms(range.start, range.end, employeeIds ?? pending.map((row) => row.employeeId));
       if (result.error) {
         toast({ variant: "destructive", title: "Reminders not sent", description: result.error });
         return;
       }
       setReminded((current) => new Set([...current, ...result.reminded]));
-      const missed = result.unreachable.length;
+      const appOnly = result.appOnly.length;
       toast({
         title: result.reminded.length
           ? `Reminded ${result.reminded.length} ${result.reminded.length === 1 ? "employee" : "employees"}`
           : "No reminders sent",
-        description: missed
-          ? `${missed} couldn't be reached. Their phones may have turned alerts off; ask them in person.`
-          : "They'll get a notification on their phone.",
+        description: appOnly
+          ? `${appOnly} ${appOnly === 1 ? "has" : "have"} no alerts on, so they'll only see it when they open Employee Profile.`
+          : "It's in their notifications and on their phones.",
       });
-      // Phones that turned alerts off were forgotten; show them as unreachable.
-      if (missed) setRevision((value) => value + 1);
+      // Phones that turned alerts off were forgotten; show who is app-only now.
+      if (appOnly) setRevision((value) => value + 1);
     } catch {
       toast({ variant: "destructive", title: "Reminders not sent", description: "Check your connection and try again." });
     } finally {
@@ -140,11 +140,11 @@ export function MissingLeaveFormsPanel() {
           <button
             type="button"
             onClick={() => void remind(null)}
-            disabled={!canSend || reachable.length === 0}
+            disabled={!canSend || pending.length === 0}
             className="inline-flex h-11 items-center gap-2 rounded-full bg-[#17191d] px-5 text-sm font-extrabold text-white shadow-[0_5px_14px_rgba(23,25,29,0.16)] transition hover:-translate-y-0.5 disabled:translate-y-0 disabled:opacity-40"
           >
             {sending === "all" ? <Loader2 size={16} className="animate-spin" /> : <BellRing size={16} />}
-            Remind all{reachable.length ? ` (${reachable.length})` : ""}
+            Remind all{pending.length ? ` (${pending.length})` : ""}
           </button>
         </div>
       </header>
@@ -179,11 +179,11 @@ export function MissingLeaveFormsPanel() {
       <div className="mb-6 grid grid-cols-3 gap-3 sm:max-w-xl">
         <Stat value={loading ? "—" : employees.length} label="employees" tone="bg-[#eef4ff] text-[#3d6ea8]" />
         <Stat value={loading ? "—" : totalDays} label="days missing" tone="bg-[#fff4ee] text-[#b4643c]" />
-        <Stat value={loading ? "—" : unreachable.length} label="no alerts" tone="bg-[#f6f4f8] text-[#6a55b8]" />
+        <Stat value={loading ? "—" : noAlerts.length} label="no alerts" tone="bg-[#f6f4f8] text-[#6a55b8]" />
       </div>
 
       {list && !list.configured ? (
-        <p role="alert" className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Notifications aren&rsquo;t set up on the server yet, so reminders can&rsquo;t be sent.</p>
+        <p role="alert" className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Phone notifications aren&rsquo;t set up on the server yet, so reminders will only show in Employee Profile.</p>
       ) : null}
       {list?.error ? <p role="alert" className="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{list.error}</p> : null}
 
@@ -271,11 +271,11 @@ function EmployeeCard({
         {row.alertsOn ? (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-[#eefbf5] px-3 py-1 text-[11px] font-extrabold text-[#23795a]"><Bell size={13} />Alerts on</span>
         ) : (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#fff4ee] px-3 py-1 text-[11px] font-extrabold text-[#a35a33]"><BellOff size={13} />No alerts · ask in person</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#fff4ee] px-3 py-1 text-[11px] font-extrabold text-[#a35a33]"><BellOff size={13} />No alerts · in app only</span>
         )}
         {reminded ? (
           <span className="inline-flex items-center gap-1 text-xs font-extrabold text-[#23795a]"><Check size={15} />Reminded</span>
-        ) : row.alertsOn ? (
+        ) : (
           <button
             type="button"
             onClick={onRemind}
@@ -285,7 +285,7 @@ function EmployeeCard({
             {sending ? <Loader2 size={14} className="animate-spin" /> : <BellRing size={14} />}
             Remind
           </button>
-        ) : null}
+        )}
       </div>
     </article>
   );

@@ -1,6 +1,6 @@
 "use server";
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import webpush, { WebPushError } from "web-push";
 
 import { getEmployeeProfileSessionId } from "@/lib/auth/employee-profile-session";
@@ -88,6 +88,54 @@ export async function removeEmployeePushSubscription(endpoint: string): Promise<
   await subscriptions().doc(subscriptionDocId(endpoint)).delete();
 }
 
+/** A reminder HR sent, as the employee sees it in Employee Profile. */
+export type EmployeeNotification = {
+  id: string;
+  title: string;
+  body: string;
+  url: string;
+  sentAt: string;
+};
+
+export type MyNotifications = {
+  /** Days in the last REMINDER_DAYS still needing a leave form, oldest first. */
+  missing: string[];
+  /** HR's reminders, newest first. */
+  items: EmployeeNotification[];
+  /** Reminders sent since the employee last opened the bell. */
+  unread: number;
+};
+
+/** How many of HR's reminders each employee keeps. */
+const INBOX_LIMIT = 30;
+
+/** One document per employee holding their latest reminders, so the bell costs one read. */
+function inbox(employeeId: string) {
+  return getFirestoreDb().collection(COLLECTIONS.employeeNotifications).doc(employeeId);
+}
+
+function inboxItems(value: unknown): EmployeeNotification[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is EmployeeNotification =>
+        Boolean(item) && typeof item.id === "string" && typeof item.sentAt === "string")
+    : [];
+}
+
+/** The signed-in employee's missing leave forms and HR's reminders, for the bell in Employee Profile. */
+export async function getMyNotifications(employeeId: string): Promise<MyNotifications> {
+  if (getEmployeeProfileSessionId() !== employeeId) return { missing: [], items: [], unread: 0 };
+  const [missing, snap] = await Promise.all([employeeMissingDates(employeeId), inbox(employeeId).get()]);
+  const items = inboxItems(snap.get("items"));
+  const readAt = typeof snap.get("readAt") === "string" ? (snap.get("readAt") as string) : "";
+  return { missing, items, unread: items.filter((item) => item.sentAt > readAt).length };
+}
+
+/** Clears the bell's unread count once the employee has seen their reminders. */
+export async function markMyNotificationsRead(employeeId: string): Promise<void> {
+  if (getEmployeeProfileSessionId() !== employeeId) return;
+  await inbox(employeeId).set({ readAt: new Date().toISOString() }, { merge: true });
+}
+
 /** The employee's missing forms and how many phones would get a reminder, for HR's dialog. */
 export async function getLeaveReminderStatus(employeeId: string): Promise<LeaveReminderStatus> {
   await requireAdmin();
@@ -106,15 +154,33 @@ function setVapidDetails(): void {
   );
 }
 
-/** Sends one reminder covering `dates` to each of the employee's phones. */
-async function pushLeaveReminder(
+/**
+ * Sends one reminder covering `dates`: saved to the employee's notifications in
+ * Employee Profile, and pushed to each phone that has alerts on.
+ */
+async function deliverLeaveReminder(
   employeeId: string,
   dates: string[],
   phones: FirebaseFirestore.QueryDocumentSnapshot[],
 ): Promise<{ sent: number; removed: number }> {
-  const payload = JSON.stringify({
+  const item: EmployeeNotification = {
+    id: randomUUID(),
     ...leaveReminderMessage(dates),
     url: `/employees/details/${encodeURIComponent(employeeId)}?tab=requests`,
+    sentAt: new Date().toISOString(),
+  };
+  const ref = inbox(employeeId);
+  await getFirestoreDb().runTransaction(async (tx) => {
+    const items = inboxItems((await tx.get(ref)).get("items"));
+    tx.set(ref, { employeeId, items: [item, ...items].slice(0, INBOX_LIMIT) }, { merge: true });
+  });
+  if (!phones.length || !pushConfigured()) return { sent: 0, removed: 0 };
+
+  setVapidDetails();
+  const payload = JSON.stringify({
+    title: item.title,
+    body: item.body,
+    url: item.url,
     // A second reminder for the same days replaces the first on the phone.
     tag: `leave-form-${dates.join("_")}`,
   });
@@ -158,28 +224,26 @@ async function auditReminder(actorUserId: string, employeeId: string, meta: Reco
 }
 
 /**
- * Asks the employee, on their phone, to submit every leave form still missing
- * from the last REMINDER_DAYS, worked out again here.
+ * Asks the employee to submit every leave form still missing from the last
+ * REMINDER_DAYS, worked out again here. It always reaches their notifications
+ * in Employee Profile; `sent` counts the phones it was pushed to as well.
  */
 export async function sendLeaveFormReminder(employeeId: string): Promise<LeaveReminderResult> {
   const admin = await requireAdmin();
-  // Returned, not thrown: production builds hide thrown messages from the page.
-  if (!pushConfigured()) return { sent: 0, removed: 0, blockedReason: "Notifications aren't set up on the server yet." };
   const [dates, snapshot] = await Promise.all([
     employeeMissingDates(employeeId),
-    subscriptions().where("employeeId", "==", employeeId).get(),
+    pushConfigured() ? subscriptions().where("employeeId", "==", employeeId).get() : null,
   ]);
+  // Returned, not thrown: production builds hide thrown messages from the page.
   if (!dates.length) return { sent: 0, removed: 0, blockedReason: "No leave forms are missing any more." };
-  if (snapshot.empty) return { sent: 0, removed: 0 };
 
-  setVapidDetails();
-  const result = await pushLeaveReminder(employeeId, dates, snapshot.docs);
+  const result = await deliverLeaveReminder(employeeId, dates, snapshot?.docs ?? []);
   await auditReminder(admin.id, employeeId, { dates, ...result });
   return result;
 }
 
 export type MissingLeaveFormRow = MissingLeaveFormEmployee & {
-  /** Has a phone with alerts on; otherwise HR asks them in person. */
+  /** Has a phone with alerts on; otherwise the reminder only shows in the app. */
   alertsOn: boolean;
 };
 
@@ -215,10 +279,10 @@ export async function listMissingLeaveForms(start: string, end: string): Promise
 }
 
 export type MissingLeaveFormsReminderResult = {
-  /** Employees whose phones got the reminder. */
+  /** Employees reminded; it's in their notifications in Employee Profile. */
   reminded: string[];
-  /** Employees with missing forms but no phone to reach; HR asks them in person. */
-  unreachable: string[];
+  /** Of those, the ones no phone got it for: they'll only see it in the app. */
+  appOnly: string[];
   error?: string;
 };
 
@@ -233,33 +297,25 @@ export async function remindMissingLeaveForms(
   employeeIds: string[] | null,
 ): Promise<MissingLeaveFormsReminderResult> {
   const admin = await requireAdmin();
-  if (!pushConfigured()) return { reminded: [], unreachable: [], error: "Notifications aren't set up on the server yet." };
   let missing: MissingLeaveFormEmployee[];
   try {
     missing = await findMissingLeaveForms(start, end);
   } catch (error) {
-    return { reminded: [], unreachable: [], error: error instanceof Error ? error.message : "Couldn't load the list." };
+    return { reminded: [], appOnly: [], error: error instanceof Error ? error.message : "Couldn't load the list." };
   }
   const wanted = employeeIds ? new Set(employeeIds) : null;
   const targets = missing.filter((row) => !wanted || wanted.has(row.employeeId));
   const phones = await phonesByEmployee();
 
-  setVapidDetails();
   const reminded: string[] = [];
-  const unreachable: string[] = [];
+  const appOnly: string[] = [];
   await Promise.all(
     targets.map(async (row) => {
-      const employeePhones = phones.get(row.employeeId) ?? [];
-      const result = employeePhones.length
-        ? await pushLeaveReminder(row.employeeId, row.dates, employeePhones)
-        : { sent: 0, removed: 0 };
-      if (result.sent > 0) {
-        reminded.push(row.employeeId);
-        await auditReminder(admin.id, row.employeeId, { dates: row.dates, ...result });
-      } else {
-        unreachable.push(row.employeeId);
-      }
+      const result = await deliverLeaveReminder(row.employeeId, row.dates, phones.get(row.employeeId) ?? []);
+      reminded.push(row.employeeId);
+      if (result.sent === 0) appOnly.push(row.employeeId);
+      await auditReminder(admin.id, row.employeeId, { dates: row.dates, ...result });
     }),
   );
-  return { reminded, unreachable };
+  return { reminded, appOnly };
 }

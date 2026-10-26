@@ -70,7 +70,7 @@ function LeaveReminderDialog({
 
   const dates = status?.dates ?? [];
   const message = dates.length ? leaveReminderMessage(dates) : null;
-  const canSend = Boolean(status?.configured && status.devices > 0 && dates.length) && !sending;
+  const canSend = dates.length > 0 && !sending;
 
   const send = async () => {
     setSending(true);
@@ -81,13 +81,13 @@ function LeaveReminderDialog({
         setError(result.blockedReason);
         return;
       }
-      if (result.sent > 0) {
-        toast({ title: "Reminder sent", description: `${employeeName} will get it on their phone.` });
-        onClose();
-        return;
-      }
-      setStatus((current) => (current ? { ...current, devices: 0 } : current));
-      setError(`${firstName}'s phone has stopped accepting notifications. Ask them to turn alerts on again.`);
+      toast({
+        title: "Reminder sent",
+        description: result.sent > 0
+          ? `${employeeName} will get it on their phone and in Employee Profile.`
+          : `It's in ${firstName}'s notifications in Employee Profile. No phone of theirs has alerts on.`,
+      });
+      onClose();
     } catch {
       setError("Couldn't send the reminder. Check your connection and try again.");
     } finally {
@@ -155,13 +155,11 @@ function LeaveReminderDialog({
             {error ??
               (!status
                 ? "Checking their phone…"
-                : !status.configured
-                  ? "Notifications aren't set up on the server yet."
-                  : !dates.length
-                    ? "Nothing to remind them about."
-                    : status.devices === 0
-                      ? `${firstName} hasn't turned on alerts yet. Ask them to open Employee Profile and tap Turn on alerts. On iPhone, the app must be added to the Home Screen first.`
-                      : `One notification listing ${dates.length === 1 ? "this day" : `all ${dates.length} days`} goes to ${status.devices === 1 ? "their phone" : `${status.devices} phones`}.`)}
+                : !dates.length
+                  ? "Nothing to remind them about."
+                  : !status.configured || status.devices === 0
+                    ? `${firstName} hasn't turned on alerts, so this will only show under Notifications in their Employee Profile.`
+                    : `One notification listing ${dates.length === 1 ? "this day" : `all ${dates.length} days`} goes to ${status.devices === 1 ? "their phone" : `${status.devices} phones`} and their Employee Profile.`)}
           </span>
         </p>
 
@@ -180,5 +178,6 @@ function LeaveReminderDialog({
 function statusState(status: LeaveReminderStatus | null, error: string | null): string {
   if (error) return "error";
   if (!status) return "loading";
-  return status.configured && status.devices > 0 && status.dates.length ? "ready" : "off";
+  if (!status.dates.length) return "off";
+  return status.configured && status.devices > 0 ? "ready" : "off";
 }

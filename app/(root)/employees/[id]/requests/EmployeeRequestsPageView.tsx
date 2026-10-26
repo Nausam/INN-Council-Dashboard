@@ -62,10 +62,13 @@ export function EmployeeRequestsPageView({
   employee,
   employeeId,
   onTabChange,
+  headerActions,
 }: {
   employee: EmployeeDoc | null;
   employeeId: string;
   onTabChange?: (tab: DashboardTab) => void;
+  /** Extra header buttons, such as the employee's notification bell. */
+  headerActions?: React.ReactNode;
 }) {
   const [activeRequest, setActiveRequest] = useState<RequestKind | null>(null);
   const [historyRevision, setHistoryRevision] = useState(0);
@@ -101,7 +104,7 @@ export function EmployeeRequestsPageView({
     <div className={styles.page}>
       <style>{`@media (max-width: 767px){[data-council-mobile-header]{display:none !important;}}`}</style>
       <div className={styles.wrap}>
-        <EmployeePortalHeader />
+        <EmployeePortalHeader actions={headerActions} />
 
         <section className={styles.hero}>
           <div className="min-w-0">

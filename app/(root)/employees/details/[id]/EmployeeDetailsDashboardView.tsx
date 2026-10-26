@@ -282,6 +282,7 @@ export function EmployeeDetailsDashboardView({
         employee={data}
         employeeId={id}
         onTabChange={setTab}
+        headerActions={viewerIsEmployee ? <EmployeeNotificationsButton employeeId={id} /> : null}
       />
     );
   }
@@ -293,16 +294,20 @@ export function EmployeeDetailsDashboardView({
       <EmployeePortalHeader
         className={styles.wrap}
         actions={
-          isAdmin ? (
-            <>
-              <LeaveReminderButton employeeId={id} employeeName={employee.name} />
-              <EmployeePortalHeaderButton label="Edit profile" onClick={() => setEditOpen(true)}>
-                <Edit3 />
-              </EmployeePortalHeaderButton>
-            </>
-          ) : viewerIsEmployee ? (
-            <EmployeeNotificationsButton employeeId={id} />
-          ) : null
+          <>
+            {/* HR who are also signed in as this employee get both. */}
+            {viewerIsEmployee ? (
+              <EmployeeNotificationsButton employeeId={id} onOpenRequests={() => setTab("requests")} />
+            ) : null}
+            {isAdmin ? (
+              <>
+                <LeaveReminderButton employeeId={id} employeeName={employee.name} />
+                <EmployeePortalHeaderButton label="Edit profile" onClick={() => setEditOpen(true)}>
+                  <Edit3 />
+                </EmployeePortalHeaderButton>
+              </>
+            ) : null}
+          </>
         }
       />
 
