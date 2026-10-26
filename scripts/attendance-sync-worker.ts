@@ -13,6 +13,14 @@ const TODAY_REPAIR_MS = 60 * 60_000;
 const RECENT_REPAIR_MS = 6 * 60 * 60_000;
 /** Records re-read past the last imported device count, in case the saved count lags. */
 const ZK_CATCHUP_MARGIN = 50;
+/**
+ * Exit if the worker stops making progress this long, so the scheduled task
+ * restarts it. A Firestore call that never settles after a network drop
+ * otherwise leaves the process alive but idle (Oct 22 2026: stuck 3 days).
+ */
+const STALL_LIMIT_MS = 15 * 60_000;
+/** Startup recovery can backfill weeks of sheets in one call. */
+const STARTUP_STALL_LIMIT_MS = 60 * 60_000;
 
 async function main() {
   const { getRequiredZkConfig } = await import("../lib/zk/config");
@@ -65,6 +73,18 @@ async function main() {
     stopping = true;
   });
 
+  let stallDeadline = Date.now() + STALL_LIMIT_MS;
+  const markProgress = (limitMs = STALL_LIMIT_MS) => {
+    stallDeadline = Date.now() + limitMs;
+  };
+  const watchdog = setInterval(() => {
+    if (Date.now() <= stallDeadline) return;
+    console.error(
+      "Attendance sync worker made no progress before its stall deadline; exiting so the scheduled task restarts it.",
+    );
+    process.exit(1);
+  }, 60_000);
+
   let hasLease = false;
   while (!stopping && !hasLease) {
     try {
@@ -73,9 +93,13 @@ async function main() {
     } catch (error) {
       console.error("Could not acquire worker lease; retrying:", error);
     }
+    markProgress();
     if (!hasLease && !stopping) await sleep(15_000);
   }
-  if (stopping) return;
+  if (stopping) {
+    clearInterval(watchdog);
+    return;
+  }
 
   console.log("Attendance sync worker starting");
   let lastSheetDate = todayMaldivesIso();
@@ -148,13 +172,16 @@ async function main() {
   }, WORKER_LEASE_RENEW_MS);
 
   // Recovery can take longer than the lease TTL; renew throughout startup.
+  markProgress(STARTUP_STALL_LIMIT_MS);
   try {
     await catchUpSheets();
   } catch (error) {
     clearInterval(renewLoop);
+    clearInterval(watchdog);
     await releaseWorkerLease().catch(() => undefined);
     throw error;
   }
+  markProgress();
 
   // After a restart, re-read eTime from shortly before the last successful poll
   // (at most back to the start of last month) rather than all of last month.
@@ -256,6 +283,7 @@ async function main() {
         console.log(
           `ZK recent: written=${recent.written}, skipped=${recent.skipped}, unmatched=${recent.unmatched}`,
         );
+        markProgress();
       }
       if (catchupCount > 75) {
         console.log(`Reading and importing ${catchupCount} recent device records; startup may take several minutes`);
@@ -269,6 +297,7 @@ async function main() {
         console.log(
           `ZK catch-up: written=${catchup.written}, skipped=${catchup.skipped}, unmatched=${catchup.unmatched}`,
         );
+        markProgress();
       }
       importedLogCount = lastLogCount;
 
@@ -387,6 +416,7 @@ async function main() {
           }
         }
 
+        markProgress();
         await sleep(zkConfig.pollMs);
       }
 
@@ -403,11 +433,14 @@ async function main() {
         lastHeartbeatAt: new Date().toISOString(),
       }).catch(() => undefined);
       lastZkStatusKey = "";
+      // A failed attempt is still progress: the loop is alive and will reconnect.
+      markProgress();
       if (!stopping) await sleep(zkConfig.reconnectMs);
     }
   }
 
   clearInterval(renewLoop);
+  clearInterval(watchdog);
   await releaseWorkerLease().catch(() => undefined);
   await updateZkStatus({
     running: false,
