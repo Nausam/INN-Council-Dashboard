@@ -13,7 +13,7 @@ import {
 import type { EnrichedAttendanceRow } from "@/lib/attendance/enrich-attendance";
 import { ClipboardList, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 
 type EmployeeRef =
   | string
@@ -62,13 +62,18 @@ export function CouncilAttendancePageView({
   const router = useRouter();
   const [syncing, setSyncing] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [isNavigating, startNavigation] = useTransition();
+  const [pendingDate, setPendingDate] = useState<string | null>(null);
+  const shownDate = isNavigating && pendingDate ? pendingDate : date;
   const attendanceData = useMemo(() => normalize(rows), [rows]);
   const showGenerateButton = attendanceData.length === 0;
   const actionLoading = syncing || generating;
 
   const handleDateChange = (iso: string) => {
-    if (!iso || iso === date) return;
-    router.push(`/attendance/council?date=${iso}`);
+    if (!iso || iso === shownDate) return;
+    // Show the picked date and a loading state while the server loads that day.
+    setPendingDate(iso);
+    startNavigation(() => router.push(`/attendance/council?date=${iso}`));
   };
 
   const handleSync = async (syncDevice = false) => {
@@ -141,10 +146,10 @@ export function CouncilAttendancePageView({
       />
 
       <AttendancePageControls
-        selectedDate={date}
+        selectedDate={shownDate}
         onDateChange={handleDateChange}
         onSearch={() => void handleSync(true)}
-        searchLoading={actionLoading}
+        searchLoading={actionLoading || isNavigating}
         searchLabel="Search & sync"
         showGenerate={showGenerateButton}
         onGenerate={handleGenerateAttendance}
@@ -153,7 +158,9 @@ export function CouncilAttendancePageView({
       />
 
       {attendanceData.length > 0 ? (
-        <AttendanceTable date={date} data={attendanceData} />
+        <div className={isNavigating ? "pointer-events-none opacity-60 transition-opacity" : undefined}>
+          <AttendanceTable date={date} data={attendanceData} />
+        </div>
       ) : (
         <EmptyState
           icon={ClipboardList}

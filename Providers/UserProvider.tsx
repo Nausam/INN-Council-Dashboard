@@ -41,32 +41,37 @@ export const UserProvider = ({ children }: { children: React.ReactNode }) => {
   const serverProfile = resolved?.key === sessionKey ? resolved.profile : null;
   const isAdmin = serverProfile?.isAdmin ?? false;
 
+  // Clerk hands out a new user object on every session refresh and window
+  // focus; depend on its fields so consumers (whole pages) don't re-render.
+  const clerkUserId = clerkUser?.id ?? null;
+  const clerkEmail = clerkUser?.primaryEmailAddress?.emailAddress ?? "";
+  const clerkFullName =
+    clerkUser?.fullName?.trim() ||
+    [clerkUser?.firstName, clerkUser?.lastName].filter(Boolean).join(" ").trim();
+
   const currentUser = useMemo((): AuthProfile | null => {
-    if (!clerkUser) return null;
+    if (!clerkUserId) return null;
 
     if (serverProfile) return serverProfile;
 
-    const email = clerkUser.primaryEmailAddress?.emailAddress ?? "";
-
-    const fullName =
-      clerkUser.fullName?.trim() ||
-      [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ").trim() ||
-      email ||
-      "User";
-
     return {
-      id: clerkUser.id,
-      fullName,
-      email,
+      id: clerkUserId,
+      fullName: clerkFullName || clerkEmail || "User",
+      email: clerkEmail,
       isAdmin,
     };
-  }, [clerkUser, isAdmin, serverProfile]);
+  }, [clerkUserId, clerkFullName, clerkEmail, isAdmin, serverProfile]);
 
   const loading =
     !isLoaded || (Boolean(isSignedIn) && (!clerkUser || !sessionKey || resolved?.key !== sessionKey));
 
+  const value = useMemo(
+    () => ({ currentUser, isAdmin, loading }),
+    [currentUser, isAdmin, loading],
+  );
+
   return (
-    <UserContext.Provider value={{ currentUser, isAdmin, loading }}>
+    <UserContext.Provider value={value}>
       {children}
     </UserContext.Provider>
   );

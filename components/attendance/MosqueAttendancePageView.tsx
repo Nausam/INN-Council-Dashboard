@@ -10,7 +10,7 @@ import { generateMosqueAttendanceAction } from "@/lib/attendance/attendance.acti
 import type { MosqueAttendanceRecord } from "@/types";
 import { Building2, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 
 const employeeOrder = [
   "Mohamed Shahidh",
@@ -48,12 +48,17 @@ export function MosqueAttendancePageView({
 }) {
   const router = useRouter();
   const [generating, setGenerating] = useState(false);
+  const [isNavigating, startNavigation] = useTransition();
+  const [pendingDate, setPendingDate] = useState<string | null>(null);
+  const shownDate = isNavigating && pendingDate ? pendingDate : date;
   const attendanceData = useMemo(() => sortAttendance(rows), [rows]);
   const showGenerateButton = attendanceData.length === 0;
 
   const handleDateChange = (iso: string) => {
-    if (!iso || iso === date) return;
-    router.push(`/attendance/mosque?date=${iso}`);
+    if (!iso || iso === shownDate) return;
+    // Show the picked date and a loading state while the server loads that day.
+    setPendingDate(iso);
+    startNavigation(() => router.push(`/attendance/mosque?date=${iso}`));
   };
 
   const handleGenerateAttendance = async () => {
@@ -99,10 +104,10 @@ export function MosqueAttendancePageView({
       />
 
       <AttendancePageControls
-        selectedDate={date}
+        selectedDate={shownDate}
         onDateChange={handleDateChange}
         onSearch={() => router.refresh()}
-        searchLoading={generating}
+        searchLoading={generating || isNavigating}
         searchLabel="Refresh"
         showGenerate={showGenerateButton}
         onGenerate={handleGenerateAttendance}
@@ -115,7 +120,9 @@ export function MosqueAttendancePageView({
       </div>
 
       {attendanceData.length > 0 ? (
-        <MosqueAttendanceTable date={date} data={attendanceData} />
+        <div className={isNavigating ? "pointer-events-none opacity-60 transition-opacity" : undefined}>
+          <MosqueAttendanceTable date={date} data={attendanceData} />
+        </div>
       ) : (
         <EmptyState
           icon={Building2}
