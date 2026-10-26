@@ -453,25 +453,80 @@ async function recalculateLeaveUsageSnapshots(
  * reads in memory for a few minutes. Web requests never enable this, so pages
  * always read fresh data.
  */
+type CachedEmployees = {
+  at: number;
+  checkedAt: number;
+  value: EmployeeDoc[];
+  /** Newest updatedAt in the list; later writes mean the list is out of date. */
+  latestUpdate: Date | null;
+};
+
 const processReadCache = {
   ttlMs: 0,
-  employees: null as { at: number; value: EmployeeDoc[] } | null,
+  /** How long the employee list is kept while change checks find nothing. */
+  employeeMaxAgeMs: 0,
+  employees: null as CachedEmployees | null,
+  employeesLoading: null as Promise<EmployeeDoc[]> | null,
   holidays: new Map<string, { at: number; value: HolidayCalendarDoc | null }>(),
 };
 
-export function enableProcessReadCache(ttlMs: number): void {
+export function enableProcessReadCache(
+  ttlMs: number,
+  options: { employeeMaxAgeMs?: number } = {},
+): void {
   processReadCache.ttlMs = Math.max(0, ttlMs);
+  processReadCache.employeeMaxAgeMs = Math.max(processReadCache.ttlMs, options.employeeMaxAgeMs ?? 0);
 }
 
 function isFresh(entry: { at: number } | null | undefined): boolean {
   return Boolean(entry && processReadCache.ttlMs > 0 && Date.now() - entry.at < processReadCache.ttlMs);
 }
 
-export async function fetchAllEmployees(): Promise<EmployeeDoc[]> {
-  if (isFresh(processReadCache.employees)) return processReadCache.employees!.value.slice();
+function latestEmployeeUpdate(employees: EmployeeDoc[]): Date | null {
+  let latest = 0;
+  for (const employee of employees) {
+    const ms = employee.$updatedAt ? new Date(employee.$updatedAt).getTime() : NaN;
+    if (Number.isFinite(ms) && ms > latest) latest = ms;
+  }
+  return latest > 0 ? new Date(latest) : null;
+}
+
+/**
+ * Two count queries (about 2 reads) instead of re-reading every employee.
+ * Every employee write stamps updatedAt, and deletions change the count.
+ */
+async function employeesChangedSince(cached: CachedEmployees): Promise<boolean> {
+  if (!cached.latestUpdate) return true;
+  const collection = getFirestoreDb().collection(COLLECTIONS.employees);
+  const [total, updated] = await Promise.all([
+    collection.count().get(),
+    collection.where("updatedAt", ">", cached.latestUpdate).count().get(),
+  ]);
+  return total.data().count !== cached.value.length || updated.data().count > 0;
+}
+
+async function loadCachedEmployees(): Promise<EmployeeDoc[]> {
+  const cached = processReadCache.employees;
+  const now = Date.now();
+  if (cached && now - cached.checkedAt < processReadCache.ttlMs) return cached.value;
+  // Re-read the whole list at least every employeeMaxAgeMs, in case a write skipped updatedAt.
+  if (cached && now - cached.at < processReadCache.employeeMaxAgeMs &&
+      !(await employeesChangedSince(cached))) {
+    cached.checkedAt = now;
+    return cached.value;
+  }
   const value = await listAllDocs<EmployeeDoc>(COLLECTIONS.employees);
-  if (processReadCache.ttlMs > 0) processReadCache.employees = { at: Date.now(), value };
-  return value.slice();
+  processReadCache.employees = { at: now, checkedAt: now, value, latestUpdate: latestEmployeeUpdate(value) };
+  return value;
+}
+
+export async function fetchAllEmployees(): Promise<EmployeeDoc[]> {
+  if (processReadCache.ttlMs <= 0) return listAllDocs<EmployeeDoc>(COLLECTIONS.employees);
+  // Concurrent callers (e.g. both reconcilers) share one load.
+  processReadCache.employeesLoading ??= loadCachedEmployees().finally(() => {
+    processReadCache.employeesLoading = null;
+  });
+  return (await processReadCache.employeesLoading).slice();
 }
 
 export async function fetchSlimEmployees(): Promise<SlimEmployee[]> {
@@ -626,12 +681,35 @@ export async function fetchMosqueAssistants(): Promise<EmployeeDoc[]> {
   return fromFirestoreDocs<EmployeeDoc>(snap.docs);
 }
 
-export async function fetchAttendanceForDate(date: string): Promise<AttendanceDoc[]> {
-  const snap = await getFirestoreDb()
-    .collection(COLLECTIONS.attendance)
-    .where("date", "==", date)
-    .get();
-  return fromFirestoreDocs<AttendanceDoc>(snap.docs);
+/**
+ * One date's rows, optionally only for some employees so the others' rows
+ * aren't read (uses the employeeId + date index; "in" takes 30 values a query).
+ */
+async function fetchRowsForDate<T extends { $id: string }>(
+  collectionPath: string,
+  date: string,
+  employeeIds?: string[],
+): Promise<T[]> {
+  const collection = getFirestoreDb().collection(collectionPath);
+  if (!employeeIds) {
+    return fromFirestoreDocs<T>((await collection.where("date", "==", date).get()).docs);
+  }
+  const ids = Array.from(new Set(employeeIds.filter(Boolean)));
+  const snaps = await Promise.all(
+    Array.from({ length: Math.ceil(ids.length / 30) }, (_, index) =>
+      collection
+        .where("employeeId", "in", ids.slice(index * 30, index * 30 + 30))
+        .where("date", "==", date)
+        .get()),
+  );
+  return snaps.flatMap((snap) => fromFirestoreDocs<T>(snap.docs));
+}
+
+export async function fetchAttendanceForDate(
+  date: string,
+  employeeIds?: string[],
+): Promise<AttendanceDoc[]> {
+  return fetchRowsForDate<AttendanceDoc>(COLLECTIONS.attendance, date, employeeIds);
 }
 
 export async function fetchAttendanceAfterDate(
@@ -1183,12 +1261,9 @@ export async function syncAttendanceForDate(
 
 export async function fetchMosqueAttendanceForDate(
   date: string,
+  employeeIds?: string[],
 ): Promise<MosqueAttendanceDoc[]> {
-  const snap = await getFirestoreDb()
-    .collection(COLLECTIONS.mosqueAttendance)
-    .where("date", "==", date)
-    .get();
-  return fromFirestoreDocs<MosqueAttendanceDoc>(snap.docs);
+  return fetchRowsForDate<MosqueAttendanceDoc>(COLLECTIONS.mosqueAttendance, date, employeeIds);
 }
 
 export async function createMosqueAttendanceForEmployees(

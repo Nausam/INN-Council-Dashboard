@@ -5,8 +5,8 @@ dotenv.config({ path: ".env.local", override: true });
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Write the ZK heartbeat at least this often while nothing changes. */
-const ZK_HEARTBEAT_MS = 2 * 60_000;
+/** Write the ZK heartbeat at least this often while nothing changes (the admin panel allows 12 min). */
+const ZK_HEARTBEAT_MS = 5 * 60_000;
 /** Polls only reconcile changed days, so today is repaired this often anyway. */
 const TODAY_REPAIR_MS = 60 * 60_000;
 /** ...and the two days before today this often. */
@@ -63,7 +63,8 @@ async function main() {
   const zkConfig = getRequiredZkConfig();
   process.env.TZ = zkConfig.timezone;
   // Every poll needs the employee list and holidays; edits reach the worker within 5 minutes.
-  enableProcessReadCache(5 * 60_000);
+  // The employee list is only re-read when a cheap change check finds an edit (or hourly).
+  enableProcessReadCache(5 * 60_000, { employeeMaxAgeMs: 60 * 60_000 });
 
   let stopping = false;
   process.on("SIGINT", () => {

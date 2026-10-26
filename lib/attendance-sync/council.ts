@@ -138,14 +138,21 @@ export async function reconcileCouncilAttendanceDate(
 ): Promise<CouncilReconcileResult> {
   assertIsoDate(date);
   const preview = options.preview ?? !isAttendanceSyncAutoWriteEnabled();
-  const [employees, initialRows] = await Promise.all([fetchAllEmployees(), fetchAttendanceForDate(date)]);
+  const onlyIds = options.employeeIds?.length ? new Set(options.employeeIds) : null;
+  // Targeted runs read only those employees' rows.
+  const rowFilter = onlyIds ? Array.from(onlyIds) : undefined;
+  const [employees, initialRows] = await Promise.all([
+    fetchAllEmployees(),
+    fetchAttendanceForDate(date, rowFilter),
+  ]);
   let rows = initialRows;
   // Today's sheet is created at midnight; only fill it in again if someone is missing a row.
   if (options.ensureToday && date === todayMaldivesIso()) {
     const withRows = new Set(rows.map((row) => row.employeeId));
-    if (listCouncilEmployees(employees).some((employee) => !withRows.has(employee.$id))) {
+    if (listCouncilEmployees(employees).some((employee) =>
+      (!onlyIds || onlyIds.has(employee.$id)) && !withRows.has(employee.$id))) {
       const ensured = await ensureCouncilAttendanceSheets(date, { preview });
-      if (ensured.created > 0) rows = await fetchAttendanceForDate(date);
+      if (ensured.created > 0) rows = await fetchAttendanceForDate(date, rowFilter);
     }
   }
   const councilIds = new Set(listCouncilEmployees(employees).map((employee) => employee.$id));
@@ -162,7 +169,6 @@ export async function reconcileCouncilAttendanceDate(
     }
   }
   const groups = new Map<string, AttendanceDoc[]>();
-  const onlyIds = options.employeeIds?.length ? new Set(options.employeeIds) : null;
   for (const row of rows) {
     if (!entryById.has(row.employeeId)) continue;
     if (onlyIds && !onlyIds.has(row.employeeId)) continue;

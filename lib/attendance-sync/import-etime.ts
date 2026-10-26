@@ -10,25 +10,49 @@ import {
   type SyncEligibleEmployee,
 } from "@/lib/attendance-sync/employee-sync";
 import {
+  canonicalDocId,
   listEligiblePunchesBySourceDate,
   voidPunch,
   writeCanonicalPunchIfNew,
 } from "@/lib/attendance-sync/punch-store";
-import { reconcileMosqueAttendanceDate } from "@/lib/attendance-sync/reconcile";
-import { reconcileCouncilAttendanceDate } from "@/lib/attendance-sync/council";
+import { markAffected, reconcileAffected, type AffectedAttendance } from "@/lib/attendance-sync/affected";
 import { isAttendanceSyncAutoWriteEnabled } from "@/lib/attendance-sync/runtime";
-import { assertIsoDate, utcToMaldivesParts } from "@/lib/attendance-sync/time";
+import {
+  addDaysIso,
+  assertIsoDate,
+  enumerateIsoDates,
+  todayMaldivesIso,
+  utcToMaldivesParts,
+} from "@/lib/attendance-sync/time";
 import type { AttendancePunchDoc, ImportResult } from "@/lib/attendance-sync/types";
 import { ETIME_MAX_DAYS, MALDIVES_TIMEZONE } from "@/lib/attendance-sync/types";
 
 const STATUS_DOC_ID = "etime-portal";
 /** Status doc heartbeat while polls find nothing new; the admin panel calls eTime stale after 15 min. */
-const QUIET_STATUS_INTERVAL_MS = 5 * 60_000;
+const QUIET_STATUS_INTERVAL_MS = 10 * 60_000;
 
 // Incremental (worker) polls remember each date's last snapshot so an unchanged
 // eTime page costs no Firestore reads or writes.
 const lastSnapshotHashByDate = new Map<string, string>();
+// ...and the punches already stored for each date (doc id -> stored state), so
+// a changed page re-reads only its new or changed rows, not every punch that day.
+const knownPunchesByDate = new Map<string, Map<string, string>>();
 let lastStatusWriteAt = 0;
+
+function punchStateKey(punch: AttendancePunchDoc): string {
+  return `${punch.employeeId ?? ""}|${punch.eligible}|${punch.ignoredReason ?? ""}`;
+}
+
+/** Keeps the remembered snapshots to the days the worker still polls. */
+function forgetOldSnapshots(): void {
+  const oldest = addDaysIso(todayMaldivesIso(), -3);
+  for (const date of Array.from(lastSnapshotHashByDate.keys())) {
+    if (date < oldest) lastSnapshotHashByDate.delete(date);
+  }
+  for (const date of Array.from(knownPunchesByDate.keys())) {
+    if (date < oldest) knownPunchesByDate.delete(date);
+  }
+}
 
 function snapshotHash(
   rows: Array<{ employeeCode: string; departmentId: string; timestampUtc?: string | null; sourceRecordId?: string | null; ignored?: boolean; ignoredReason?: string | null }>,
@@ -126,9 +150,6 @@ export async function importEtimePunches(options: {
   const to = options.to ?? options.from;
   assertIsoDate(to);
 
-  const { enumerateIsoDates, addDaysIso, todayMaldivesIso } = await import(
-    "@/lib/attendance-sync/time"
-  );
   const dates = enumerateIsoDates(options.from, to);
   const oldestAllowed = addDaysIso(todayMaldivesIso(), -ETIME_MAX_DAYS);
   if (options.from < oldestAllowed) {
@@ -144,7 +165,7 @@ export async function importEtimePunches(options: {
   let skipped = 0;
   let unmatched = 0;
   let voided = 0;
-  const affectedDates = new Set<string>();
+  const affected: AffectedAttendance = new Map();
   const parserErrors: string[] = [];
 
   const importStartedAt = new Date().toISOString();
@@ -157,6 +178,7 @@ export async function importEtimePunches(options: {
   }
   let changedAnything = false;
   const completedHashes = new Map<string, string>();
+  const completedPunches = new Map<string, Map<string, string>>();
 
   try {
     for (const date of dates) {
@@ -173,6 +195,8 @@ export async function importEtimePunches(options: {
       if (incremental && lastSnapshotHashByDate.get(date) === hash) continue;
 
       const seenDocIds = new Set<string>();
+      const known = incremental ? knownPunchesByDate.get(date) : undefined;
+      const storedPunches = new Map<string, string>();
       const now = new Date().toISOString();
 
       for (const row of snapshot.rows) {
@@ -202,15 +226,27 @@ export async function importEtimePunches(options: {
           dedupeKey,
         };
 
+        const docId = canonicalDocId("etime", dedupeKey);
+        const stateKey = punchStateKey(punch);
+        storedPunches.set(docId, stateKey);
+        if (known?.get(docId) === stateKey) {
+          // Stored by an earlier poll and unchanged since: no read or write.
+          seenDocIds.add(docId);
+          skipped += 1;
+          continue;
+        }
+
         const result = await writeCanonicalPunchIfNew(punch);
         seenDocIds.add(result.docId);
         if (result.changed) changedAnything = true;
         if (incremental) {
           // The worker repairs unchanged days on its own hourly pass.
-          if (result.changed) affectedDates.add(localDate);
+          if (result.changed) {
+            markAffected(affected, localDate, [result.punch.employeeId, result.previousEmployeeId]);
+          }
         } else if (matched && punch.eligible) {
           // A repeated import must also repair attendance from existing punches.
-          affectedDates.add(localDate);
+          markAffected(affected, localDate, "all");
         }
         if (result.written) {
           written += 1;
@@ -226,9 +262,12 @@ export async function importEtimePunches(options: {
         await voidPunch(doc.$id, now);
         voided += 1;
         changedAnything = true;
-        if (doc.employeeId) affectedDates.add(date);
+        markAffected(affected, date, [doc.employeeId]);
       }
-      if (incremental) completedHashes.set(date, hash);
+      if (incremental) {
+        completedHashes.set(date, hash);
+        completedPunches.set(date, storedPunches);
+      }
     }
 
     const quiet = incremental && !changedAnything && parserErrors.length === 0 &&
@@ -255,13 +294,12 @@ export async function importEtimePunches(options: {
   }
 
   if (options.reconcile !== false && isAttendanceSyncAutoWriteEnabled()) {
-    for (const date of Array.from(affectedDates)) {
-      await reconcileMosqueAttendanceDate(date, undefined, { preview: false });
-      await reconcileCouncilAttendanceDate(date, { preview: false, ensureToday: true });
-    }
+    await reconcileAffected(affected);
   }
   // Remembered only once the punches are stored and reconciled, so a failed poll retries.
   for (const [date, hash] of completedHashes) lastSnapshotHashByDate.set(date, hash);
+  for (const [date, punches] of completedPunches) knownPunchesByDate.set(date, punches);
+  if (incremental) forgetOldSnapshots();
 
   return {
     scanned,
@@ -270,7 +308,7 @@ export async function importEtimePunches(options: {
     skipped,
     unmatched,
     voided,
-    affectedDates: Array.from(affectedDates).sort(),
+    affectedDates: Array.from(affected.keys()).sort(),
     from: options.from,
     to,
   };

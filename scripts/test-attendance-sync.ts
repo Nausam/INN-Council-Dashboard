@@ -16,6 +16,7 @@ import { canAutomateCouncilRow, isCouncilPunchFromEnabledSource, selectCouncilFi
 import type { EmployeeDoc } from "../lib/firebase/types";
 import type { AttendancePunchDoc } from "../lib/attendance-sync/types";
 import { coercePunchTimestampUtc } from "../lib/attendance-sync/punch-store";
+import { markAffected, type AffectedAttendance } from "../lib/attendance-sync/affected";
 
 function testMaldivesConversion() {
   const parts = utcToMaldivesParts("2026-06-15T18:30:00.000Z");
@@ -133,6 +134,18 @@ function testStoredPunchTimestamps() {
   assert.equal(coercePunchTimestampUtc({ invalid: true }), null);
 }
 
+function testAffectedEmployees() {
+  const affected: AffectedAttendance = new Map();
+  markAffected(affected, "2026-10-26", [null, undefined]);
+  assert.equal(affected.has("2026-10-26"), false);
+  markAffected(affected, "2026-10-26", ["a", null]);
+  markAffected(affected, "2026-10-26", ["b", "a"]);
+  assert.deepEqual(Array.from(affected.get("2026-10-26") ?? []), ["a", "b"]);
+  markAffected(affected, "2026-10-26", "all");
+  markAffected(affected, "2026-10-26", ["c"]);
+  assert.equal(affected.get("2026-10-26"), null);
+}
+
 function run() {
   assert.equal(mosqueRecoveryStartDate("2026-09-21"), "2026-08-01");
   assert.equal(mosqueRecoveryStartDate("2027-01-01"), "2026-12-01");
@@ -145,6 +158,7 @@ function run() {
   testEtimeParser();
   testCouncilMachineAttendance();
   testStoredPunchTimestamps();
+  testAffectedEmployees();
   console.log("attendance-sync tests passed");
 }
 

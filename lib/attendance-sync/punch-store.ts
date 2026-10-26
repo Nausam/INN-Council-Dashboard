@@ -8,6 +8,8 @@ export type PunchWriteResult = {
   written: boolean;
   /** True when a new punch was stored or an existing one's matching/void state changed. */
   changed: boolean;
+  /** The employee the stored punch belonged to before this write, if any. */
+  previousEmployeeId: string | null;
   punch: AttendancePunchDoc;
   docId: string;
 };
@@ -17,7 +19,7 @@ export type PunchLookupOptions = {
   etimeCode?: string | null;
 };
 
-function canonicalDocId(source: AttendancePunchSource, dedupeKey: string): string {
+export function canonicalDocId(source: AttendancePunchSource, dedupeKey: string): string {
   return `${source}_${dedupeKey}`;
 }
 
@@ -161,6 +163,7 @@ export async function writeCanonicalPunchIfNew(
     return {
       written: false,
       changed,
+      previousEmployeeId: current.employeeId ?? null,
       punch: { ...punch, ...current, ...next } as AttendancePunchDoc,
       docId,
     };
@@ -176,7 +179,7 @@ export async function writeCanonicalPunchIfNew(
   };
 
   await ref.set(payload);
-  return { written: true, changed: true, punch: payload, docId };
+  return { written: true, changed: true, previousEmployeeId: null, punch: payload, docId };
 }
 
 export async function voidPunch(docId: string, voidedAt: string): Promise<void> {

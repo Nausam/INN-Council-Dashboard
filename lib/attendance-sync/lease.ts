@@ -4,7 +4,8 @@ import { COLLECTIONS, getFirestoreDb } from "@/lib/firebase/admin";
 import { getWorkerInstanceId } from "@/lib/attendance-sync/runtime";
 
 const LEASE_DOC_ID = "attendance-sync-worker";
-const LEASE_TTL_MS = 5 * 60_000;
+/** Two missed renewals before another PC may take over (a same-PC restart takes over at once). */
+const LEASE_TTL_MS = 12 * 60_000;
 
 export type WorkerLease = {
   ownerId: string;
@@ -101,4 +102,4 @@ export async function getWorkerLease(): Promise<WorkerLease | null> {
   return snap.data() as WorkerLease;
 }
 
-export const WORKER_LEASE_RENEW_MS = 2 * 60_000;
+export const WORKER_LEASE_RENEW_MS = 5 * 60_000;

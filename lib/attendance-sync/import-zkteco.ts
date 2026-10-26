@@ -6,8 +6,7 @@ import {
   type SyncEligibleEmployee,
 } from "@/lib/attendance-sync/employee-sync";
 import { writeCanonicalPunchIfNew } from "@/lib/attendance-sync/punch-store";
-import { reconcileMosqueAttendanceDate } from "@/lib/attendance-sync/reconcile";
-import { reconcileCouncilAttendanceDate } from "@/lib/attendance-sync/council";
+import { markAffected, reconcileAffected, type AffectedAttendance } from "@/lib/attendance-sync/affected";
 import {
   isAttendanceSyncAutoWriteEnabled,
 } from "@/lib/attendance-sync/runtime";
@@ -99,7 +98,7 @@ export async function importZktecoPunches(options: {
   let written = 0;
   let skipped = 0;
   let unmatched = 0;
-  const affectedDates = new Set<string>();
+  const affected: AffectedAttendance = new Map();
   const preparedPunches: Array<{ punch: AttendancePunchDoc; matchedDate: string | null }> = [];
 
   for (const record of options.records) {
@@ -167,7 +166,13 @@ export async function importZktecoPunches(options: {
       }
       const result = await writeCanonicalPunchIfNew(punch);
       options.knownPunchKeys?.add(knownKey);
-      if (matchedDate && (!options.incremental || result.changed)) affectedDates.add(matchedDate);
+      if (!options.incremental) {
+        // A one-off import also repairs the whole day from existing punches.
+        if (matchedDate) markAffected(affected, matchedDate, "all");
+      } else if (result.changed) {
+        // Includes the punch's previous employee when its mapping moved.
+        markAffected(affected, punch.localDate, [punch.employeeId, result.previousEmployeeId]);
+      }
       if (result.written) written += 1;
       else skipped += 1;
     }
@@ -183,10 +188,7 @@ export async function importZktecoPunches(options: {
   }
 
   if (options.reconcile !== false && isAttendanceSyncAutoWriteEnabled()) {
-    for (const date of Array.from(affectedDates)) {
-      await reconcileMosqueAttendanceDate(date, undefined, { preview: false });
-      await reconcileCouncilAttendanceDate(date, { preview: false, ensureToday: true });
-    }
+    await reconcileAffected(affected);
   }
 
   return {
@@ -195,7 +197,7 @@ export async function importZktecoPunches(options: {
     written,
     skipped,
     unmatched,
-    affectedDates: Array.from(affectedDates).sort(),
+    affectedDates: Array.from(affected.keys()).sort(),
     from: options.from,
     to: options.to,
   };

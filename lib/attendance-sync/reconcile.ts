@@ -66,19 +66,20 @@ export async function reconcileMosqueAttendanceDate(
   assertIsoDate(date);
   const preview = options.preview ?? !isAttendanceSyncAutoWriteEnabled();
 
+  const onlyIds = employeeIds && employeeIds.length > 0 ? employeeIds : undefined;
   const [employees, rows, prayerTimes, previousIsha] = await Promise.all([
     fetchAllEmployees(),
-    fetchMosqueAttendanceForDate(date),
+    // Targeted runs read only those employees' rows.
+    fetchMosqueAttendanceForDate(date, onlyIds),
     resolvePrayerTimesForDate(date),
     resolvePreviousDayIshaTime(date),
   ]);
 
   const eligible = listSyncEligibleEmployees(employees, date);
   const eligibleIds = new Set(eligible.map((entry) => entry.employee.$id));
-  const targetIds =
-    employeeIds && employeeIds.length > 0
-      ? employeeIds.filter((id) => eligibleIds.has(id))
-      : Array.from(eligibleIds);
+  const targetIds = onlyIds
+    ? onlyIds.filter((id) => eligibleIds.has(id))
+    : Array.from(eligibleIds);
 
   const rowsByEmployee = new Map<string, MosqueAttendanceDoc>();
   for (const row of rows) {
