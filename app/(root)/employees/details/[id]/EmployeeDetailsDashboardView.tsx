@@ -36,6 +36,7 @@ import { LAST_EMPLOYEE_PROFILE_KEY, isStandaloneApp } from "@/lib/employee-profi
 import { rememberEmployeeProfile, wasServedFromDeviceCache } from "@/lib/employee-profile-cache";
 import { employeePhotoUrl } from "@/lib/employees/photo";
 import { AvatarPhoto } from "@/components/design-system/avatar-photo";
+import { EmployeeNotificationsButton } from "@/components/employee-portal/EmployeeNotificationsButton";
 import {
   AlarmClock,
   ArrowLeft,
@@ -85,6 +86,9 @@ const EmployeeRequestsPageView = dynamic(loadRequestsView, { loading: () => <Det
 const EmployeeEditModal = dynamic(
   () => import("@/components/Modals/EmployeeEditModal").then((mod) => mod.EmployeeEditModal),
 );
+const LeaveReminderButton = dynamic(
+  () => import("@/components/employee-portal/LeaveReminder").then((mod) => mod.LeaveReminderButton),
+);
 
 const tabs: Array<{ id: TabId; label: string; icon: LucideIcon }> = [
   { id: "overview", label: "Overview", icon: LayoutGrid },
@@ -127,6 +131,7 @@ export function EmployeeDetailsDashboardView({
   recentCouncilAttendance = [],
   recentMosqueAttendance = [],
   initialTab = "overview",
+  viewerIsEmployee = false,
 }: {
   employee: EmployeeDoc | null;
   leaves?: EmployeeLeaveCalendarEntry[];
@@ -136,6 +141,8 @@ export function EmployeeDetailsDashboardView({
   recentCouncilAttendance?: AttendanceDoc[];
   recentMosqueAttendance?: MosqueAttendanceDoc[];
   initialTab?: TabId;
+  /** Signed in to Employee Profile as this employee, not HR. */
+  viewerIsEmployee?: boolean;
 }) {
   const params = useParams();
   const router = useRouter();
@@ -237,6 +244,13 @@ export function EmployeeDetailsDashboardView({
     return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
   }, [leaves]);
 
+  // HR's reminder suggests the latest day they were absent.
+  const reminderDate = useMemo(() => {
+    const todayIso = maldivesTodayIso();
+    const absent = lastWeekDays.filter((day) => day.status === "absent" && day.date <= todayIso);
+    return absent.length ? absent[absent.length - 1].date : todayIso;
+  }, [lastWeekDays]);
+
   const loading = isPending || leavesPending || councilPending || mosquePending;
 
   if (isPending && !employee) {
@@ -287,9 +301,19 @@ export function EmployeeDetailsDashboardView({
         className={styles.wrap}
         actions={
           isAdmin ? (
-            <EmployeePortalHeaderButton label="Edit profile" onClick={() => setEditOpen(true)}>
-              <Edit3 />
-            </EmployeePortalHeaderButton>
+            <>
+              <LeaveReminderButton
+                employeeId={id}
+                employeeName={employee.name}
+                defaultDate={reminderDate}
+                maxDate={maldivesTodayIso()}
+              />
+              <EmployeePortalHeaderButton label="Edit profile" onClick={() => setEditOpen(true)}>
+                <Edit3 />
+              </EmployeePortalHeaderButton>
+            </>
+          ) : viewerIsEmployee ? (
+            <EmployeeNotificationsButton employeeId={id} />
           ) : null
         }
       />

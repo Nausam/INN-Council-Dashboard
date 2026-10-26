@@ -49,6 +49,43 @@ self.addEventListener("message", (event) => {
   }
 });
 
+// HR reminders (lib/actions/employee-push.actions.ts sends them).
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { body: event.data ? event.data.text() : "" };
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title || "Employee Profile", {
+      body: data.body || "",
+      icon: "/pwa/icon-v2-192.png",
+      badge: "/pwa/icon-v2-192.png",
+      tag: data.tag,
+      data: { url: data.url || PROFILE_HOME },
+    }),
+  );
+});
+
+// Opens the page the reminder points to, in the app if it is already open.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = new URL((event.notification.data && event.notification.data.url) || PROFILE_HOME, self.location.origin);
+  if (target.origin !== self.location.origin) return;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (windows) => {
+      const open = windows.find((client) => new URL(client.url).pathname.startsWith(PROFILE_HOME));
+      if (open) {
+        await open.focus();
+        // navigate() only works on pages this worker controls.
+        return open.navigate(target.href).catch(() => self.clients.openWindow(target.href));
+      }
+      return self.clients.openWindow(target.href);
+    }),
+  );
+});
+
 async function profileOwnerId() {
   try {
     const owner = await (await caches.open(PROFILE_CACHE)).match(PROFILE_OWNER_KEY);

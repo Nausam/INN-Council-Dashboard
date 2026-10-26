@@ -69,6 +69,7 @@ export function getFirestoreDb(): Firestore {
 export const COLLECTIONS = {
   employees: "employees",
   employeeProfileAuth: "employee_profile_auth",
+  employeePushSubscriptions: "employee_push_subscriptions",
   salarySlips: "salary_slips",
   salaryPeriodConfig: "salary_period_config",
   holidayCalendar: "holiday_calendar",

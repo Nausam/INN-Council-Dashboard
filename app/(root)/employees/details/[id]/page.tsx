@@ -9,7 +9,7 @@ import {
   monthDateBounds,
 } from "@/lib/firebase/hr";
 import type { EmployeeDoc } from "@/lib/firebase/types";
-import { requireEmployeeProfileAccess } from "@/lib/auth/employee-profile-session";
+import { getEmployeeProfileSessionId, requireEmployeeProfileAccess } from "@/lib/auth/employee-profile-session";
 import { monthFromSearchParam } from "@/lib/dates/page-params";
 import { lastWeekStartIso, maldivesTodayIso } from "@/lib/employees/details-dashboard";
 import { employeePhotoUrl } from "@/lib/employees/photo";
@@ -44,12 +44,21 @@ async function DashboardWithRecords({
   employee,
   records,
   initialTab,
+  viewerIsEmployee,
 }: {
   employee: EmployeeDoc;
   records: ReturnType<typeof loadDashboardRecords>;
   initialTab: TabId;
+  viewerIsEmployee: boolean;
 }) {
-  return <EmployeeDetailsDashboardView employee={employee} {...await records} initialTab={initialTab} />;
+  return (
+    <EmployeeDetailsDashboardView
+      employee={employee}
+      {...await records}
+      initialTab={initialTab}
+      viewerIsEmployee={viewerIsEmployee}
+    />
+  );
 }
 
 export default async function EmployeeDetailsDashboardPage({
@@ -89,7 +98,12 @@ export default async function EmployeeDetailsDashboardPage({
         />
       }
     >
-      <DashboardWithRecords employee={employee} records={records} initialTab={initialTab} />
+      <DashboardWithRecords
+        employee={employee}
+        records={records}
+        initialTab={initialTab}
+        viewerIsEmployee={getEmployeeProfileSessionId() === params.id}
+      />
     </Suspense>
   );
 }

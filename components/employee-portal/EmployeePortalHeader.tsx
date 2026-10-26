@@ -3,6 +3,7 @@
 import { forgetEmployeeProfileIdentity } from "@/lib/actions/employee-profile.actions";
 import { LAST_EMPLOYEE_PROFILE_KEY } from "@/lib/employee-profile-pwa";
 import { forgetEmployeeProfileDevice } from "@/lib/employee-profile-cache";
+import { disableEmployeePush } from "@/lib/employee-push";
 import { cn } from "@/lib/utils";
 import { Loader2, LogOut } from "lucide-react";
 import Image from "next/image";
@@ -30,6 +31,8 @@ export function EmployeePortalHeader({
   const logout = async () => {
     setLoggingOut(true);
     try {
+      // So the next person on this phone doesn't get this employee's reminders.
+      await disableEmployeePush();
       await forgetEmployeeProfileIdentity();
     } finally {
       try {
