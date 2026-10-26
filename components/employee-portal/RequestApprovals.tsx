@@ -10,7 +10,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { REQUEST_VISUALS } from "@/lib/employees/request-visuals";
 import { cn } from "@/lib/utils";
-import { Bell, BellRing, Check, Loader2, RefreshCw, X } from "lucide-react";
+import { Check, ClipboardCheck, ClipboardList, Loader2, RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import headerStyles from "./EmployeePortalHeader.module.css";
 import motifs from "./portal-motifs.module.css";
@@ -46,8 +46,9 @@ function localDate(value?: string): Date | null {
 }
 
 /**
- * Bell in the Employee Profile header for the leave supervisors and other
- * approvers. Everyone else gets nothing: the count comes back null for them.
+ * Approvals button in the Employee Profile header for the leave supervisors
+ * and other approvers. Everyone else gets nothing: the count comes back null
+ * for them.
  */
 export function RequestApprovalsButton() {
   const [count, setCountState] = useState<number | null>(() => cachedCount?.value ?? null);
@@ -76,7 +77,7 @@ export function RequestApprovalsButton() {
         className={cn(headerStyles.actionButton, styles.bell)}
         aria-label={count > 0 ? `Approvals, ${count} waiting` : "Approvals"}
       >
-        {count > 0 ? <BellRing /> : <Bell />}
+        {count > 0 ? <ClipboardList /> : <ClipboardCheck />}
         <span>Approvals</span>
         {count > 0 ? <b className={styles.badge} aria-hidden="true">{count > 9 ? "9+" : count}</b> : null}
       </button>
@@ -120,7 +121,7 @@ function ApprovalInboxDialog({
       <DialogContent className={styles.dialog} overlayClassName="bg-black/40">
         <DialogHeader className={styles.header}>
           <span className={cn(motifs.glossIcon, styles.headIcon)} data-tone="annual" aria-hidden="true">
-            <BellRing />
+            <ClipboardCheck />
           </span>
           <div className={styles.headText}>
             <DialogTitle className={styles.title}>Approvals</DialogTitle>
