@@ -39,8 +39,9 @@ export function computeCouncilMinutesLate(
 ): number {
   const requiredTime = mvLocalToUtcDate(date, REQUIRED_SIGN_IN_TIME);
   const actual = new Date(signInTime);
+  // Punches keep their seconds; only whole minutes count, so 08:30:59 is on time.
   return Math.max(
     0,
-    Math.round((actual.getTime() - requiredTime.getTime()) / 60000),
+    Math.floor((actual.getTime() - requiredTime.getTime()) / 60000),
   );
 }

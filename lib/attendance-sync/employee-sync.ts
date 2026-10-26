@@ -34,6 +34,8 @@ export const BOOTSTRAP_SYNC_BY_NAME: Record<
   },
   "Hawwa Luiza": {
     zkteco: { enabled: true, userId: "35" },
+    // Moved to the eTime machine from 30 Sep 2026; its export carries no department.
+    etime: { enabled: true, employeeCode: "0009", departmentId: "" },
   },
 };
 
