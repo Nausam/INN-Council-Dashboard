@@ -9,25 +9,14 @@ import {
 } from "@/lib/actions/employee-push.actions";
 import { leaveReminderMessage } from "@/lib/employees/leave-reminder";
 import { cn } from "@/lib/utils";
-import { BellRing, Loader2, Send, Smartphone } from "lucide-react";
+import { BellRing, CalendarCheck, Loader2, Send, Smartphone } from "lucide-react";
 import { useEffect, useState } from "react";
 import headerStyles from "./EmployeePortalHeader.module.css";
 import motifs from "./portal-motifs.module.css";
 import styles from "./LeaveReminder.module.css";
 
-/** HR's header button: ask the employee, on their phone, to submit a leave form. */
-export function LeaveReminderButton({
-  employeeId,
-  employeeName,
-  defaultDate,
-  maxDate,
-}: {
-  employeeId: string;
-  employeeName: string;
-  /** The day to suggest, such as their latest absence. */
-  defaultDate: string;
-  maxDate: string;
-}) {
+/** HR's header button: ask the employee, on their phone, to submit their missing leave forms. */
+export function LeaveReminderButton({ employeeId, employeeName }: { employeeId: string; employeeName: string }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -35,39 +24,37 @@ export function LeaveReminderButton({
         type="button"
         onClick={() => setOpen(true)}
         className={headerStyles.actionButton}
-        aria-label="Remind to submit leave form"
+        aria-label="Remind to submit leave forms"
       >
         <BellRing />
         <span>Remind</span>
       </button>
       {open ? (
-        <LeaveReminderDialog
-          employeeId={employeeId}
-          employeeName={employeeName}
-          defaultDate={defaultDate}
-          maxDate={maxDate}
-          onClose={() => setOpen(false)}
-        />
+        <LeaveReminderDialog employeeId={employeeId} employeeName={employeeName} onClose={() => setOpen(false)} />
       ) : null}
     </>
   );
 }
 
+function dayParts(iso: string) {
+  const date = new Date(`${iso}T00:00:00Z`);
+  return {
+    weekday: date.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }),
+    day: date.getUTCDate(),
+    month: date.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" }),
+  };
+}
+
 function LeaveReminderDialog({
   employeeId,
   employeeName,
-  defaultDate,
-  maxDate,
   onClose,
 }: {
   employeeId: string;
   employeeName: string;
-  defaultDate: string;
-  maxDate: string;
   onClose: () => void;
 }) {
   const { toast } = useToast();
-  const [date, setDate] = useState(defaultDate);
   const [status, setStatus] = useState<LeaveReminderStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -77,20 +64,23 @@ function LeaveReminderDialog({
     let active = true;
     getLeaveReminderStatus(employeeId)
       .then((value) => { if (active) setStatus(value); })
-      .catch(() => { if (active) setError("Couldn't check their phone. Try again."); });
+      .catch(() => { if (active) setError("Couldn't load their missing forms. Try again."); });
     return () => { active = false; };
   }, [employeeId]);
 
-  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date);
-  const message = validDate ? leaveReminderMessage(date) : null;
-  const day = validDate ? new Date(`${date}T00:00:00Z`) : null;
-  const canSend = Boolean(status?.configured && status.devices > 0 && validDate && !sending);
+  const dates = status?.dates ?? [];
+  const message = dates.length ? leaveReminderMessage(dates) : null;
+  const canSend = Boolean(status?.configured && status.devices > 0 && dates.length) && !sending;
 
   const send = async () => {
     setSending(true);
     setError(null);
     try {
-      const result = await sendLeaveFormReminder(employeeId, date);
+      const result = await sendLeaveFormReminder(employeeId);
+      if (result.blockedReason) {
+        setError(result.blockedReason);
+        return;
+      }
       if (result.sent > 0) {
         toast({ title: "Reminder sent", description: `${employeeName} will get it on their phone.` });
         onClose();
@@ -98,8 +88,8 @@ function LeaveReminderDialog({
       }
       setStatus((current) => (current ? { ...current, devices: 0 } : current));
       setError(`${firstName}'s phone has stopped accepting notifications. Ask them to turn alerts on again.`);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Couldn't send the reminder.");
+    } catch {
+      setError("Couldn't send the reminder. Check your connection and try again.");
     } finally {
       setSending(false);
     }
@@ -107,12 +97,7 @@ function LeaveReminderDialog({
 
   return (
     <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
-      <DialogContent
-        className={styles.dialog}
-        overlayClassName="bg-black/40"
-        // Focusing the date field first would pop up the date picker on phones.
-        onOpenAutoFocus={(event) => event.preventDefault()}
-      >
+      <DialogContent className={styles.dialog} overlayClassName="bg-black/40">
         <DialogHeader className={styles.header}>
           <span className={cn(motifs.glossIcon, styles.headIcon)} data-tone="leave" aria-hidden="true">
             <BellRing />
@@ -125,26 +110,31 @@ function LeaveReminderDialog({
           </div>
         </DialogHeader>
 
-        <label className={styles.dateRow}>
-          <div className={cn(motifs.calendarPage, styles.datePage)} data-tone="leave" aria-hidden="true">
-            <span className={motifs.calendarPageTop}>
-              {day ? day.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }) : "—"}
-            </span>
-            <strong>{day ? day.getUTCDate() : "?"}</strong>
-            <small>{day ? day.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" }) : ""}</small>
-          </div>
-          <span className={styles.dateText}>
-            <span>Day of the leave</span>
-            <input
-              type="date"
-              value={date}
-              max={maxDate}
-              onChange={(event) => setDate(event.target.value)}
-              className={styles.dateInput}
-              required
-            />
+        <section className={styles.days} aria-label="Missing leave forms">
+          <span className={styles.daysLabel}>
+            Missing leave forms <small>Last 30 days</small>
           </span>
-        </label>
+          {!status ? (
+            <span className={styles.daysEmpty}>{error ? "—" : "Checking attendance…"}</span>
+          ) : dates.length ? (
+            <div className={styles.dayPages}>
+              {dates.map((date) => {
+                const parts = dayParts(date);
+                return (
+                  <span key={date} className={cn(motifs.calendarPage, styles.dayPage)} data-tone="late" title={date}>
+                    <span className={motifs.calendarPageTop}>{parts.weekday}</span>
+                    <strong>{parts.day}</strong>
+                    <small>{parts.month}</small>
+                  </span>
+                );
+              })}
+            </div>
+          ) : (
+            <span className={styles.daysEmpty}>
+              <CalendarCheck aria-hidden="true" /> None. Every absence has leave recorded or requested.
+            </span>
+          )}
+        </section>
 
         {message ? (
           <div className={styles.preview} aria-label="Notification preview">
@@ -167,9 +157,11 @@ function LeaveReminderDialog({
                 ? "Checking their phone…"
                 : !status.configured
                   ? "Notifications aren't set up on the server yet."
-                  : status.devices === 0
-                    ? `${firstName} hasn't turned on alerts yet. Ask them to open Employee Profile and tap Turn on alerts. On iPhone, the app must be added to the Home Screen first.`
-                    : `Goes to ${status.devices === 1 ? "their phone" : `${status.devices} phones`}.`)}
+                  : !dates.length
+                    ? "Nothing to remind them about."
+                    : status.devices === 0
+                      ? `${firstName} hasn't turned on alerts yet. Ask them to open Employee Profile and tap Turn on alerts. On iPhone, the app must be added to the Home Screen first.`
+                      : `One notification listing ${dates.length === 1 ? "this day" : `all ${dates.length} days`} goes to ${status.devices === 1 ? "their phone" : `${status.devices} phones`}.`)}
           </span>
         </p>
 
@@ -188,5 +180,5 @@ function LeaveReminderDialog({
 function statusState(status: LeaveReminderStatus | null, error: string | null): string {
   if (error) return "error";
   if (!status) return "loading";
-  return status.configured && status.devices > 0 ? "ready" : "off";
+  return status.configured && status.devices > 0 && status.dates.length ? "ready" : "off";
 }

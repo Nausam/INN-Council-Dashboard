@@ -244,13 +244,6 @@ export function EmployeeDetailsDashboardView({
     return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
   }, [leaves]);
 
-  // HR's reminder suggests the latest day they were absent.
-  const reminderDate = useMemo(() => {
-    const todayIso = maldivesTodayIso();
-    const absent = lastWeekDays.filter((day) => day.status === "absent" && day.date <= todayIso);
-    return absent.length ? absent[absent.length - 1].date : todayIso;
-  }, [lastWeekDays]);
-
   const loading = isPending || leavesPending || councilPending || mosquePending;
 
   if (isPending && !employee) {
@@ -302,12 +295,7 @@ export function EmployeeDetailsDashboardView({
         actions={
           isAdmin ? (
             <>
-              <LeaveReminderButton
-                employeeId={id}
-                employeeName={employee.name}
-                defaultDate={reminderDate}
-                maxDate={maldivesTodayIso()}
-              />
+              <LeaveReminderButton employeeId={id} employeeName={employee.name} />
               <EmployeePortalHeaderButton label="Edit profile" onClick={() => setEditOpen(true)}>
                 <Edit3 />
               </EmployeePortalHeaderButton>

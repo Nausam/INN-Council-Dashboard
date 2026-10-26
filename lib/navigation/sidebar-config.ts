@@ -79,6 +79,7 @@ export const councilSidebarNav: SidebarNavItem[] = [
     items: [
       { title: "Leave", url: "/requests/leave", adminOnly: true },
       { title: "Annual leave", url: "/requests/annual-leave", adminOnly: true },
+      { title: "Missing leave forms", url: "/requests/missing-forms", adminOnly: true },
       { title: "Overtime", url: "/requests/overtime" },
     ],
   },
