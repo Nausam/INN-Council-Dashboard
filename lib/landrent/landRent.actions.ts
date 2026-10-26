@@ -1660,9 +1660,17 @@ export const recalculateLandStatementFines = async (params: {
     amount: Number((p as any).amount ?? 0),
   }));
 
+  // An unpaid statement carries on into later months, so recalculating brings
+  // its rent and fine up to the current month (unless capped at the lease end).
+  const currentMonthKey = dateToMonthKeyUTC(dateOnlyInTimeZoneUTC(new Date()));
+  const monthKey =
+    !params.capToEndDate && monthKeyCompare(currentMonthKey, statement.monthKey) > 0
+      ? currentMonthKey
+      : statement.monthKey;
+
   const computed = await computeStatementFromBaseline({
     leaseId: statement.leaseId,
-    monthKey: statement.monthKey,
+    monthKey,
     capToEndDate: params.capToEndDate,
     payments,
   });
@@ -1688,6 +1696,7 @@ export const recalculateLandStatementFines = async (params: {
     : [];
 
   await updateDocument(COLLECTIONS.landStatements, params.statementId, {
+    monthKey,
     recalculatedAt: new Date().toISOString(),
     snapshot_totalRentPaymentMonthly,
     snapshot_monthlyRentPaymentAmount,

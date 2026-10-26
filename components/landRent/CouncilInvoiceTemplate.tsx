@@ -189,6 +189,8 @@ export default function CouncilInvoiceTemplate(
                       width={160}
                       height={160}
                       priority
+                      // html2canvas crops optimized 2x images, so serve the file as is.
+                      unoptimized
                       className="h-auto w-[160px] object-contain"
                     />
                   ) : (
@@ -204,6 +206,7 @@ export default function CouncilInvoiceTemplate(
                       width={66}
                       height={66}
                       priority
+                      unoptimized
                       className="h-auto w-[66px] object-contain"
                     />
                   ) : (
