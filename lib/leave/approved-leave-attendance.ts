@@ -190,6 +190,43 @@ export async function applyApprovedLeaveToAttendance(
 }
 
 /**
+ * Brings an approved request's marked days in line with the Holiday Calendar
+ * after it changed: days that became public holidays are cleared and returned
+ * to the balance, days that stopped being holidays are marked and deducted.
+ * A day that can't be added (not enough balance) stays off and is reported.
+ */
+export async function realignApprovedLeave(
+  employee: EmployeeDoc,
+  applied: AppliedLeaveAttendance,
+  startDate: string,
+  endDate: string,
+): Promise<{ applied: AppliedLeaveAttendance; removed: string[]; added: string[]; problem?: string }> {
+  const wanted = await leaveDatesFor(employee, startDate, endDate);
+  const wantedSet = new Set(wanted);
+  const appliedSet = new Set(applied.dates);
+  const removed = applied.dates.filter((date) => !wantedSet.has(date));
+  const toAdd = wanted.filter((date) => !appliedSet.has(date));
+  if (!removed.length && !toAdd.length) return { applied, removed, added: [] };
+
+  if (removed.length) await revertApprovedLeaveFromAttendance(employee.$id, { ...applied, dates: removed });
+  const kept = applied.dates.filter((date) => wantedSet.has(date));
+  if (!toAdd.length) return { applied: { ...applied, dates: kept }, removed, added: [] };
+
+  try {
+    const marked = await applyApprovedLeaveToAttendance({
+      employeeId: employee.$id,
+      leaveType: applied.leaveType,
+      startDate,
+      endDate,
+    });
+    return { applied: { ...marked, appliedAt: applied.appliedAt }, removed, added: toAdd };
+  } catch (error) {
+    if (!(error instanceof LeaveAttendanceError)) throw error;
+    return { applied: { ...applied, dates: kept }, removed, added: [], problem: error.message };
+  }
+}
+
+/**
  * Clears the leave an approval marked, returns the days to the balance and
  * re-reads the fingerprint punches so those days get their sign-ins back.
  * Days an admin has since changed to something else are left as they are.

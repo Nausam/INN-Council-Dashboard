@@ -13,13 +13,16 @@ export function displayLeaveDate(value: string): string {
   return `${day}/${month}/${year}`;
 }
 
-export function nextWorkingDayAfter(value: string): string {
+/** The first day after `value` that isn't a Friday, Saturday or one of `holidays`. */
+export function nextWorkingDayAfter(value: string, holidays: ReadonlySet<string> = new Set()): string {
   const date = parseIsoDate(value);
   if (!date) throw new Error("Invalid leave end date");
+  let iso: string;
   do {
     date.setUTCDate(date.getUTCDate() + 1);
-  } while (date.getUTCDay() === 5 || date.getUTCDay() === 6);
-  return date.toISOString().slice(0, 10);
+    iso = date.toISOString().slice(0, 10);
+  } while (date.getUTCDay() === 5 || date.getUTCDay() === 6 || holidays.has(iso));
+  return iso;
 }
 
 export function parseLeaveDateRange(start: string, end: string) {

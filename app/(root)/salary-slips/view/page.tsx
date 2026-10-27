@@ -226,7 +226,6 @@ export default function ViewSalarySlipsPage() {
                   periodLabel={periodLabel}
                   employeeId={selectedId || undefined}
                   employeeName={selectedSlip?.staff.name}
-                  onSaved={loadSlips}
                 />
                 <Button
                   type="button"

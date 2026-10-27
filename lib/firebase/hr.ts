@@ -19,7 +19,6 @@ import type {
   OvertimeRequestEmployee,
   PrayerTimesDoc,
   PunchLogRaw,
-  SalaryPeriodConfigDoc,
   SalarySlipDoc,
 } from "@/lib/firebase/types";
 import {
@@ -1140,43 +1139,30 @@ export async function fetchAttendanceForPayPeriod(
   );
 }
 
-export async function fetchSalaryPeriodConfig(
-  periodLabel: string,
-): Promise<SalaryPeriodConfigDoc | null> {
-  const trimmed = periodLabel.trim();
-  if (!trimmed) return null;
-
-  const snap = await getFirestoreDb()
-    .collection(COLLECTIONS.salaryPeriodConfig)
-    .doc(trimmed)
-    .get();
-
-  if (!snap.exists) return null;
-  return fromFirestoreDoc<SalaryPeriodConfigDoc>(snap);
+/**
+ * Public holidays between `start` and `end` (inclusive), from the Holiday
+ * Calendar on the Admin page: the one place holidays are marked.
+ */
+export async function fetchHolidayDatesBetween(start: string, end: string): Promise<string[]> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || start > end) return [];
+  const months: string[] = [];
+  for (let month = start.slice(0, 7); month <= end.slice(0, 7);) {
+    months.push(month);
+    const [year, monthNumber] = month.split("-").map(Number);
+    month = monthNumber === 12 ? `${year + 1}-01` : `${year}-${String(monthNumber + 1).padStart(2, "0")}`;
+  }
+  const calendars = await Promise.all(months.map((month) => fetchHolidayCalendar(month)));
+  return calendars
+    .flatMap((calendar) => calendar?.holidayDates ?? [])
+    .filter((date) => date >= start && date <= end)
+    .sort();
 }
 
-export async function upsertSalaryPeriodConfig(
-  periodLabel: string,
-  holidayDates: string[],
-): Promise<SalaryPeriodConfigDoc> {
-  const trimmed = periodLabel.trim();
-  if (!trimmed || !/^\d{4}-\d{2}$/.test(trimmed)) {
-    throw new Error("Invalid period label");
-  }
-
-  const sanitized = sanitizeHolidayDates(trimmed, holidayDates);
-  const db = getFirestoreDb();
-  const ref = db.collection(COLLECTIONS.salaryPeriodConfig).doc(trimmed);
-
-  const payload = withTimestamps({
-    periodLabel: trimmed,
-    holidayDates: sanitized,
-  });
-
-  await ref.set(payload, { merge: true });
-
-  const snap = await ref.get();
-  return fromFirestoreDoc<SalaryPeriodConfigDoc>(snap)!;
+/** Public holidays on working days of a pay period, for the attendance benefit. */
+export async function fetchPayPeriodHolidayDates(periodLabel: string): Promise<string[]> {
+  const bounds = getPayPeriodBounds(periodLabel.trim());
+  if (!bounds) return [];
+  return sanitizeHolidayDates(periodLabel.trim(), await fetchHolidayDatesBetween(bounds.startIso, bounds.endIso));
 }
 
 function sanitizeHolidayMonth(month: string): string {
@@ -1238,7 +1224,10 @@ export async function upsertHolidayCalendar(
   );
 
   const snap = await ref.get();
-  return fromFirestoreDoc<HolidayCalendarDoc>(snap)!;
+  const saved = fromFirestoreDoc<HolidayCalendarDoc>(snap)!;
+  // Anything re-counting leave right after a save must see the new holidays.
+  processReadCache.holidays.set(sanitizedMonth, { at: Date.now(), value: saved });
+  return saved;
 }
 
 export async function deleteAttendancesByDate(date: string): Promise<void> {

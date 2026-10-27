@@ -6,6 +6,7 @@ import { EmployeePortalHeader } from "@/components/employee-portal/EmployeePorta
 import mobileNavStyles from "@/components/employee-portal/EmployeePortalMobileNav.module.css";
 import motifs from "@/components/employee-portal/portal-motifs.module.css";
 import { reverseLeaveTypeMapping } from "@/constants";
+import { getHolidayDates } from "@/lib/actions/holidays.actions";
 import type { EmployeeDoc, EmployeeLeaveCalendarEntry } from "@/lib/firebase/types";
 import {
   ADDITIVE_LEAVE_KEYS,
@@ -177,6 +178,21 @@ export function EmployeeLeaveCalendarView({
   const [visibleMonth, setVisibleMonth] = useState(() => new Date());
   const [monthInitialized, setMonthInitialized] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  // Public holidays from the Holiday Calendar, by month, shaded like weekends.
+  const [holidaysByMonth, setHolidaysByMonth] = useState<Record<string, ReadonlySet<string>>>({});
+  const visibleMonthKey = monthKey(visibleMonth);
+
+  useEffect(() => {
+    if (holidaysByMonth[visibleMonthKey]) return;
+    let active = true;
+    void getHolidayDates(visibleMonthKey)
+      .then((dates) => {
+        if (active) setHolidaysByMonth((current) => ({ ...current, [visibleMonthKey]: new Set(dates) }));
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [holidaysByMonth, visibleMonthKey]);
+  const holidays = holidaysByMonth[visibleMonthKey];
 
   const goToMonth = (date: Date) => {
     setVisibleMonth(date);
@@ -332,6 +348,7 @@ export function EmployeeLeaveCalendarView({
               const key = dateKey(date);
               const dayRecords = recordsByDate.get(key) ?? [];
               const first = dayRecords[0];
+              const holiday = holidays?.has(key) ?? false;
 
               return (
                 <button
@@ -342,6 +359,8 @@ export function EmployeeLeaveCalendarView({
                   className={cn(styles.day, first && motifs.glossIcon)}
                   data-tone={first ? leaveVisual(first.leaveType).tone : undefined}
                   data-weekend={isWeekend(date) ? "" : undefined}
+                  data-holiday={holiday ? "" : undefined}
+                  title={holiday && !first ? "Public holiday" : undefined}
                   data-today={key === todayKey ? "" : undefined}
                   data-selected={key === selectedKey ? "" : undefined}
                   aria-label={

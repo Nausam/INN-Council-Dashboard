@@ -232,13 +232,6 @@ export type SalarySlipDoc = LegacyDocument & {
   fileName?: string;
 };
 
-/** Per-period settings for generated salary slips (pay period = prior month 16 → month 15). */
-export type SalaryPeriodConfigDoc = LegacyDocument & {
-  periodLabel: string;
-  /** ISO dates within the pay period; Fri/Sat are excluded when saving. */
-  holidayDates: string[];
-};
-
 export type HolidayCalendarDoc = LegacyDocument & {
   month: string;
   holidayDates: string[];

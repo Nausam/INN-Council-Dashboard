@@ -3,6 +3,7 @@ import path from "node:path";
 import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import type { AnnualLeaveRequest } from "@/lib/actions/annual-leave.actions";
+import { fetchHolidayDatesBetween } from "@/lib/firebase/hr";
 import { annualApproverSignaturePath } from "@/lib/leave/approval-signatures";
 import { nextWorkingDayAfter } from "@/lib/leave/date-range";
 
@@ -95,7 +96,12 @@ export async function createAnnualLeaveChitPdf(request: AnnualLeaveRequest): Pro
   drawRight(page, font, request.totalDays, 450, 384, 200);
   drawChitDate(page, font, request.startDate, 445, 406, 200);
   drawChitDate(page, font, request.endDate, 440, 429, 200);
-  drawChitDate(page, font, nextWorkingDayAfter(request.endDate), 425, 449, 200);
+  // Back at work on the next day that isn't a weekend or a public holiday.
+  const endDate = String(request.endDate).slice(0, 10);
+  const lookAhead = new Date(`${endDate}T00:00:00Z`);
+  lookAhead.setUTCDate(lookAhead.getUTCDate() + 31);
+  const holidays = new Set(await fetchHolidayDatesBetween(endDate, lookAhead.toISOString().slice(0, 10)));
+  drawChitDate(page, font, nextWorkingDayAfter(endDate, holidays), 425, 449, 200);
 
   drawRight(page, font, request.leaveBalance, 455, 525, 180);
   drawRight(page, font, request.familyLeaveBalance, 425, 548, 180);

@@ -6,7 +6,7 @@ import {
   fetchAllEmployees,
   fetchAttendanceForPayPeriod,
   fetchEmployeeById,
-  fetchSalaryPeriodConfig,
+  fetchPayPeriodHolidayDates,
 } from "@/lib/firebase/hr";
 import { formatPayPeriodRange } from "@/lib/salary-slips/pay-period";
 import { hasEmployeeProfileAccess } from "@/lib/auth/employee-profile-session";
@@ -34,13 +34,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const [employees, attendance, periodConfig] = await Promise.all([
+    const [employees, attendance, holidayDates] = await Promise.all([
       employeeId ? fetchEmployeeById(employeeId).then((employee) => [employee]) : fetchAllEmployees(),
       fetchAttendanceForPayPeriod(trimmed),
-      fetchSalaryPeriodConfig(trimmed),
+      fetchPayPeriodHolidayDates(trimmed),
     ]);
-
-    const holidayDates = periodConfig?.holidayDates ?? [];
 
     const slips: SalarySlipComputed[] = computeSalarySlipsForPeriod(
       employees,

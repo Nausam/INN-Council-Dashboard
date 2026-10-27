@@ -22,7 +22,8 @@ import {
   type PayPeriodDateEntry,
 } from "@/lib/salary-slips/pay-period";
 import { cn } from "@/lib/utils";
-import { CalendarDays, Loader2, Save } from "lucide-react";
+import { ArrowUpRight, CalendarDays } from "lucide-react";
+import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 const ENGLISH_MONTHS = [
@@ -46,7 +47,6 @@ type SalaryPeriodHolidaysPanelProps = {
   periodLabel: string;
   employeeId?: string;
   employeeName?: string;
-  onSaved?: () => void;
 };
 
 function buildWeekRows(items: PayPeriodDateEntry[]): (PayPeriodDateEntry | null)[][] {
@@ -64,23 +64,23 @@ function buildWeekRows(items: PayPeriodDateEntry[]): (PayPeriodDateEntry | null)
   return rows;
 }
 
+/**
+ * The pay period's public holidays and the employee's leave days, to explain
+ * the attendance benefit. Holidays are marked in the Holiday Calendar on the
+ * Admin page, so this only shows them.
+ */
 export function SalaryPeriodHolidaysPanel({
   periodLabel,
   employeeId,
   employeeName,
-  onSaved,
 }: SalaryPeriodHolidaysPanelProps) {
   const [open, setOpen] = useState(false);
   const [holidayDates, setHolidayDates] = useState<Set<string>>(new Set());
-  const [serverHolidayDates, setServerHolidayDates] = useState<Set<string>>(
-    new Set(),
-  );
   const [leaveByDate, setLeaveByDate] = useState<
     Map<string, EmployeeLeaveDayInfo>
   >(new Map());
   const [loading, setLoading] = useState(false);
   const [leaveLoading, setLeaveLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const periodRange = useMemo(
@@ -98,14 +98,6 @@ export function SalaryPeriodHolidaysPanel({
     [dateEntries],
   );
 
-  const isDirty = useMemo(() => {
-    if (holidayDates.size !== serverHolidayDates.size) return true;
-    for (const iso of Array.from(holidayDates)) {
-      if (!serverHolidayDates.has(iso)) return true;
-    }
-    return false;
-  }, [holidayDates, serverHolidayDates]);
-
   const loadConfig = useCallback(async () => {
     if (!periodLabel) return;
     setLoading(true);
@@ -118,7 +110,6 @@ export function SalaryPeriodHolidaysPanel({
       if (!res.ok) {
         setError(data?.error ?? "Failed to load holidays.");
         setHolidayDates(new Set());
-        setServerHolidayDates(new Set());
         return;
       }
       const dates = Array.isArray(data.holidayDates)
@@ -127,13 +118,10 @@ export function SalaryPeriodHolidaysPanel({
               typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d),
           )
         : [];
-      const set = new Set<string>(dates);
-      setHolidayDates(set);
-      setServerHolidayDates(new Set<string>(dates));
+      setHolidayDates(new Set<string>(dates));
     } catch {
       setError("Failed to load holidays.");
       setHolidayDates(new Set());
-      setServerHolidayDates(new Set());
     } finally {
       setLoading(false);
     }
@@ -175,67 +163,15 @@ export function SalaryPeriodHolidaysPanel({
   }, [loadLeaveDays]);
 
   const handleOpenChange = (next: boolean) => {
-    if (!next && isDirty) {
-      setHolidayDates(new Set(serverHolidayDates));
-    }
     setOpen(next);
-    if (!next) setError(null);
-  };
-
-  const toggleHoliday = (iso: string, weekday: number) => {
-    if (isWeekendWeekday(weekday)) return;
-    if (leaveByDate.has(iso)) return;
-    setHolidayDates((prev) => {
-      const next = new Set(prev);
-      if (next.has(iso)) next.delete(iso);
-      else next.add(iso);
-      return next;
-    });
-  };
-
-  const clearHolidays = () => setHolidayDates(new Set());
-
-  const saveHolidays = async () => {
-    if (!periodLabel) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/salary-slips/period-config?period=${encodeURIComponent(periodLabel)}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            holidayDates: Array.from(holidayDates).sort(),
-          }),
-        },
-      );
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data?.error ?? "Failed to save holidays.");
-        return;
-      }
-      const dates = Array.isArray(data.holidayDates)
-        ? data.holidayDates.filter(
-            (d: unknown): d is string =>
-              typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d),
-          )
-        : [];
-      const set = new Set<string>(dates);
-      setHolidayDates(set);
-      setServerHolidayDates(new Set<string>(dates));
-      onSaved?.();
-      setOpen(false);
-    } catch {
-      setError("Failed to save holidays.");
-    } finally {
-      setSaving(false);
-    }
+    // Holidays may have been changed on the Admin page meanwhile.
+    if (next) void loadConfig();
+    else setError(null);
   };
 
   if (!periodLabel) return null;
 
-  const savedCount = serverHolidayDates.size;
+  const savedCount = holidayDates.size;
   const leaveCount = leaveByDate.size;
 
   return (
@@ -285,7 +221,7 @@ export function SalaryPeriodHolidaysPanel({
               <span className="h-2.5 w-2.5 rounded-full bg-rose-400" />
               Holiday
             </span>
-            <span className="text-slate-400">Click a weekday to toggle holiday</span>
+            <span className="text-slate-400">Public holidays come from the Holiday Calendar on the Admin page</span>
           </div>
 
           <div className="max-h-[min(52vh,440px)] overflow-y-auto px-5 py-4 sm:px-6">
@@ -328,27 +264,24 @@ export function SalaryPeriodHolidaysPanel({
                           const title = leaveInfo
                             ? `${leaveInfo.leaveLabel} — ${formatLeaveUsageCompact(leaveInfo.usage)}`
                             : isHoliday
-                              ? "Public holiday — click to remove"
+                              ? "Public holiday"
                               : isWeekend
                                 ? "Weekend"
-                                : "Click to mark holiday";
+                                : undefined;
 
                           return (
-                            <button
+                            <div
                               key={d.iso}
-                              type="button"
-                              onClick={() => toggleHoliday(d.iso, d.weekday)}
-                              disabled={isWeekend || Boolean(leaveInfo)}
                               title={title}
                               className={cn(
-                                "flex h-11 flex-col items-center justify-center rounded-lg border text-center transition-colors",
+                                "flex h-11 flex-col items-center justify-center rounded-lg border text-center",
                                 isWeekend
-                                  ? "cursor-not-allowed border-transparent bg-slate-100/80 text-slate-400"
+                                  ? "border-transparent bg-slate-100/80 text-slate-400"
                                   : leaveInfo
-                                    ? "cursor-default border-violet-200 bg-violet-50 text-violet-900"
+                                    ? "border-violet-200 bg-violet-50 text-violet-900"
                                     : isHoliday
-                                      ? "border-rose-300 bg-rose-50 text-rose-900 hover:bg-rose-100"
-                                      : "border-slate-200/80 bg-white text-slate-800 hover:border-teal-300 hover:bg-teal-50/50",
+                                      ? "border-rose-300 bg-rose-50 text-rose-900"
+                                      : "border-slate-200/80 bg-white text-slate-800",
                               )}
                             >
                               <span className="text-sm font-bold leading-none">
@@ -359,7 +292,7 @@ export function SalaryPeriodHolidaysPanel({
                                   {shortLeaveLabel(leaveInfo.leaveLabel)}
                                 </span>
                               )}
-                            </button>
+                            </div>
                           );
                         })}
                       </div>
@@ -377,14 +310,10 @@ export function SalaryPeriodHolidaysPanel({
           </div>
 
           <DialogFooter className="gap-2 border-t border-slate-200/80 bg-white px-5 py-3 sm:px-6">
-            <Button
-              type="button"
-              variant="ghost"
-              className="rounded-xl text-slate-600"
-              onClick={clearHolidays}
-              disabled={loading || saving || holidayDates.size === 0}
-            >
-              Clear
+            <Button asChild variant="ghost" className="rounded-xl text-teal-700">
+              <Link href="/admin">
+                Edit holidays <ArrowUpRight className="h-4 w-4" />
+              </Link>
             </Button>
             <div className="flex-1" />
             <Button
@@ -392,23 +321,8 @@ export function SalaryPeriodHolidaysPanel({
               variant="council-outline"
               className="rounded-xl"
               onClick={() => handleOpenChange(false)}
-              disabled={saving}
             >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="council"
-              className="rounded-xl"
-              onClick={saveHolidays}
-              disabled={loading || saving || !isDirty}
-            >
-              {saving ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="h-4 w-4" />
-              )}
-              Save
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

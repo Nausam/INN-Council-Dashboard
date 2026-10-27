@@ -32,6 +32,9 @@
 .day { position: relative; display: grid; place-items: center; aspect-ratio: 1; border-radius: 15px; font-size: .86rem; font-weight: 800; font-variant-numeric: tabular-nums; transition: transform .15s; }
 .day:not([data-tone]) { background: transparent; color: #6f6e78; }
 .day:not([data-tone])[data-weekend] { color: #c3c1ca; }
+/* Public holiday from the Holiday Calendar: a soft coral day with a dot. */
+.day:not([data-tone])[data-holiday] { background: #fff1ec; color: #c0573c; }
+.day:not([data-tone])[data-holiday]::after { content: ""; position: absolute; bottom: 18%; width: 4px; height: 4px; border-radius: 50%; background: #e0734f; }
 .day[data-tone] { cursor: pointer; }
 .day[data-tone]:active { transform: scale(.94); }
 .day:disabled { cursor: default; }

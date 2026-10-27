@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { adminErrorStatus, requireAdmin } from "@/lib/auth/require-admin";
 import { fetchHolidayCalendar, upsertHolidayCalendar } from "@/lib/firebase/hr";
+import { adjustLeaveForHolidays, type HolidayLeaveAdjustment } from "@/lib/leave/holiday-adjustments";
 
 export const runtime = "nodejs";
 
@@ -42,9 +43,22 @@ export async function PUT(request: Request) {
       : [];
 
     const config = await upsertHolidayCalendar(month, holidayDates);
+    // Leave already asked for or approved in this month is re-counted against
+    // the new holidays. The holidays stay saved even if this fails; saving
+    // again retries it.
+    let adjustments: HolidayLeaveAdjustment[] = [];
+    let adjustmentError: string | undefined;
+    try {
+      adjustments = await adjustLeaveForHolidays(config.month);
+    } catch (error) {
+      console.error("Adjusting leave for holidays failed:", error);
+      adjustmentError = error instanceof Error ? error.message : "Could not re-count leave";
+    }
     return NextResponse.json({
       month: config.month,
       holidayDates: config.holidayDates,
+      adjustments,
+      adjustmentError,
     });
   } catch (error) {
     return NextResponse.json(
