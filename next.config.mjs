@@ -45,7 +45,18 @@ const nextConfig = {
     },
     serverComponentsExternalPackages: ["better-sqlite3", "node-zklib"],
     outputFileTracingIncludes: {
-      "/*": ["./assets/forms/salaam-family-leave-template.docx"],
+      // Leave forms, the annual leave chit and the supervisors' signatures are
+      // read from disk by server actions that any page can call.
+      "/*": [
+        "./assets/forms/salaam-family-leave-template.docx",
+        "./assets/forms/annual-leave-template.docx",
+        "./assets/forms/annual-leave-chit-template.pdf",
+        "./assets/signatures/imran-shareef.png",
+        "./assets/signatures/aminath-shazuly.png",
+        "./assets/signatures/ibrahim-haleem.png",
+        "./assets/signatures/hussain-areef.png",
+        "./public/fonts/Faruma.ttf",
+      ],
       // match your API route file path precisely
       "app/api/innamaadhoo/route.ts": ["./data/salat.db"],
     },
