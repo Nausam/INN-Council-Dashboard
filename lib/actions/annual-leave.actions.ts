@@ -278,10 +278,13 @@ export async function approveAnnualLeaveRequest(
       details.designationDv = request.designationDv || String(employee.designationDv || employee.designation || "").trim();
       details.recordCardNumber = request.recordCardNumber || employee.recordCardNumber?.trim() || "";
       details.idCardNumber = request.idCardNumber || idCardNumber?.trim() || "";
-      if (request.leaveBalance == null && typeof employee.annualLeave === "number") details.leaveBalance = employee.annualLeave;
       if (request.familyLeaveBalance == null && typeof employee.familyRelatedLeave === "number") details.familyLeaveBalance = employee.familyRelatedLeave;
     }
   }
+  // The chit shows the balance left after this leave, worked out from the
+  // balance just before it is deducted (other leave may have changed it since
+  // the request was made).
+  if (typeof employee?.annualLeave === "number") details.leaveBalance = employee.annualLeave;
   const employeeId = request.employeeId || details.employeeId;
   if (!employeeId) throw new Error("Could not match this request to an employee record");
   const approvedAt = new Date().toISOString();

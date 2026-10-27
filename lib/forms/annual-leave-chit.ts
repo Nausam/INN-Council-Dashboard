@@ -103,7 +103,13 @@ export async function createAnnualLeaveChitPdf(request: AnnualLeaveRequest): Pro
   const holidays = new Set(await fetchHolidayDatesBetween(endDate, lookAhead.toISOString().slice(0, 10)));
   drawChitDate(page, font, nextWorkingDayAfter(endDate, holidays), 425, 449, 200);
 
-  drawRight(page, font, request.leaveBalance, 455, 525, 180);
+  // Annual leave left after this leave: the balance before it, less the days
+  // it marked (public holidays in the range aren't spent).
+  const daysTaken = request.attendanceLeave?.dates.length ?? (Number(request.totalDays) || 0);
+  const balanceAfter = typeof request.leaveBalance === "number"
+    ? Math.max(0, request.leaveBalance - daysTaken)
+    : undefined;
+  drawRight(page, font, balanceAfter, 455, 525, 180);
   drawRight(page, font, request.familyLeaveBalance, 425, 548, 180);
   if (request.joinedDate) drawChitDate(page, font, request.joinedDate, 425, 570, 190);
 
