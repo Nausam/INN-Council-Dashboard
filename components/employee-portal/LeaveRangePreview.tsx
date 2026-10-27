@@ -8,24 +8,28 @@ import { cn } from "@/lib/utils";
 
 /**
  * Start and end dates as two tear-off calendar pages with the day count
- * between them. Renders nothing until both dates form a valid range.
+ * between them. Renders nothing until both dates form a valid range. `days`
+ * overrides the calendar-day count; null shows it as still being worked out.
  */
 export function LeaveRangePreview({
   startDate,
   endDate,
   tone,
+  days: daysOverride,
 }: {
   startDate: string;
   endDate: string;
   tone: GlossTone;
+  days?: number | null;
 }) {
   if (!startDate || !endDate) return null;
-  let days: number;
+  let calendarDays: number;
   try {
-    days = parseLeaveDateRange(startDate, endDate).durationDays;
+    calendarDays = parseLeaveDateRange(startDate, endDate).durationDays;
   } catch {
     return null;
   }
+  const days = daysOverride === undefined ? calendarDays : daysOverride ?? "…";
 
   const page = (iso: string, label: string) => {
     const date = new Date(`${iso}T00:00:00`);

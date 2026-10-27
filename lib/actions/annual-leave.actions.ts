@@ -18,6 +18,7 @@ import { findAnnualLeaveEmployee } from "@/lib/leave/annual-employee";
 import {
   applyApprovedLeaveToAttendance,
   leaveAttendanceFailure,
+  leaveDatesFor,
   revertApprovedLeaveFromAttendance,
   type AppliedLeaveAttendance,
 } from "@/lib/leave/approved-leave-attendance";
@@ -49,6 +50,34 @@ function personFromEmployee(employee: Awaited<ReturnType<typeof fetchEmployeeByI
     sectionDv: String(employee.sectionDv || employee.section || "").trim(),
     ...(date ? { assignedDate: date } : {}),
   };
+}
+
+/**
+ * Days of annual leave a range spends: council staff skip Fridays, Saturdays
+ * and holiday-calendar dates; mosque staff count every day.
+ */
+async function annualLeaveDays(
+  employee: Awaited<ReturnType<typeof fetchEmployeeById>>,
+  startDate: string,
+  endDate: string,
+): Promise<number> {
+  const days = (await leaveDatesFor(employee, startDate, endDate)).length;
+  if (days === 0) throw new Error("The selected dates have no working days");
+  return days;
+}
+
+/** The day count shown while the employee picks annual leave dates. */
+export async function countAnnualLeaveDays(input: {
+  employeeId: string;
+  startDate: string;
+  endDate: string;
+}): Promise<number> {
+  const employeeId = String(input.employeeId ?? "").trim();
+  if (!(await getSessionAuthProfile()) && getEmployeeProfileSessionId() !== employeeId) throw new Error("Unauthorized");
+  if (!/^[\w-]{1,128}$/.test(employeeId)) throw new Error("Invalid employee");
+  const range = parseLeaveDateRange(input.startDate, input.endDate);
+  const employee = await fetchEmployeeById(employeeId);
+  return (await leaveDatesFor(employee, range.startDate, range.endDate)).length;
 }
 
 export async function listAnnualLeaveEmployeeOptions(): Promise<AnnualLeaveEmployeeOption[]> {
@@ -83,6 +112,7 @@ export async function submitAnnualLeaveRequest(input: {
     fetchEmployeeById(employeeId),
     fetchEmployeeById(takeoverEmployeeId),
   ]);
+  const totalDays = await annualLeaveDays(employee, range.startDate, range.endDate);
   const now = new Date();
   const submittedDate = maldivesDateTime(now).date;
   const raw = employee as typeof employee & Record<string, unknown>;
@@ -92,7 +122,7 @@ export async function submitAnnualLeaveRequest(input: {
     fullName: employee.name,
     leaveType: "Annual Leave",
     reason,
-    totalDays: range.durationDays,
+    totalDays,
     startDate: range.startDate,
     endDate: range.endDate,
     approvalStatus: "Pending",
@@ -139,7 +169,11 @@ export async function updateAnnualLeaveRequest(input: {
   const range = parseLeaveDateRange(input.startDate, input.endDate);
   const reason = String(input.reason ?? "").trim();
   if (reason.length < 2 || reason.length > 500) throw new Error("Enter a reason for annual leave (2–500 characters)");
-  const takeoverEmployee = await fetchEmployeeById(takeoverEmployeeId);
+  const [employee, takeoverEmployee] = await Promise.all([
+    fetchEmployeeById(employeeId),
+    fetchEmployeeById(takeoverEmployeeId),
+  ]);
+  const totalDays = await annualLeaveDays(employee, range.startDate, range.endDate);
 
   const db = getFirestoreDb();
   const requestRef = db.collection(COLLECTIONS.annualLeaveRequests).doc(requestId);
@@ -155,7 +189,7 @@ export async function updateAnnualLeaveRequest(input: {
     }
     transaction.update(requestRef, {
       reason,
-      totalDays: range.durationDays,
+      totalDays,
       startDate: range.startDate,
       endDate: range.endDate,
       takeover: personFromEmployee(takeoverEmployee),

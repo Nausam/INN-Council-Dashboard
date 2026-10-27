@@ -5,6 +5,7 @@ import {
   updateEmployeeOvertimeRequest,
 } from "@/lib/actions/employee-portal-requests.actions";
 import {
+  countAnnualLeaveDays,
   listAnnualLeaveEmployeeOptions,
   submitAnnualLeaveRequest,
   updateAnnualLeaveRequest,
@@ -61,6 +62,8 @@ export function EmployeeRequestDialog({
 }) {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  // Working days in the range; null while it is being counted or couldn't be.
+  const [leaveDays, setLeaveDays] = useState<number | null>(null);
   const [annualReason, setAnnualReason] = useState("");
   const [takeoverEmployeeId, setTakeoverEmployeeId] = useState("");
   const [employees, setEmployees] = useState<AnnualLeaveEmployeeOption[]>([]);
@@ -97,6 +100,22 @@ export function EmployeeRequestDialog({
     return () => { active = false; };
   }, [open, mode, employeeId]);
 
+  // Council staff don't spend annual leave on weekends or holidays, so the server counts the days.
+  useEffect(() => {
+    setLeaveDays(null);
+    if (!open || mode !== "annual") return;
+    try {
+      parseLeaveDateRange(startDate, endDate);
+    } catch {
+      return;
+    }
+    let active = true;
+    void countAnnualLeaveDays({ employeeId, startDate, endDate })
+      .then((days) => { if (active) setLeaveDays(days); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [open, mode, employeeId, startDate, endDate]);
+
   function changeOpen(next: boolean) {
     if (!pending) onOpenChange(next);
   }
@@ -108,6 +127,7 @@ export function EmployeeRequestDialog({
       } catch {
         return "ފެށޭ ތާރީޚާއި ނިމޭ ތާރީޚު ރަނގަޅަށް ހޮވާ. 365 ދުވަހަށްވުރެ ދިގު ނުކުރައްވާ.";
       }
+      if (leaveDays === 0) return "ހޮވި ތާރީޚުތަކުގައި މަސައްކަތު ދުވަހެއް ނެތް.";
       if (!isDhivehiText(annualReason, MAX_TEXT_LENGTH)) return "ސަބަބު ދިވެހިން ލިޔުއްވާ.";
       if (!takeoverEmployeeId) return "ޒިންމާތައް ހަވާލުކުރާނެ މުވައްޒަފަކު ހޮވާ.";
       return null;
@@ -248,8 +268,8 @@ export function EmployeeRequestDialog({
                   </div>
                 </div>
 
-                {/* Shows the total days once both dates are picked. */}
-                <LeaveRangePreview startDate={startDate} endDate={endDate} tone={visual.tone} />
+                {/* Shows the leave days once both dates are picked. */}
+                <LeaveRangePreview startDate={startDate} endDate={endDate} tone={visual.tone} days={leaveDays} />
 
                 <div className={styles.field}>
                   <label htmlFor="annual-leave-reason">ސަބަބު</label>

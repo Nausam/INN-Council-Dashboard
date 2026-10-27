@@ -36,6 +36,7 @@ const LEAVE_LABELS: Record<string, string> = {
   annualLeave: "Annual Leave",
   familyRelatedLeave: "Family Related Leave",
   sickLeave: "Sick Leave",
+  certificateSickLeave: "Certificate Sick Leave",
 };
 
 function isMosqueEmployee(employee: EmployeeDoc): boolean {
@@ -43,7 +44,7 @@ function isMosqueEmployee(employee: EmployeeDoc): boolean {
 }
 
 /** Council staff are off on Fridays, Saturdays and calendar holidays; mosque staff work every day. */
-async function leaveDatesFor(employee: EmployeeDoc, startDate: string, endDate: string) {
+export async function leaveDatesFor(employee: EmployeeDoc, startDate: string, endDate: string) {
   const dates = enumerateIsoDates(startDate, endDate);
   if (isMosqueEmployee(employee)) return dates;
 
