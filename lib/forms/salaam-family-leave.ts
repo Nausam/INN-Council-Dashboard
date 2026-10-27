@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import {
+  isSalaamKind,
   SALAAM_FAMILY_LEAVE_TYPES,
   type LeaveDayDetails,
   type SalaamFamilyLeaveType,
@@ -152,7 +153,7 @@ export async function fillSalaamFamilyLeaveTemplate(values: {
     xml = fillBlankParagraph(xml, SLOT.additionalDate, values.additionalDetails.date);
     xml = fillBlankParagraph(xml, SLOT.additionalTime, values.additionalDetails.time);
     xml = fillBlankParagraph(xml, SLOT.additionalReason, reasonWithLeaveType(values.leaveType, values.additionalDetails.reason));
-    if (values.leaveType === "salaam") {
+    if (isSalaamKind(values.leaveType)) {
       xml = replaceParagraphText(xml, SLOT.additionalLeaveType, "ސަލާމުގެ ޗުއްޓީއަށް");
     }
   } else if (values.secondDay) {

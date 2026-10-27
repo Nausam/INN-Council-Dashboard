@@ -10,7 +10,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { REQUEST_VISUALS } from "@/lib/employees/request-visuals";
 import { cn } from "@/lib/utils";
-import { Check, ClipboardCheck, ClipboardList, Loader2, RefreshCw, X } from "lucide-react";
+import { Check, ClipboardCheck, ClipboardList, FileBadge, Loader2, RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import headerStyles from "./EmployeePortalHeader.module.css";
 import motifs from "./portal-motifs.module.css";
@@ -224,7 +224,7 @@ function ApprovalCard({
         ) : null}
         <div className={styles.cardMain}>
           <div className={styles.titleRow}>
-            <h3>{REQUEST_TYPES[request.kind]}</h3>
+            <h3>{request.certificateUrl ? "Certificate salaam" : REQUEST_TYPES[request.kind]}</h3>
             <span className={styles.statusBadge}><span className={styles.statusDot} aria-hidden="true" />{request.status}</span>
           </div>
           <p className={styles.names}>{request.employeeNames.join(", ") || "Unknown employee"}</p>
@@ -239,6 +239,11 @@ function ApprovalCard({
               className={isDhivehiReason ? styles.dhivehiReason : styles.reason}
               title={request.reason}
             >{request.reason}</p>
+          ) : null}
+          {request.certificateUrl ? (
+            <a href={request.certificateUrl} target="_blank" rel="noreferrer" className={styles.certificateLink}>
+              <FileBadge size={14} aria-hidden="true" /> View certificate
+            </a>
           ) : null}
         </div>
       </div>

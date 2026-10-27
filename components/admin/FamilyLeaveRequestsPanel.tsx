@@ -13,7 +13,8 @@ import {
   type LeaveAcceptorOption,
   type LeaveSupervisorOption,
 } from "@/lib/actions/family-leave.actions";
-import { SALAAM_FAMILY_LEAVE_TYPES } from "@/lib/leave/salaam-family-types";
+import { fileProxyUrl } from "@/lib/files";
+import { isSalaamKind, SALAAM_FAMILY_LEAVE_TYPES } from "@/lib/leave/salaam-family-types";
 import { cn } from "@/lib/utils";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
@@ -24,6 +25,7 @@ import {
   ChevronRight,
   Clock3,
   Download,
+  FileBadge,
   FileText,
   RefreshCw,
   Trash2,
@@ -76,7 +78,7 @@ function FormCard({
   onDelete: () => void;
   busy: boolean;
 }) {
-  const salaam = request.leaveType === "salaam";
+  const salaam = isSalaamKind(request.leaveType);
   return (
     <div className="relative">
     <button
@@ -244,6 +246,9 @@ function FormDrawer({
           <p className="hidden min-w-0 flex-1 truncate text-xs text-[#93a29b] sm:block">Submitted by {request.submittedBy}</p>
           <div className="flex items-center gap-2">
             <button type="button" onClick={onDelete} disabled={busy} className="inline-flex h-11 items-center gap-2 rounded-xl px-3 text-sm font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-50"><Trash2 size={17} /> Delete</button>
+            {request.certificate ? (
+              <a href={fileProxyUrl(request.certificate.key)} target="_blank" rel="noreferrer" className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#d9ebe5] bg-[#f1faf6] px-4 text-sm font-bold text-[#167a67] hover:bg-[#e4f4ec]"><FileBadge size={17} /> Certificate</a>
+            ) : null}
             <a href={`/api/admin/family-leave-requests/${encodeURIComponent(request.id)}/form`} aria-disabled={busy} className={cn("inline-flex h-11 items-center gap-2 rounded-xl bg-[#182b29] px-5 text-sm font-bold text-white hover:bg-[#286b5c]", busy && "pointer-events-none opacity-50")}><Download size={17} /> Download form</a>
           </div>
         </div>

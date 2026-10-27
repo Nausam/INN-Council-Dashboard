@@ -3,6 +3,8 @@
 import { getRequestApprover } from "@/lib/auth/request-approvers";
 import { COLLECTIONS, getFirestoreDb } from "@/lib/firebase/admin";
 import type { OvertimeRequest } from "@/lib/firebase/types";
+import { fileProxyUrl } from "@/lib/files";
+import { isSalaamKind } from "@/lib/leave/salaam-family-types";
 import { getLeaveSupervisor, LEAVE_SUPERVISORS, type LeaveSupervisorKey } from "@/lib/leave/supervisors";
 import {
   approveAnnualLeaveRequest,
@@ -37,6 +39,8 @@ export type ApprovalRequest = {
   reviewedAt?: string;
   /** The viewer's own request: shown, but they can't decide it. */
   own: boolean;
+  /** Certificate Salaam: link to the uploaded medical certificate. */
+  certificateUrl?: string;
 };
 
 export type ApprovalInbox = {
@@ -73,7 +77,7 @@ function familyRequest(doc: DocSnap, viewerId: string): ApprovalRequest {
   const startDate = request.leaveStartDate || request.requestDate;
   return {
     id: doc.id,
-    kind: request.leaveType === "salaam" ? "salaam" : "family",
+    kind: isSalaamKind(request.leaveType) ? "salaam" : "family",
     status: statusOf(request.approvalStatus),
     employeeNames: [request.employeeName],
     submittedAt: isoDateTime(request.submittedAt) || `${request.requestDate}T00:00:00.000Z`,
@@ -85,6 +89,7 @@ function familyRequest(doc: DocSnap, viewerId: string): ApprovalRequest {
     reviewer: request.supervisor?.name || request.reviewedBy,
     reviewedAt: isoDateTime(request.reviewedAt),
     own: request.employeeId === viewerId,
+    certificateUrl: request.certificate ? fileProxyUrl(request.certificate.key) : undefined,
   };
 }
 

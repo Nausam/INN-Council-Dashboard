@@ -5,7 +5,7 @@ import {
   type RequestHistoryEntry,
   type RequestHistoryKind,
 } from "@/lib/actions/request-history.actions";
-import { ArrowDownToLine, Hourglass, PencilLine, RefreshCw } from "lucide-react";
+import { ArrowDownToLine, FileBadge, Hourglass, PencilLine, RefreshCw } from "lucide-react";
 import motifs from "./portal-motifs.module.css";
 import { REQUEST_VISUALS } from "@/lib/employees/request-visuals";
 import { useEffect, useMemo, useState } from "react";
@@ -74,7 +74,7 @@ function HistoryCard({ entry, onEdit }: { entry: RequestHistoryEntry; onEdit: (e
         ) : null}
         <div className={styles.cardMain}>
           <div className={styles.titleRow}>
-            <h3>{REQUEST_TYPES[entry.kind]}</h3>
+            <h3>{entry.certificateUrl ? "Certificate salaam" : REQUEST_TYPES[entry.kind]}</h3>
             <span className={styles.statusBadge}>
               <span className={styles.statusDot} aria-hidden="true" />{entry.status}
             </span>
@@ -106,8 +106,13 @@ function HistoryCard({ entry, onEdit }: { entry: RequestHistoryEntry; onEdit: (e
             {entry.status !== "Pending" && entry.reviewedAt ? <span>{shortDate(entry.reviewedAt)}</span> : null}
           </li>
         </ol>
-        {entry.editable || showChit ? (
+        {entry.editable || showChit || entry.certificateUrl ? (
           <div className={styles.actions}>
+            {entry.certificateUrl ? (
+              <a href={entry.certificateUrl} target="_blank" rel="noreferrer" className={styles.chitLink} aria-label="View certificate">
+                <FileBadge size={14} aria-hidden="true" /><span>Certificate</span>
+              </a>
+            ) : null}
             {entry.editable ? (
               <button type="button" onClick={() => onEdit(entry)} className={styles.editButton} aria-label="Edit request">
                 <PencilLine size={14} aria-hidden="true" /><span>Edit</span>
@@ -148,6 +153,7 @@ export function EmployeeRequestHistory({ employeeId, revision }: { employeeId: s
     takeoverEmployeeId: editing.takeoverEmployeeId,
     startTime: editing.startTime,
     endTime: editing.endTime,
+    certificateUrl: editing.certificateUrl,
   } : undefined, [editing]);
   const closeEdit = (open: boolean) => { if (!open) setEditing(null); };
   const afterEdit = () => setRefresh((value) => value + 1);
@@ -188,7 +194,7 @@ export function EmployeeRequestHistory({ employeeId, revision }: { employeeId: s
       {editing && editRequest && (editing.kind === "salaam" || editing.kind === "family") ? (
         <FamilyLeaveRequestDialog
           employeeId={employeeId}
-          presetLeaveType={editing.kind}
+          presetLeaveType={editing.certificateUrl ? "certificateSalaam" : editing.kind}
           editRequest={editRequest}
           open
           onOpenChange={closeEdit}

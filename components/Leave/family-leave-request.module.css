@@ -58,6 +58,32 @@
 .rangeMid strong { font-family: system-ui, sans-serif; font-size: 1.6rem; font-weight: 850; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .rangeMid span { color: #676873; font-size: .95rem; font-weight: 700; }
 
+/* Salaam / Certificate Salaam tabs. */
+.tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .25rem; padding: .3rem; border: 1px solid #fff; border-radius: 999px; background: rgba(255,255,255,.6); box-shadow: 0 4px 14px rgba(61,50,73,.06); }
+.tab { min-height: 44px; padding: .3rem .6rem; border: 0; border-radius: 999px; background: transparent; color: #5f5e69; font: inherit; font-size: 1rem; font-weight: 700; cursor: pointer; transition: background .2s, color .2s; }
+.tab[aria-selected="true"] { background: #17191d; color: #fff; box-shadow: 0 5px 14px rgba(23,25,29,.16); }
+.tab:focus-visible { outline: 3px solid #a9b7ff; outline-offset: 2px; }
+
+/* Certificate upload: a dashed drop area, then the chosen file. */
+.form .upload { display: flex; align-items: center; gap: .8rem; padding: .95rem 1rem; border: 2px dashed #d9d0ee; border-radius: 20px; background: rgba(255,255,255,.7); color: #5d4d97; cursor: pointer; transition: border-color .15s, background .15s; }
+.form .upload:hover { border-color: #b9a9ea; background: #fff; }
+.form .upload[data-busy] { cursor: wait; opacity: .75; }
+.upload > svg { flex: none; width: 24px; height: 24px; }
+.upload span { display: grid; gap: .1rem; }
+.upload strong { color: #2d2a36; font-size: 1rem; font-weight: 700; }
+.upload small { color: #77727f; font-size: .85rem; }
+.certificateFile { display: flex; align-items: center; gap: .75rem; padding: .6rem .7rem; border: 1px solid #fff; border-radius: 20px; background: rgba(255,255,255,.92); box-shadow: 0 4px 14px rgba(61,50,73,.06); }
+.certificateThumb { flex: none; width: 52px; height: 52px; border-radius: 12px; object-fit: cover; }
+.certificateIcon { width: 52px; height: 52px; border-radius: 14px; }
+.certificateIcon :global(svg) { width: 22px; height: 22px; }
+.certificateName { display: grid; flex: 1; min-width: 0; gap: .1rem; font-family: var(--font-plus-jakarta, system-ui), system-ui, sans-serif; text-align: left; }
+.certificateName strong { overflow: hidden; color: #17191d; font-size: .85rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.certificateName small { color: #77727f; font-size: .75rem; font-weight: 600; }
+.certificateRemove { display: grid; flex: none; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; background: #f6f3f8; color: #6f6a76; cursor: pointer; }
+.certificateRemove svg { width: 16px; height: 16px; }
+.currentCertificate { display: inline-flex; align-items: center; gap: .4rem; justify-self: start; padding: .35rem .8rem; border-radius: 999px; background: #eefbf5; color: #23795a; font-size: .9rem; font-weight: 700; text-decoration: none; }
+.currentCertificate svg { width: 16px; height: 16px; }
+
 .submit, .success button {
   display: inline-flex;
   align-items: center;

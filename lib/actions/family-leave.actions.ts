@@ -16,9 +16,13 @@ import { isDhivehiText } from "@/lib/leave/dhivehi-text";
 import {
   ATTENDANCE_LEAVE_TYPE,
   isSalaamFamilyLeaveType,
+  LEAVE_CERTIFICATE_MAX_BYTES,
+  LEAVE_CERTIFICATE_PREFIX,
+  type LeaveCertificate,
   type LeaveDayDetails,
   type SalaamFamilyLeaveType,
 } from "@/lib/leave/salaam-family-types";
+import { deleteFromR2, isR2Configured, uploadToR2 } from "@/lib/r2";
 import {
   getLeaveSupervisor,
   LEAVE_SUPERVISORS,
@@ -79,6 +83,8 @@ export type FamilyLeaveRequestSummary = {
   supervisor?: AssignedLeaveSupervisor;
   acceptor?: AssignedLeaveAcceptor;
   attendanceLeave?: AppliedLeaveAttendance;
+  /** Certificate Salaam only: the medical certificate the employee uploaded. */
+  certificate?: LeaveCertificate;
 };
 
 export type FamilyLeaveRequestPage = {
@@ -103,15 +109,66 @@ export type LeaveAcceptorOption = {
   missing: string[];
 };
 
+const CERTIFICATE_TYPES = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "application/pdf": "pdf",
+} as const;
+
+type CertificateProblem = "certificate_required" | "certificate_invalid";
+
+/** Checks the file's first bytes, so a renamed file of another kind is rejected. */
+function matchesCertificateSignature(bytes: Uint8Array, type: keyof typeof CERTIFICATE_TYPES): boolean {
+  const ascii = (start: number, end: number) => String.fromCharCode(...bytes.subarray(start, end));
+  if (type === "image/jpeg") return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (type === "image/png") return bytes[0] === 0x89 && ascii(1, 4) === "PNG";
+  if (type === "image/webp") return ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP";
+  return ascii(0, 5) === "%PDF-";
+}
+
+/** The certificate file sent with a form (field "certificate"), checked but not stored yet. */
+async function readCertificate(form: FormData | undefined) {
+  const file = form?.get("certificate");
+  if (!(file instanceof Blob) || file.size === 0) return "certificate_required" as const;
+  const type = file.type as keyof typeof CERTIFICATE_TYPES;
+  if (file.size > LEAVE_CERTIFICATE_MAX_BYTES || !(type in CERTIFICATE_TYPES)) return "certificate_invalid" as const;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (!matchesCertificateSignature(bytes, type)) return "certificate_invalid" as const;
+  const name = file instanceof File ? file.name : "";
+  return { bytes, type, fileName: name.slice(0, 120) || `certificate.${CERTIFICATE_TYPES[type]}` };
+}
+
+async function storeCertificate(
+  employeeId: string,
+  name: string,
+  file: Exclude<Awaited<ReturnType<typeof readCertificate>>, CertificateProblem>,
+): Promise<LeaveCertificate> {
+  if (!isR2Configured()) throw new Error("File storage is not configured");
+  const key = `${LEAVE_CERTIFICATE_PREFIX}${employeeId}/${name}.${CERTIFICATE_TYPES[file.type]}`;
+  await uploadToR2(key, file.bytes, file.type);
+  return { key, contentType: file.type, fileName: file.fileName, size: file.bytes.byteLength };
+}
+
+async function deleteCertificate(certificate: LeaveCertificate | undefined): Promise<void> {
+  if (!certificate?.key.startsWith(LEAVE_CERTIFICATE_PREFIX)) return;
+  // Nothing points at it any more; a failed delete only leaves an orphan.
+  await deleteFromR2(certificate.key).catch((error) => console.error("Could not delete leave certificate:", error));
+}
+
+/**
+ * Submits a Salaam, Certificate Salaam, or Family leave form. Certificate
+ * Salaam needs `certificateForm` with the medical certificate (image or PDF).
+ */
 export async function submitFamilyLeaveRequest(input: {
   employeeId: string;
   leaveType: string;
   reason: string;
   startDate: string;
   endDate: string;
-}): Promise<
+}, certificateForm?: FormData): Promise<
   | { ok: true; id: string; requestDate: string; reportedTime: string }
-  | { ok: false; code: "missing_dhivehi_details" }
+  | { ok: false; code: "missing_dhivehi_details" | CertificateProblem }
 > {
   const employeeId = String(input.employeeId ?? "").trim();
   const profile = await getSessionAuthProfile();
@@ -130,6 +187,8 @@ export async function submitFamilyLeaveRequest(input: {
     throw new Error("Leave reason must be written in Dhivehi");
   }
   const range = parseLeaveDateRange(startDate, endDate);
+  const certificateFile = leaveType === "certificateSalaam" ? await readCertificate(certificateForm) : null;
+  if (typeof certificateFile === "string") return { ok: false, code: certificateFile };
 
   const employee = await fetchEmployeeById(employeeId);
   const employeeNameDv = typeof employee.nameDv === "string" ? employee.nameDv.trim() : "";
@@ -158,6 +217,7 @@ export async function submitFamilyLeaveRequest(input: {
   });
 
   const id = randomUUID();
+  const certificate = certificateFile ? await storeCertificate(employeeId, id, certificateFile) : undefined;
   const db = getFirestoreDb();
   const batch = db.batch();
   const summary: FamilyLeaveRequestSummary = {
@@ -177,6 +237,7 @@ export async function submitFamilyLeaveRequest(input: {
     submittedAt: now.toISOString(),
     submittedBy: profile?.email || profile?.fullName || employee.name,
     approvalStatus: "Pending",
+    ...(certificate ? { certificate } : {}),
   };
   batch.set(db.collection(COLLECTIONS.familyLeaveRequests).doc(id), summary);
   batch.set(db.collection(COLLECTIONS.familyLeaveDocuments).doc(id), {
@@ -191,7 +252,8 @@ export async function submitFamilyLeaveRequest(input: {
  * Lets the employee change the dates and reason of their own Salaam or Family
  * leave form while it is still pending. The leave type and the original
  * reported date and time stay as they were, and the stored form document is
- * rebuilt so admins see the updated details.
+ * rebuilt so admins see the updated details. A Certificate Salaam form can
+ * also get a new certificate through `certificateForm`.
  */
 export async function updateFamilyLeaveRequest(input: {
   employeeId: string;
@@ -199,7 +261,7 @@ export async function updateFamilyLeaveRequest(input: {
   reason: string;
   startDate: string;
   endDate: string;
-}): Promise<{ ok: true } | { ok: false; code: "not_editable" }> {
+}, certificateForm?: FormData): Promise<{ ok: true } | { ok: false; code: "not_editable" | "certificate_invalid" }> {
   const employeeId = String(input.employeeId ?? "").trim();
   const requestId = String(input.requestId ?? "").trim();
   const profile = await getSessionAuthProfile();
@@ -221,11 +283,20 @@ export async function updateFamilyLeaveRequest(input: {
     return { ok: false, code: "not_editable" };
   }
 
+  const replacement = current.leaveType === "certificateSalaam" && certificateForm?.get("certificate")
+    ? await readCertificate(certificateForm)
+    : null;
+  if (typeof replacement === "string") return { ok: false, code: "certificate_invalid" };
+  const certificate = replacement
+    ? await storeCertificate(employeeId, `${requestId}-${randomUUID().slice(0, 8)}`, replacement)
+    : undefined;
+
   const changes = {
     reason,
     leaveStartDate: range.startDate,
     leaveEndDate: range.endDate,
     durationDays: range.durationDays,
+    ...(certificate ? { certificate } : {}),
   };
   const { document } = await renderAssignedForm(
     db,
@@ -236,7 +307,7 @@ export async function updateFamilyLeaveRequest(input: {
 
   // Re-check inside the transaction so an approval that lands while the form
   // was being rebuilt is never overwritten.
-  return db.runTransaction(async (transaction) => {
+  const result = await db.runTransaction(async (transaction) => {
     const latest = (await transaction.get(requestRef)).data() as FamilyLeaveRequestSummary | undefined;
     if (!latest || latest.employeeId !== employeeId || isReviewed(latest.approvalStatus)) {
       return { ok: false, code: "not_editable" } as const;
@@ -253,6 +324,9 @@ export async function updateFamilyLeaveRequest(input: {
     });
     return { ok: true } as const;
   });
+  // Keep whichever certificate the request ends up pointing at.
+  if (certificate) await deleteCertificate(result.ok ? current.certificate : certificate);
+  return result;
 }
 
 function isReviewed(status: unknown): boolean {
@@ -510,6 +584,7 @@ export async function deleteFamilyLeaveRequest(requestId: string): Promise<void>
   batch.delete(db.collection(COLLECTIONS.familyLeaveRequests).doc(requestId));
   batch.delete(db.collection(COLLECTIONS.familyLeaveDocuments).doc(requestId));
   await batch.commit();
+  await deleteCertificate(request?.certificate);
 }
 
 export async function reviewFamilyLeaveRequest(

@@ -7,6 +7,8 @@ import { fetchEmployeeById } from "@/lib/firebase/hr";
 import type { FamilyLeaveRequestSummary } from "@/lib/actions/family-leave.actions";
 import type { AnnualLeaveRequest } from "@/lib/actions/annual-leave.actions";
 import type { OvertimeRequest } from "@/lib/firebase/types";
+import { fileProxyUrl } from "@/lib/files";
+import { isSalaamKind } from "@/lib/leave/salaam-family-types";
 
 export type RequestHistoryKind = "salaam" | "family" | "annual" | "ot";
 export type RequestHistoryStatus = "Pending" | "Approved" | "Rejected";
@@ -28,6 +30,8 @@ export type RequestHistoryEntry = {
   startTime?: string;
   endTime?: string;
   takeoverEmployeeId?: string;
+  /** Certificate Salaam: link to the uploaded medical certificate. */
+  certificateUrl?: string;
 };
 
 function statusOf(value: unknown): RequestHistoryStatus {
@@ -68,7 +72,7 @@ export async function listEmployeeRequestHistory(employeeId: string): Promise<Re
     const status = statusOf(request.approvalStatus);
     return {
       id: doc.id,
-      kind: request.leaveType === "salaam" ? "salaam" : "family",
+      kind: isSalaamKind(request.leaveType) ? "salaam" : "family",
       status,
       submittedAt: isoDateTime(request.submittedAt) || `${request.requestDate}T00:00:00.000Z`,
       reviewedAt: isoDateTime(request.reviewedAt),
@@ -78,6 +82,7 @@ export async function listEmployeeRequestHistory(employeeId: string): Promise<Re
       totalDays: request.durationDays,
       reason: request.reason,
       editable: status === "Pending",
+      certificateUrl: request.certificate ? fileProxyUrl(request.certificate.key) : undefined,
     };
   });
   const annual: RequestHistoryEntry[] = [...annualDocs.values()].map((doc) => {
