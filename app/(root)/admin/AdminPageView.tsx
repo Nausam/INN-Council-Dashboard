@@ -2,6 +2,7 @@
 
 import AdminLeaveRequestCard from "@/components/Leave/AdminLeaveRequestCard";
 import { HolidayCalendarPanel } from "@/components/admin/HolidayCalendarPanel";
+import { ManualLeaveChitPanel } from "@/components/admin/ManualLeaveChitPanel";
 import { AttendanceSyncPanel } from "@/components/admin/AttendanceSyncPanel";
 import AdminOvertimeRequestCard from "@/components/overtime/AdminOvertimeRequestCard";
 import Pagination from "@/components/shared/Pagination";
@@ -101,6 +102,10 @@ export function AdminPageView({
     <div className="w-full max-w-7xl mx-auto p-6">
       <section className="mt-10">
         <HolidayCalendarPanel />
+      </section>
+
+      <section className="mt-10">
+        <ManualLeaveChitPanel />
       </section>
 
       <section className="mt-10">

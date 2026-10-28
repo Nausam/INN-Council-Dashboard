@@ -14,6 +14,7 @@ import type { AnnualLeaveFormPerson, AnnualLeaveFormValues } from "@/lib/forms/a
 import { createAnnualLeaveChitPdf } from "@/lib/forms/annual-leave-chit";
 import { parseLeaveDateRange } from "@/lib/leave/date-range";
 import { annualApproverSignaturePath } from "@/lib/leave/approval-signatures";
+import { previewManualChit, type ManualChitPreview } from "@/lib/leave/manual-chit";
 import { findAnnualLeaveEmployee } from "@/lib/leave/annual-employee";
 import {
   applyApprovedLeaveToAttendance,
@@ -338,4 +339,19 @@ export async function deleteAnnualLeaveRequest(requestId: string): Promise<void>
   const request = (await ref.get()).data() as AnnualLeaveRequest | undefined;
   if (request) await revertApprovedLeaveFromAttendance(request.employeeId, request.attendanceLeave);
   await ref.delete();
+}
+
+/** Working days and balances for a chit HR is about to make by hand on the Admin page. */
+export async function previewManualAnnualLeaveChit(input: {
+  employeeId: string;
+  startDate: string;
+  endDate: string;
+}): Promise<ManualChitPreview | { error: string }> {
+  await requireAdmin();
+  if (!/^[\w-]{1,128}$/.test(String(input.employeeId ?? ""))) return { error: "Choose an employee" };
+  try {
+    return await previewManualChit(input.employeeId, input.startDate, input.endDate);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Could not count the days" };
+  }
 }

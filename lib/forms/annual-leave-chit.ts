@@ -71,7 +71,14 @@ function drawChitDate(page: PDFPage, font: PDFFont, value: string, right: number
   return false;
 }
 
-export async function createAnnualLeaveChitPdf(request: AnnualLeaveRequest): Promise<Uint8Array> {
+/**
+ * The chit for an approved annual leave request. `balanceAfter` overrides the
+ * annual leave left that it prints (a manual chit sets it directly).
+ */
+export async function createAnnualLeaveChitPdf(
+  request: AnnualLeaveRequest,
+  options: { balanceAfter?: number } = {},
+): Promise<Uint8Array> {
   if (request.approvalStatus !== "Approved" || !request.approver) {
     throw new Error("Annual leave has not been approved");
   }
@@ -106,9 +113,9 @@ export async function createAnnualLeaveChitPdf(request: AnnualLeaveRequest): Pro
   // Annual leave left after this leave: the balance before it, less the days
   // it marked (public holidays in the range aren't spent).
   const daysTaken = request.attendanceLeave?.dates.length ?? (Number(request.totalDays) || 0);
-  const balanceAfter = typeof request.leaveBalance === "number"
+  const balanceAfter = options.balanceAfter ?? (typeof request.leaveBalance === "number"
     ? Math.max(0, request.leaveBalance - daysTaken)
-    : undefined;
+    : undefined);
   drawRight(page, font, balanceAfter, 455, 525, 180);
   drawRight(page, font, request.familyLeaveBalance, 425, 548, 180);
   if (request.joinedDate) drawChitDate(page, font, request.joinedDate, 425, 570, 190);
