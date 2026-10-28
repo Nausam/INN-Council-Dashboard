@@ -2,6 +2,7 @@
 
 import { AttendanceChangesBanner } from "@/components/attendance/attendance-changes-banner";
 import { AttendanceLeaveSelect } from "@/components/attendance/attendance-leave-select";
+import { AttendanceLeaveUsage } from "@/components/attendance/attendance-leave-usage";
 import { PrayerAttendancePicker } from "@/components/attendance/prayer-attendance-picker";
 import { AvatarGlow, CouncilCard } from "@/components/design-system";
 import {
@@ -40,6 +41,7 @@ import {
   updateMosqueAttendanceRecord,
 } from "@/lib/actions/hr.actions";
 import { fetchInnamaadhooTimes, InnamaadhooTimes } from "@/lib/salat-client";
+import { ADDITIVE_LEAVE_KEYS, getLeaveUsageSummary } from "@/lib/employees/leave-usage";
 import { cn } from "@/lib/utils";
 import { useUser } from "@/Providers/UserProvider";
 import {
@@ -113,9 +115,14 @@ function designationFromRef(
 
 /* ======================= Component ======================= */
 
+/** Rows as loaded: the saved `changed` flag marks hand edits, not unsaved ones. */
+function freshRows(data: MosqueAttendanceRecord[]): MosqueAttendanceRecord[] {
+  return data.map((row) => ({ ...row, changed: false }));
+}
+
 const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
   const [attendanceRecords, setAttendanceRecords] =
-    useState<MosqueAttendanceRecord[]>(data);
+    useState<MosqueAttendanceRecord[]>(() => freshRows(data));
   const [submitting, setSubmitting] = useState(false);
 
   const { toast } = useToast();
@@ -129,8 +136,14 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
   >({});
 
   useEffect(() => {
-    setAttendanceRecords(data);
+    setAttendanceRecords(freshRows(data));
   }, [data]);
+
+  // The leave each row has saved, to deduct or refund only what really changed.
+  const savedLeaveById = useMemo(
+    () => new Map(data.map((row) => [row.$id, row.leaveType ?? null])),
+    [data],
+  );
 
   // Fallback: one batch fetch if rows still have bare employee ids.
   const unresolvedIds = useMemo(() => {
@@ -143,6 +156,35 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
   }, [data, empInfoMap]);
 
   const { data: allEmployees } = useAllEmployeesActionQuery();
+  const employeeById = useMemo(
+    () => new Map((allEmployees ?? []).map((employee) => [employee.$id, employee])),
+    [allEmployees],
+  );
+
+  /**
+   * Leave used and left for a row on leave, as the council sheet shows it: the
+   * count saved with the row, or the employee's balance (with this day taken
+   * off while the leave is still unsaved).
+   */
+  const leaveUsageFor = (record: MosqueAttendanceRecord) => {
+    if (!record.leaveType) return null;
+    const pendingDeduction = savedLeaveById.get(record.$id) !== record.leaveType;
+    if (!pendingDeduction) {
+      if (ADDITIVE_LEAVE_KEYS.has(record.leaveType) && typeof record.leaveUsedAfter === "number") {
+        return { used: record.leaveUsedAfter, remaining: null };
+      }
+      if (typeof record.leaveRemainingAfter === "number") {
+        return getLeaveUsageSummary(record.leaveType, record.leaveRemainingAfter);
+      }
+    }
+    const employeeId = typeof record.employeeId === "string" ? record.employeeId : record.employeeId.$id;
+    const employee = employeeById.get(employeeId);
+    if (!employee) return null;
+    const value = employee[record.leaveType as keyof typeof employee];
+    let balance = typeof value === "number" && Number.isFinite(value) ? value : 0;
+    if (pendingDeduction) balance = ADDITIVE_LEAVE_KEYS.has(record.leaveType) ? balance + 1 : Math.max(0, balance - 1);
+    return getLeaveUsageSummary(record.leaveType, balance);
+  };
 
   useEffect(() => {
     if (!allEmployees?.length || unresolvedIds.length === 0) return;
@@ -338,14 +380,12 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
               });
             }
 
-            if (r.previousLeaveType && r.previousLeaveType !== r.leaveType) {
-              await deductLeave(empId, r.previousLeaveType, true);
-            }
-            if (
-              r.leaveType &&
-              (!r.leaveDeducted || r.previousLeaveType !== r.leaveType)
-            ) {
-              await deductLeave(empId, r.leaveType);
+            // Only a change from the saved leave moves the balance, so saving
+            // the sheet again never deducts the same day twice.
+            const savedLeave = savedLeaveById.get(r.$id) ?? null;
+            if (savedLeave !== r.leaveType) {
+              if (savedLeave) await deductLeave(empId, savedLeave, true);
+              if (r.leaveType) await deductLeave(empId, r.leaveType);
             }
           }
 
@@ -361,6 +401,8 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
             maqribMinutesLate: r.maqribMinutesLate ?? 0,
             ishaMinutesLate: r.ishaMinutesLate ?? 0,
             leaveType: r.leaveType,
+            previousLeaveType: r.leaveType,
+            leaveDeducted: Boolean(r.leaveType),
             changed: true,
           });
 
@@ -478,6 +520,7 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
               {attendanceRecords.map((record, index) => {
                 const isChanged = record.changed;
                 const isOnLeave = !!record.leaveType;
+                const leaveUsage = leaveUsageFor(record);
                 const displayName = nameFromRef(
                   record.employeeId as unknown as EmployeeRef,
                   empInfoMap,
@@ -506,11 +549,13 @@ const MosqueAttendanceTable = ({ date, data }: MosqueAttendanceTableProps) => {
                             <span className="truncate text-sm font-bold text-slate-900">
                               {displayName}
                             </span>
-                            {isChanged && (
+                            {leaveUsage ? (
+                              <AttendanceLeaveUsage usage={leaveUsage} className="h-8 w-28 shrink-0" />
+                            ) : isChanged ? (
                               <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700 ring-1 ring-amber-200/60">
                                 Modified
                               </span>
-                            )}
+                            ) : null}
                           </div>
                           <p className="text-xs font-medium text-slate-500">
                             {designationFromRef(

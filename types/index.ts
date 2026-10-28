@@ -21,6 +21,9 @@ export interface MosqueAttendanceRecord {
   previousLeaveType: string | null;
   leaveDeducted: boolean;
   leaveType: string | null;
+  /** Leave count saved with the row when its leave was deducted. */
+  leaveUsedAfter?: number | null;
+  leaveRemainingAfter?: number | null;
   changed?: boolean;
 }
 

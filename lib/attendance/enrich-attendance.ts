@@ -75,6 +75,8 @@ export async function fetchEnrichedMosqueAttendanceForDate(
       previousLeaveType: row.previousLeaveType ?? null,
       leaveDeducted: row.leaveDeducted ?? false,
       leaveType: row.leaveType,
+      leaveUsedAfter: row.leaveUsedAfter ?? null,
+      leaveRemainingAfter: row.leaveRemainingAfter ?? null,
       changed: row.changed ?? false,
       employeeId: emp
         ? {
