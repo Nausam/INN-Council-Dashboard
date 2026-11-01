@@ -227,6 +227,45 @@ export async function realignApprovedLeave(
 }
 
 /**
+ * Moves an approved request's marked days to the new range of an edited form.
+ * The balance is checked first, counting the days the move gives back, so a
+ * range that can't be covered changes nothing.
+ */
+export async function moveApprovedLeave(
+  employeeId: string,
+  applied: AppliedLeaveAttendance,
+  startDate: string,
+  endDate: string,
+): Promise<{ applied: AppliedLeaveAttendance; problem?: string }> {
+  const { employee, dates, datesToMark } = await planApprovedLeave({
+    employeeId,
+    leaveType: applied.leaveType,
+    startDate,
+    endDate,
+  });
+  if (dates.length === 0) {
+    throw new LeaveAttendanceError("This leave range has no working days to mark");
+  }
+  if (LEAVE_TOTAL_ALLOWANCE[applied.leaveType] !== undefined) {
+    const raw = employee[applied.leaveType as keyof EmployeeDoc];
+    const balance = typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
+    const wanted = new Set(dates);
+    const returned = applied.dates.filter((date) => !wanted.has(date)).length;
+    if (datesToMark.length > balance + returned) {
+      const label = LEAVE_LABELS[applied.leaveType] ?? applied.leaveType;
+      const available = balance + returned;
+      throw new LeaveAttendanceError(
+        `${employee.name} has ${available} ${label} day${available === 1 ? "" : "s"} for this form, but the new dates need ${datesToMark.length}.`,
+      );
+    }
+  }
+  // A problem here means the balance changed since the check above; the
+  // returned days still describe what attendance now holds.
+  const result = await realignApprovedLeave(employee, applied, startDate, endDate);
+  return { applied: result.applied, problem: result.problem };
+}
+
+/**
  * Clears the leave an approval marked, returns the days to the balance and
  * re-reads the fingerprint punches so those days get their sign-ins back.
  * Days an admin has since changed to something else are left as they are.

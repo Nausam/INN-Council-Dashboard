@@ -66,7 +66,6 @@ export function FamilyLeaveRequestDialog({
   const salaamForm = isSalaamKind(presetLeaveType);
   const visual = REQUEST_VISUALS[salaamForm ? "salaam" : "family"];
   const HeaderIcon = visual.icon;
-  const [clock, setClock] = useState({ time: "—" });
   const [leaveType, setLeaveType] = useState<SalaamFamilyLeaveType | "">("");
   // Salaam or Certificate Salaam, switched with the tabs; an edit keeps its own.
   const [salaamKind, setSalaamKind] = useState<"salaam" | "certificateSalaam">(
@@ -126,15 +125,12 @@ export function FamilyLeaveRequestDialog({
     setError("");
   }, [open, editRequest]);
 
+  // The reported time isn't asked for; the server fills it in.
   useEffect(() => {
     if (!open || editRequest) return;
     const today = maldivesDateTime();
     setStartDate((current) => current || today.date);
     setEndDate((current) => current || today.date);
-    const updateClock = () => setClock({ time: maldivesDateTime().time });
-    updateClock();
-    const timer = window.setInterval(updateClock, 30_000);
-    return () => window.clearInterval(timer);
   }, [open, editRequest]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -171,9 +167,11 @@ export function FamilyLeaveRequestDialog({
           endDate,
         }, certificateForm);
         if (!result.ok) {
-          setError(result.code === "certificate_invalid"
-            ? CERTIFICATE_ERRORS.type
-            : "މި ފޯމު ރިވިއު ކުރެވިފައިވާތީ ބަދަލެއް ނުގެނެވޭނެ.");
+          setError(result.code === "attendance"
+            ? result.message
+            : result.code === "certificate_invalid"
+              ? CERTIFICATE_ERRORS.type
+              : "މި ފޯމު ރިވިއު ކުރެވިފައިވާތީ ބަދަލެއް ނުގެނެވޭނެ.");
           return;
         }
         chooseCertificate(null);
@@ -202,7 +200,6 @@ export function FamilyLeaveRequestDialog({
             : "މުވައްޒަފުގެ ނަން، އެޑްރެސް އަދި މަގާމް ދިވެހިން އެޑިޓް ފޯމުން ފުރަމަ ޖެހޭ.");
         return;
       }
-      setClock({ time: result.reportedTime });
       setSubmitted(true);
       onSubmitted?.();
       setLeaveType("");
@@ -321,19 +318,6 @@ export function FamilyLeaveRequestDialog({
             </div>
 
             <LeaveRangePreview startDate={startDate} endDate={endDate} tone={visual.tone} />
-
-            {!editing ? (
-              <div className={styles.field}>
-                <label htmlFor="family-leave-time">އެންގި ގަޑި</label>
-                <input
-                  id="family-leave-time"
-                  type="text"
-                  value={clock.time}
-                  readOnly
-                  dir="ltr"
-                />
-              </div>
-            ) : null}
 
             <div className={styles.field}>
               <label htmlFor="family-leave-reason">ސަބަބު</label>

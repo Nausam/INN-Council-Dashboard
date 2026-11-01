@@ -11,7 +11,9 @@ import { maldivesDateTime } from "@/lib/dates/maldives";
 import { COLLECTIONS, getFirestoreDb } from "@/lib/firebase/admin";
 import { fetchAllEmployees, fetchEmployeeById } from "@/lib/firebase/hr";
 import { fillSalaamFamilyLeaveTemplate } from "@/lib/forms/salaam-family-leave";
-import { displayLeaveDate, parseLeaveDateRange, templateDaysForRange } from "@/lib/leave/date-range";
+import { parseLeaveDateRange, templateDaysForRange } from "@/lib/leave/date-range";
+import { formReceivedDate, renderFamilyLeaveForm } from "@/lib/leave/family-leave-form";
+import { randomReceivedTime, randomReportedTime } from "@/lib/leave/reported-time";
 import { isDhivehiText } from "@/lib/leave/dhivehi-text";
 import {
   ATTENDANCE_LEAVE_TYPE,
@@ -31,6 +33,7 @@ import {
 import {
   applyApprovedLeaveToAttendance,
   leaveAttendanceFailure,
+  moveApprovedLeave,
   revertApprovedLeaveFromAttendance,
   type AppliedLeaveAttendance,
 } from "@/lib/leave/approved-leave-attendance";
@@ -202,7 +205,8 @@ export async function submitFamilyLeaveRequest(input: {
     return { ok: false, code: "missing_dhivehi_details" };
   }
   const now = new Date();
-  const { date, time } = maldivesDateTime(now);
+  const { date } = maldivesDateTime(now);
+  const time = randomReportedTime();
   const templateDays = templateDaysForRange(range.startDate, range.endDate, time, reason);
   const document = await fillSalaamFamilyLeaveTemplate({
     leaveType,
@@ -250,10 +254,12 @@ export async function submitFamilyLeaveRequest(input: {
 
 /**
  * Lets the employee change the dates and reason of their own Salaam or Family
- * leave form while it is still pending. The leave type and the original
- * reported date and time stay as they were, and the stored form document is
- * rebuilt so admins see the updated details. A Certificate Salaam form can
- * also get a new certificate through `certificateForm`.
+ * leave form while it is still pending; admins can also change approved and
+ * rejected forms. The leave type and the original reported date and time stay
+ * as they were, and the stored form document is rebuilt so admins see the
+ * updated details. On an approved form the leave marked in attendance moves to
+ * the new dates. A Certificate Salaam form can also get a new certificate
+ * through `certificateForm`.
  */
 export async function updateFamilyLeaveRequest(input: {
   employeeId: string;
@@ -261,7 +267,11 @@ export async function updateFamilyLeaveRequest(input: {
   reason: string;
   startDate: string;
   endDate: string;
-}, certificateForm?: FormData): Promise<{ ok: true } | { ok: false; code: "not_editable" | "certificate_invalid" }> {
+}, certificateForm?: FormData): Promise<
+  | { ok: true }
+  | { ok: false; code: "not_editable" | "certificate_invalid" }
+  | { ok: false; code: "attendance"; message: string }
+> {
   const employeeId = String(input.employeeId ?? "").trim();
   const requestId = String(input.requestId ?? "").trim();
   const profile = await getSessionAuthProfile();
@@ -269,6 +279,7 @@ export async function updateFamilyLeaveRequest(input: {
   if (!/^[\w-]{1,128}$/.test(employeeId) || !/^[\w-]{1,128}$/.test(requestId)) {
     throw new Error("Invalid request");
   }
+  const admin = Boolean(profile?.isAdmin);
   const reason = String(input.reason ?? "").trim();
   if (!isDhivehiText(reason, 300)) {
     throw new Error("Leave reason must be written in Dhivehi");
@@ -279,7 +290,7 @@ export async function updateFamilyLeaveRequest(input: {
   const requestRef = db.collection(COLLECTIONS.familyLeaveRequests).doc(requestId);
   const snap = await requestRef.get();
   const current = snap.data() as FamilyLeaveRequestSummary | undefined;
-  if (!current || current.employeeId !== employeeId || isReviewed(current.approvalStatus)) {
+  if (!current || current.employeeId !== employeeId || (!admin && isReviewed(current.approvalStatus))) {
     return { ok: false, code: "not_editable" };
   }
 
@@ -291,29 +302,49 @@ export async function updateFamilyLeaveRequest(input: {
     ? await storeCertificate(employeeId, `${requestId}-${randomUUID().slice(0, 8)}`, replacement)
     : undefined;
 
-  const changes = {
+  const edited = {
     reason,
     leaveStartDate: range.startDate,
     leaveEndDate: range.endDate,
     durationDays: range.durationDays,
     ...(certificate ? { certificate } : {}),
   };
-  const { document } = await renderAssignedForm(
-    db,
-    { ...current, ...changes, secondDay: undefined, additionalDetails: undefined },
-    current.supervisor,
-    current.acceptor,
-  );
+  const updated = { ...current, ...edited, secondDay: undefined, additionalDetails: undefined };
+  // The office receives the form after the leave, so new dates move that day too.
+  const acceptor = current.acceptor && { ...current.acceptor, acceptedDate: await formReceivedDate(updated) };
+  const changes = { ...edited, ...(acceptor ? { acceptor } : {}) };
+  const { document } = await renderFamilyLeaveForm(db, updated, current.supervisor, acceptor);
 
-  // Re-check inside the transaction so an approval that lands while the form
-  // was being rebuilt is never overwritten.
+  let attendanceLeave: AppliedLeaveAttendance | undefined;
+  if (current.approvalStatus === "Approved" && current.attendanceLeave) {
+    try {
+      const moved = await moveApprovedLeave(employeeId, current.attendanceLeave, range.startDate, range.endDate);
+      if (moved.problem) {
+        // Attendance changed partway; record what it holds and leave the form's dates as they were.
+        await requestRef.update({ attendanceLeave: moved.applied });
+        if (certificate) await deleteCertificate(certificate);
+        return { ok: false, code: "attendance", message: moved.problem };
+      }
+      attendanceLeave = moved.applied;
+    } catch (error) {
+      if (certificate) await deleteCertificate(certificate);
+      return { ...leaveAttendanceFailure(error), code: "attendance" };
+    }
+  }
+
+  // Re-check inside the transaction so a review that lands while the form was
+  // being rebuilt is never overwritten.
   const result = await db.runTransaction(async (transaction) => {
     const latest = (await transaction.get(requestRef)).data() as FamilyLeaveRequestSummary | undefined;
-    if (!latest || latest.employeeId !== employeeId || isReviewed(latest.approvalStatus)) {
+    const reviewChanged = admin
+      ? latest?.approvalStatus !== current.approvalStatus
+      : isReviewed(latest?.approvalStatus);
+    if (!latest || latest.employeeId !== employeeId || reviewChanged) {
       return { ok: false, code: "not_editable" } as const;
     }
     transaction.update(requestRef, {
       ...changes,
+      ...(attendanceLeave ? { attendanceLeave } : {}),
       secondDay: FieldValue.delete(),
       additionalDetails: FieldValue.delete(),
       updatedAt: new Date().toISOString(),
@@ -359,6 +390,40 @@ export async function listFamilyLeaveRequests(afterId?: string): Promise<FamilyL
   };
 }
 
+export type FamilyLeaveFormFile = {
+  id: string;
+  employeeName: string;
+  leaveType?: SalaamFamilyLeaveType;
+  /** The leave's first day, or the request date on older forms. */
+  date: string;
+  /** Whether the form says who received it yet. */
+  hasReceiver: boolean;
+};
+
+/**
+ * Every form's id and the details its file is named by, newest first. The
+ * browser then fetches and zips the forms, since a zip of them all can be
+ * larger than a server response is allowed to be.
+ */
+export async function listFamilyLeaveFormFiles(): Promise<FamilyLeaveFormFile[]> {
+  await requireAdmin();
+  const snap = await getFirestoreDb()
+    .collection(COLLECTIONS.familyLeaveRequests)
+    .orderBy("submittedAt", "desc")
+    .select("employeeName", "leaveType", "leaveStartDate", "requestDate", "acceptor")
+    .get();
+  return snap.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      id: doc.id,
+      employeeName: String(data.employeeName ?? ""),
+      leaveType: isSalaamFamilyLeaveType(data.leaveType) ? data.leaveType : undefined,
+      date: String(data.leaveStartDate || data.requestDate || ""),
+      hasReceiver: Boolean(data.acceptor),
+    };
+  });
+}
+
 export async function listLeaveSupervisors(): Promise<LeaveSupervisorOption[]> {
   await requireAdmin();
   const collection = getFirestoreDb().collection(COLLECTIONS.employees);
@@ -402,54 +467,6 @@ export async function listLeaveAcceptors(): Promise<LeaveAcceptorOption[]> {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-async function renderAssignedForm(
-  db: ReturnType<typeof getFirestoreDb>,
-  request: FamilyLeaveRequestSummary,
-  supervisor: AssignedLeaveSupervisor | undefined,
-  acceptor: AssignedLeaveAcceptor | undefined,
-) {
-  if (!isSalaamFamilyLeaveType(request.leaveType)) {
-    throw new Error("Leave type is missing from this form");
-  }
-  const requesterSnap = /^[\w-]{1,128}$/.test(request.employeeId ?? "")
-    ? await db.collection(COLLECTIONS.employees).doc(request.employeeId).get()
-    : null;
-  const requester = requesterSnap?.data() ?? {};
-  const employeeNameDv = String(request.employeeNameDv || requester.nameDv || "").trim();
-  const addressDv = String(request.addressDv || requester.addressDv || "").trim();
-  const designationDv = String(request.designationDv || requester.designationDv || "").trim();
-  if (
-    !isDhivehiText(employeeNameDv, 100) ||
-    !isDhivehiText(addressDv, 150) ||
-    !isDhivehiText(designationDv, 100)
-  ) {
-    throw new Error("Complete the employee's Dhivehi details before assigning the form");
-  }
-  const dateParts = request.requestDate.split("-");
-  if (dateParts.length !== 3) throw new Error("Leave form date is invalid");
-  const templateDays = request.leaveStartDate && request.leaveEndDate
-    ? templateDaysForRange(request.leaveStartDate, request.leaveEndDate, request.reportedTime, request.reason)
-    : null;
-  const document = await fillSalaamFamilyLeaveTemplate({
-    leaveType: request.leaveType,
-    date: templateDays ? templateDays.date : `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`,
-    time: request.reportedTime,
-    reason: request.reason,
-    secondDay: templateDays ? templateDays.secondDay : (request.secondDay
-      ? { ...request.secondDay, date: displayLeaveDate(request.secondDay.date) }
-      : undefined),
-    additionalDetails: templateDays ? templateDays.additionalDetails : (request.additionalDetails
-      ? { ...request.additionalDetails, date: displayLeaveDate(request.additionalDetails.date) }
-      : undefined),
-    employeeNameDv,
-    addressDv,
-    designationDv,
-    supervisor,
-    acceptor,
-  });
-  return { document, employeeNameDv, addressDv, designationDv };
-}
-
 export async function assignFamilyLeaveSupervisor(
   requestId: string,
   supervisorKey: string,
@@ -481,7 +498,7 @@ export async function assignFamilyLeaveSupervisor(
   }
 
   const now = new Date();
-  const { displayDate, time } = maldivesDateTime(now);
+  const { displayDate } = maldivesDateTime(now);
   const supervisor: AssignedLeaveSupervisor = {
     key: choice.key,
     employeeId: choice.employeeId,
@@ -490,11 +507,12 @@ export async function assignFamilyLeaveSupervisor(
     designationDv,
     sectionDv,
     reportedDate: displayDate,
-    reportedTime: time,
+    // The form shows the supervisor told at the time the employee reported.
+    reportedTime: request.reportedTime,
     assignedAt: now.toISOString(),
   };
   const { document, employeeNameDv, addressDv, designationDv: requesterDesignationDv } =
-    await renderAssignedForm(db, request, supervisor, request.acceptor);
+    await renderFamilyLeaveForm(db, request, supervisor, request.acceptor);
   // A new supervisor sends an approved form back to Pending, so undo its leave days.
   if (request.approvalStatus === "Approved") {
     await revertApprovedLeaveFromAttendance(request.employeeId, request.attendanceLeave);
@@ -545,20 +563,19 @@ export async function assignFamilyLeaveAcceptor(
     throw new Error("Add the receiving employee's Dhivehi name and designation in the employee edit form");
   }
 
-  const now = new Date();
-  const { displayDate, time } = maldivesDateTime(now);
+  const request = requestSnap.data() as FamilyLeaveRequestSummary;
+  // The form is handed in when the employee is back, not when it is assigned here.
   const acceptor: AssignedLeaveAcceptor = {
     employeeId,
     name: typeof employee.name === "string" ? employee.name : nameDv,
     nameDv,
     designationDv,
-    acceptedDate: displayDate,
-    acceptedTime: time,
-    assignedAt: now.toISOString(),
+    acceptedDate: await formReceivedDate(request),
+    acceptedTime: randomReceivedTime(),
+    assignedAt: new Date().toISOString(),
   };
-  const request = requestSnap.data() as FamilyLeaveRequestSummary;
   const { document, employeeNameDv, addressDv, designationDv: requesterDesignationDv } =
-    await renderAssignedForm(db, request, request.supervisor, acceptor);
+    await renderFamilyLeaveForm(db, request, request.supervisor, acceptor);
   const batch = db.batch();
   batch.update(requestRef, {
     acceptor,

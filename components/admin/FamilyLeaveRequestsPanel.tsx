@@ -4,19 +4,24 @@ import {
   assignFamilyLeaveAcceptor,
   assignFamilyLeaveSupervisor,
   deleteFamilyLeaveRequest,
+  listFamilyLeaveFormFiles,
   listFamilyLeaveRequests,
   listLeaveAcceptors,
   listLeaveSupervisors,
   reviewFamilyLeaveRequest,
+  type FamilyLeaveFormFile,
   type FamilyLeaveRequestPage,
   type FamilyLeaveRequestSummary,
   type LeaveAcceptorOption,
   type LeaveSupervisorOption,
 } from "@/lib/actions/family-leave.actions";
+import type { FamilyLeaveEdit } from "@/components/Leave/FamilyLeaveRequestDialog";
+import { maldivesDateTime } from "@/lib/dates/maldives";
 import { fileProxyUrl } from "@/lib/files";
-import { isSalaamKind, SALAAM_FAMILY_LEAVE_TYPES } from "@/lib/leave/salaam-family-types";
+import { isSalaamKind, SALAAM_FAMILY_LEAVE_TYPES, type SalaamFamilyLeaveType } from "@/lib/leave/salaam-family-types";
 import { cn } from "@/lib/utils";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { zipSync } from "fflate";
 import {
   ArrowUpRight,
   CalendarDays,
@@ -27,20 +32,88 @@ import {
   Download,
   FileBadge,
   FileText,
+  LayoutGrid,
+  List,
+  Loader2,
+  Pencil,
   RefreshCw,
   Trash2,
   UserRound,
   X,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
+import { type ReactNode, useEffect, useState } from "react";
+
+const FamilyLeaveRequestDialog = dynamic(() =>
+  import("@/components/Leave/FamilyLeaveRequestDialog").then((module) => module.FamilyLeaveRequestDialog),
+);
 
 const PAGE_SIZE = 12;
+const VIEW_STORAGE_KEY = "leave-forms-view";
 const dhivehiFont = { fontFamily: "Faruma, sans-serif" };
 
-function typeLabel(request: FamilyLeaveRequestSummary) {
-  return SALAAM_FAMILY_LEAVE_TYPES.find((type) => type.value === request.leaveType)?.labelEn ?? "Leave";
+type ViewMode = "grid" | "list";
+
+/** A pending form opened in the leave form dialog, kept apart from the page so a refresh doesn't reset it. */
+type EditingForm = { employeeId: string; leaveType: SalaamFamilyLeaveType; edit: FamilyLeaveEdit };
+
+function leaveTypeLabel(leaveType: SalaamFamilyLeaveType | undefined) {
+  return SALAAM_FAMILY_LEAVE_TYPES.find((type) => type.value === leaveType)?.labelEn ?? "Leave";
 }
+
+function typeLabel(request: FamilyLeaveRequestSummary) {
+  return leaveTypeLabel(request.leaveType);
+}
+
+/** The list's narrow Type column fits only short names. */
+function shortTypeLabel(request: FamilyLeaveRequestSummary) {
+  return request.leaveType === "family" ? "Family Leave" : typeLabel(request);
+}
+
+function formUrl(requestId: string) {
+  return `/api/admin/family-leave-requests/${encodeURIComponent(requestId)}/form`;
+}
+
+/** Any form can change except the oldest ones, which don't record their leave type. */
+function canEdit(request: FamilyLeaveRequestSummary) {
+  return Boolean(request.leaveType);
+}
+
+function statusPillClass(status: FamilyLeaveRequestSummary["approvalStatus"]) {
+  return status === "Approved"
+    ? "bg-[#e0f2e9] text-[#167a67]"
+    : status === "Rejected"
+      ? "bg-rose-100 text-rose-700"
+      : "bg-amber-100 text-amber-800";
+}
+
+/** File-system safe name, unique within the zip. */
+function formFileName(form: FamilyLeaveFormFile, taken: Set<string>) {
+  const base = [form.employeeName || form.id, leaveTypeLabel(form.leaveType), form.date]
+    .filter(Boolean)
+    .join(" - ")
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+  let name = `${base}.docx`;
+  for (let n = 2; taken.has(name); n += 1) name = `${base} (${n}).docx`;
+  taken.add(name);
+  return name;
+}
+
+function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+const ACCEPTOR_SELECT_ID = "leave-form-acceptor";
 
 function reasonLabel(request: FamilyLeaveRequestSummary, reason: string) {
   const leaveType = SALAAM_FAMILY_LEAVE_TYPES.find((type) => type.value === request.leaveType)?.labelDv;
@@ -95,7 +168,7 @@ function FormCard({
         <span className="text-xs font-bold tracking-[0.16em] text-[#7a8987]">{String(number).padStart(2, "0")}</span>
         <span className="flex items-center gap-1.5">
           <span className={cn("rounded-full bg-white/80 px-3 py-1 text-[11px] font-extrabold", salaam ? "text-[#167a67]" : "text-[#8059a2]")}>{typeLabel(request)}</span>
-          <span className={cn("rounded-full px-3 py-1 text-[11px] font-extrabold", request.approvalStatus === "Approved" ? "bg-[#e0f2e9] text-[#167a67]" : request.approvalStatus === "Rejected" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-800")}>{request.approvalStatus || "Pending"}</span>
+          <span className={cn("rounded-full px-3 py-1 text-[11px] font-extrabold", statusPillClass(request.approvalStatus))}>{request.approvalStatus || "Pending"}</span>
         </span>
       </span>
 
@@ -122,29 +195,152 @@ function FormCard({
   );
 }
 
+const LIST_COLUMNS = "lg:grid-cols-[2.5rem_minmax(0,1.6fr)_8.5rem_minmax(0,1.4fr)_6.5rem_minmax(0,1fr)_auto]";
+const rowIconButton = "flex h-9 w-9 items-center justify-center rounded-full border border-[#e1ebe5] bg-white transition disabled:pointer-events-none disabled:opacity-35";
+
+function FormRow({
+  request,
+  number,
+  onOpen,
+  onEdit,
+  onDownload,
+  onDelete,
+  busy,
+  downloading,
+}: {
+  request: FamilyLeaveRequestSummary;
+  number: number;
+  onOpen: () => void;
+  onEdit: () => void;
+  onDownload: () => void;
+  onDelete: () => void;
+  busy: boolean;
+  downloading: boolean;
+}) {
+  const salaam = isSalaamKind(request.leaveType);
+  const editable = canEdit(request);
+  const range = `${leaveRangeLabel(request)}${request.durationDays && request.durationDays > 1 ? ` · ${request.durationDays} days` : ""}`;
+  return (
+    <li className={cn("grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 py-3.5 transition hover:bg-[#f7fbf9] sm:px-5", LIST_COLUMNS)}>
+      <span className="hidden text-xs font-bold tracking-[0.16em] text-[#7a8987] lg:block">{String(number).padStart(2, "0")}</span>
+      <button type="button" onClick={onOpen} className="flex min-w-0 items-center gap-3 rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#158577]" aria-label={`Open ${typeLabel(request)} form for ${request.employeeName}`}>
+        <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-base font-black", salaam ? "bg-[#c8ebdd] text-[#126a5b]" : "bg-[#e9d8f5] text-[#774b9b]")}>
+          {request.employeeName.trim().charAt(0).toUpperCase() || "?"}
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-extrabold text-[#1c2d2e] hover:underline">{request.employeeName}</span>
+          <span className="mt-0.5 block truncate text-xs font-medium text-[#7b8a8b] lg:hidden">{shortTypeLabel(request)} · {range}</span>
+        </span>
+      </button>
+      <span className="hidden lg:block"><span className={cn("whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-extrabold", salaam ? "bg-[#f1faf6] text-[#167a67]" : "bg-[#f8f4fb] text-[#8059a2]")}>{shortTypeLabel(request)}</span></span>
+      <span className="hidden truncate text-sm font-semibold text-[#3c5553] lg:block">{range}</span>
+      <span className="hidden lg:block"><span className={cn("rounded-full px-3 py-1 text-[11px] font-extrabold", statusPillClass(request.approvalStatus))}>{request.approvalStatus || "Pending"}</span></span>
+      <span className="hidden min-w-0 items-center gap-2 truncate text-xs font-semibold text-[#526c6a] lg:flex">
+        <span className={cn("h-2 w-2 shrink-0 rounded-full", request.supervisor ? "bg-[#25a880]" : "bg-[#dcab6d]")} />
+        <span className="truncate">{request.supervisor ? request.supervisor.name : "Needs supervisor"}</span>
+      </span>
+      <span className="flex items-center gap-1.5">
+        <span className={cn("rounded-full px-2.5 py-1 text-[10px] font-extrabold lg:hidden", statusPillClass(request.approvalStatus))}>{request.approvalStatus || "Pending"}</span>
+        <button type="button" onClick={onEdit} disabled={busy || !editable} title={editable ? "Edit form" : "This form is too old to edit"} aria-label={`Edit ${request.employeeName}'s leave form`} className={cn(rowIconButton, "text-[#3f6f62] hover:bg-[#eef7f2]")}><Pencil size={15} /></button>
+        <button type="button" onClick={onDownload} disabled={busy || downloading} title={downloading ? "Downloading…" : "Download form"} aria-label={downloading ? `Downloading ${request.employeeName}'s leave form` : `Download ${request.employeeName}'s leave form`} aria-busy={downloading} className={cn(rowIconButton, "text-[#1e4642] hover:bg-[#eef7f2]", downloading && "disabled:opacity-100")}>{downloading ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}</button>
+        <button type="button" onClick={onDelete} disabled={busy} title="Delete form" aria-label={`Delete ${request.employeeName}'s leave form`} className={cn(rowIconButton, "text-rose-500 hover:bg-rose-50 hover:text-rose-600")}><Trash2 size={15} /></button>
+      </span>
+    </li>
+  );
+}
+
+function FormList({ children }: { children: ReactNode }) {
+  return (
+    <div className="overflow-hidden rounded-[24px] border border-[#e4ece7] bg-white">
+      <div className={cn("hidden gap-x-4 border-b border-[#edf2ef] bg-[#f8fbf9] px-5 py-3 text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#82918d] lg:grid", LIST_COLUMNS)}>
+        <span>#</span><span>Employee</span><span>Type</span><span>Leave dates</span><span>Status</span><span>Supervisor</span><span className="w-[7.5rem] text-right">Actions</span>
+      </div>
+      <ul className="divide-y divide-[#edf2ef]">{children}</ul>
+    </div>
+  );
+}
+
+function ReceiverPrompt({
+  request,
+  acceptors,
+  busy,
+  error,
+  onConfirm,
+}: {
+  request: FamilyLeaveRequestSummary;
+  acceptors: LeaveAcceptorOption[];
+  busy: boolean;
+  error: string;
+  onConfirm: (employeeId: string) => void;
+}) {
+  const [choice, setChoice] = useState("");
+  return (
+    <DialogPrimitive.Portal>
+      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[#102c2a]/45 backdrop-blur-[4px]" />
+      <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] max-w-[440px] -translate-x-1/2 -translate-y-1/2 rounded-[28px] bg-white p-6 shadow-[0_28px_90px_rgba(12,39,34,0.24)] focus:outline-none sm:p-7">
+        <form onSubmit={(event) => { event.preventDefault(); if (choice) onConfirm(choice); }}>
+          <div className="flex items-start justify-between gap-4">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#dff3e8] text-[#217b60]"><UserRound size={22} /></span>
+            <DialogPrimitive.Close className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#dfebe3] bg-white text-[#54736d] transition hover:bg-[#e8f2ec]" aria-label="Cancel"><X size={18} /></DialogPrimitive.Close>
+          </div>
+          <DialogPrimitive.Title className="mt-4 text-xl font-black tracking-tight text-[#152c2b]">Who received this form?</DialogPrimitive.Title>
+          <DialogPrimitive.Description className="mt-1 text-sm text-[#70857b]">{request.employeeName}&apos;s {typeLabel(request).toLowerCase()} form needs the receiving employee before it can be downloaded.</DialogPrimitive.Description>
+          {error ? <div role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div> : null}
+          <div className="relative mt-5">
+            <select
+              aria-label="Select employee who received the form"
+              value={choice}
+              onChange={(event) => setChoice(event.target.value)}
+              disabled={busy}
+              autoFocus
+              className="h-12 w-full appearance-none rounded-xl border border-[#d9e4dd] bg-white px-4 pr-10 text-sm font-semibold text-[#25423a] outline-none focus:border-[#5aa48a] focus:ring-2 focus:ring-[#e2f4e9] disabled:opacity-50"
+            >
+              <option value="">Choose an employee</option>
+              {acceptors.map((acceptor) => <option key={acceptor.employeeId} value={acceptor.employeeId} disabled={!acceptor.ready}>{acceptor.name}{acceptor.ready ? "" : " · Dhivehi details needed"}</option>)}
+            </select>
+            <ChevronDown size={17} className="pointer-events-none absolute right-4 top-4 text-[#78958a]" />
+          </div>
+          <div className="mt-6 flex justify-end gap-2">
+            <DialogPrimitive.Close type="button" disabled={busy} className="inline-flex h-11 items-center rounded-xl px-4 text-sm font-bold text-[#54736d] hover:bg-[#eef7f2] disabled:opacity-50">Cancel</DialogPrimitive.Close>
+            <button type="submit" disabled={busy || !choice} className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#182b29] px-5 text-sm font-bold text-white hover:bg-[#286b5c] disabled:opacity-50">
+              {busy ? <Loader2 size={17} className="animate-spin" /> : <Download size={17} />} Save &amp; download
+            </button>
+          </div>
+        </form>
+      </DialogPrimitive.Content>
+    </DialogPrimitive.Portal>
+  );
+}
+
 function FormDrawer({
   request,
   supervisors,
   acceptors,
   busy,
+  downloading,
   pendingSupervisorSelection,
   pendingAcceptorSelection,
   error,
   onAssignSupervisor,
   onAssignAcceptor,
   onReview,
+  onEdit,
+  onDownload,
   onDelete,
 }: {
   request: FamilyLeaveRequestSummary;
   supervisors: LeaveSupervisorOption[];
   acceptors: LeaveAcceptorOption[];
   busy: boolean;
+  downloading: boolean;
   pendingSupervisorSelection: string | null;
   pendingAcceptorSelection: string | null;
   error: string;
   onAssignSupervisor: (supervisorKey: string) => void;
   onAssignAcceptor: (employeeId: string) => void;
   onReview: (status: "Approved" | "Rejected") => void;
+  onEdit: () => void;
+  onDownload: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -220,6 +416,7 @@ function FormDrawer({
               </div>
               <div className="relative">
                 <select
+                  id={ACCEPTOR_SELECT_ID}
                   aria-label="Select employee who receives the form"
                   value={busy && pendingAcceptorSelection ? pendingAcceptorSelection : request.acceptor?.employeeId ?? ""}
                   onChange={(event) => onAssignAcceptor(event.target.value)}
@@ -244,12 +441,15 @@ function FormDrawer({
 
         <div className="flex shrink-0 items-center justify-between gap-3 border-t border-[#edf0ed] bg-white px-5 py-4 sm:px-7">
           <p className="hidden min-w-0 flex-1 truncate text-xs text-[#93a29b] sm:block">Submitted by {request.submittedBy}</p>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <button type="button" onClick={onDelete} disabled={busy} className="inline-flex h-11 items-center gap-2 rounded-xl px-3 text-sm font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-50"><Trash2 size={17} /> Delete</button>
+            {canEdit(request) ? (
+              <button type="button" onClick={onEdit} disabled={busy} className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#dfebe3] bg-white px-4 text-sm font-bold text-[#2f5f53] hover:bg-[#eef7f2] disabled:opacity-50"><Pencil size={16} /> Edit</button>
+            ) : null}
             {request.certificate ? (
               <a href={fileProxyUrl(request.certificate.key)} target="_blank" rel="noreferrer" className="inline-flex h-11 items-center gap-2 rounded-xl border border-[#d9ebe5] bg-[#f1faf6] px-4 text-sm font-bold text-[#167a67] hover:bg-[#e4f4ec]"><FileBadge size={17} /> Certificate</a>
             ) : null}
-            <a href={`/api/admin/family-leave-requests/${encodeURIComponent(request.id)}/form`} aria-disabled={busy} className={cn("inline-flex h-11 items-center gap-2 rounded-xl bg-[#182b29] px-5 text-sm font-bold text-white hover:bg-[#286b5c]", busy && "pointer-events-none opacity-50")}><Download size={17} /> Download form</a>
+            <button type="button" onClick={onDownload} disabled={busy || downloading} aria-busy={downloading} className={cn("inline-flex h-11 items-center gap-2 rounded-xl bg-[#182b29] px-5 text-sm font-bold text-white hover:bg-[#286b5c] disabled:opacity-50", downloading && "cursor-progress disabled:opacity-80")}>{downloading ? <Loader2 size={17} className="animate-spin" /> : <Download size={17} />} {downloading ? "Downloading…" : "Download form"}</button>
           </div>
         </div>
       </DialogPrimitive.Content>
@@ -266,10 +466,32 @@ export function FamilyLeaveRequestsPanel() {
   const [acceptors, setAcceptors] = useState<LeaveAcceptorOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [pendingSupervisorSelection, setPendingSupervisorSelection] = useState<string | null>(null);
   const [pendingAcceptorSelection, setPendingAcceptorSelection] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
+  const [view, setView] = useState<ViewMode>("grid");
+  const [editing, setEditing] = useState<EditingForm | null>(null);
+  const [zipProgress, setZipProgress] = useState<{ done: number; total: number } | null>(null);
+  const [receiverFor, setReceiverFor] = useState<FamilyLeaveRequestSummary | null>(null);
+
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(VIEW_STORAGE_KEY) === "list") setView("list");
+    } catch {
+      // Storage can be blocked; the grid is the default.
+    }
+  }, []);
+
+  const changeView = (next: ViewMode) => {
+    setView(next);
+    try {
+      window.localStorage.setItem(VIEW_STORAGE_KEY, next);
+    } catch {
+      // Only a convenience.
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -332,11 +554,11 @@ export function FamilyLeaveRequestsPanel() {
   };
 
   const assignAcceptor = async (requestId: string, employeeId: string) => {
-    if (!employeeId) return;
+    if (!employeeId) return false;
     const choice = acceptors.find((acceptor) => acceptor.employeeId === employeeId);
     if (!choice?.ready) {
       setError(`Add ${choice?.name ?? "the employee"}'s Dhivehi name and designation in the employee edit form first.`);
-      return;
+      return false;
     }
     setBusyId(requestId);
     setPendingAcceptorSelection(employeeId);
@@ -344,12 +566,52 @@ export function FamilyLeaveRequestsPanel() {
     try {
       await assignFamilyLeaveAcceptor(requestId, employeeId);
       refresh();
+      return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not assign the receiving employee.");
+      return false;
     } finally {
       setBusyId(null);
       setPendingAcceptorSelection(null);
     }
+  };
+
+  // Fetched here rather than by a plain link, so the button can show it is working.
+  const fetchForm = async (request: FamilyLeaveRequestSummary) => {
+    setDownloadingId(request.id);
+    try {
+      const response = await fetch(formUrl(request.id), { cache: "no-store" });
+      if (!response.ok) throw new Error(String(response.status));
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `Leave-form-${request.id}.docx`;
+      saveBlob(await response.blob(), filename);
+    } catch {
+      setError(`Could not download ${request.employeeName}'s form. Try again.`);
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  // The printed form has a "received by" slot, so ask for it before handing the form out.
+  const downloadForm = (request: FamilyLeaveRequestSummary) => {
+    setError("");
+    if (request.acceptor) {
+      void fetchForm(request);
+      return;
+    }
+    if (selectedId === request.id) {
+      setError("Select who received the form before downloading it.");
+      document.getElementById(ACCEPTOR_SELECT_ID)?.focus();
+      return;
+    }
+    setReceiverFor(request);
+  };
+
+  const assignReceiverAndDownload = async (request: FamilyLeaveRequestSummary, employeeId: string) => {
+    // The form is rebuilt with the receiver on it before it is downloaded.
+    if (!(await assignAcceptor(request.id, employeeId))) return;
+    setReceiverFor(null);
+    await fetchForm(request);
   };
 
   const deleteRequest = async (request: FamilyLeaveRequestSummary) => {
@@ -385,6 +647,87 @@ export function FamilyLeaveRequestsPanel() {
     }
   };
 
+  const editRequest = (request: FamilyLeaveRequestSummary) => {
+    if (!request.leaveType || !canEdit(request)) return;
+    if (
+      request.approvalStatus === "Approved" &&
+      request.attendanceLeave &&
+      !window.confirm(`${request.employeeName}'s form is approved. Changing its dates will move the leave in attendance and adjust the leave balance. Continue?`)
+    ) {
+      return;
+    }
+    const startDate = request.leaveStartDate ?? request.requestDate;
+    setError("");
+    setSelectedId(null);
+    setEditing({
+      employeeId: request.employeeId,
+      leaveType: request.leaveType,
+      edit: {
+        id: request.id,
+        startDate,
+        endDate: request.leaveEndDate ?? startDate,
+        reason: request.reason,
+        certificateUrl: request.certificate ? fileProxyUrl(request.certificate.key) : undefined,
+      },
+    });
+  };
+
+  const downloadAll = async () => {
+    if (zipProgress) return;
+    setError("");
+    setZipProgress({ done: 0, total: 0 });
+    try {
+      const forms = await listFamilyLeaveFormFiles();
+      if (!forms.length) {
+        setError("There are no forms to download.");
+        return;
+      }
+      const noReceiver = forms.filter((form) => !form.hasReceiver).map((form) => form.employeeName || form.id);
+      if (noReceiver.length) {
+        const names = noReceiver.slice(0, 5).join(", ") + (noReceiver.length > 5 ? ` and ${noReceiver.length - 5} more` : "");
+        const proceed = window.confirm(
+          `${noReceiver.length} of ${forms.length} forms don't say who received them yet (${names}). Choose the receiver on those forms first, or download them anyway without it?
+
+OK downloads anyway.`,
+        );
+        if (!proceed) return;
+      }
+      setZipProgress({ done: 0, total: forms.length });
+      const files: Record<string, Uint8Array> = {};
+      const taken = new Set<string>();
+      const failed: string[] = [];
+      let next = 0;
+      let done = 0;
+      // A few at a time keeps the browser and the server from queueing dozens of requests.
+      const worker = async () => {
+        while (next < forms.length) {
+          const form = forms[next++];
+          try {
+            const response = await fetch(formUrl(form.id), { cache: "no-store" });
+            if (!response.ok) throw new Error(String(response.status));
+            files[formFileName(form, taken)] = new Uint8Array(await response.arrayBuffer());
+          } catch {
+            failed.push(form.employeeName || form.id);
+          }
+          setZipProgress({ done: ++done, total: forms.length });
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(4, forms.length) }, worker));
+      if (!Object.keys(files).length) {
+        setError("Could not download any of the forms.");
+        return;
+      }
+      // The forms are already compressed, so storing them is as small and much faster.
+      const zip = zipSync(files, { level: 0 });
+      saveBlob(new Blob([zip as Uint8Array<ArrayBuffer>], { type: "application/zip" }), `Leave-forms-${maldivesDateTime().date}.zip`);
+      if (failed.length) setError(`Downloaded ${forms.length - failed.length} of ${forms.length} forms. Missing: ${failed.join(", ")}.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not download the forms.");
+    } finally {
+      setZipProgress(null);
+    }
+  };
+
   const nextPage = () => {
     if (!page?.nextCursor) return;
     setCursors((current) => [...current.slice(0, pageIndex + 1), page.nextCursor!]);
@@ -399,22 +742,43 @@ export function FamilyLeaveRequestsPanel() {
           <h1 className="text-4xl font-black tracking-[-0.045em] text-[#1b302e] sm:text-5xl">Leave forms<span className="text-[#8cc9b1]">.</span></h1>
           <p className="mt-2 text-sm text-[#84918e]">Salaam &amp; Family leave</p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
           <div className="text-right"><strong className="block text-3xl font-black leading-none text-[#24443b]">{page?.totalCount ?? "—"}</strong><span className="text-xs font-semibold text-[#86968e]">forms</span></div>
+          <div role="group" aria-label="Layout" className="flex h-11 items-center rounded-full border border-[#dbe6df] bg-white p-1">
+            {([["grid", LayoutGrid, "Grid view"], ["list", List, "List view"]] as const).map(([mode, Icon, label]) => (
+              <button key={mode} type="button" onClick={() => changeView(mode)} aria-pressed={view === mode} aria-label={label} title={label} className={cn("flex h-9 w-9 items-center justify-center rounded-full transition", view === mode ? "bg-[#e3f3ea] text-[#1e6b58]" : "text-[#7b958b] hover:bg-[#f2f8f3]")}><Icon size={16} /></button>
+            ))}
+          </div>
+          <button type="button" onClick={() => void downloadAll()} disabled={Boolean(zipProgress) || !page?.totalCount} className="inline-flex h-11 items-center gap-2 rounded-full bg-[#182b29] px-4 text-sm font-bold text-white hover:bg-[#286b5c] disabled:opacity-50">
+            {zipProgress ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+            {zipProgress ? (zipProgress.total ? `${zipProgress.done}/${zipProgress.total}` : "Preparing…") : "Download all"}
+          </button>
           <button type="button" onClick={refresh} disabled={loading} aria-label="Refresh forms" className="flex h-11 w-11 items-center justify-center rounded-full border border-[#dbe6df] bg-white text-[#527668] hover:bg-[#f2f8f3] disabled:opacity-50"><RefreshCw size={17} /></button>
         </div>
       </header>
 
-      {error && !selected ? <div role="alert" className="mb-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div> : null}
+      {error && !selected && !receiverFor ? <div role="alert" className="mb-6 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div> : null}
 
       {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" aria-label="Loading leave forms">
-          {Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[232px] animate-pulse rounded-[24px] bg-[#f1f5f2]" />)}
-        </div>
+        view === "list" ? (
+          <div className="space-y-2" aria-label="Loading leave forms">
+            {Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-16 animate-pulse rounded-2xl bg-[#f1f5f2]" />)}
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" aria-label="Loading leave forms">
+            {Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[232px] animate-pulse rounded-[24px] bg-[#f1f5f2]" />)}
+          </div>
+        )
       ) : page?.requests.length ? (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {page.requests.map((request, index) => <FormCard key={request.id} request={request} number={firstNumber + index} busy={busyId === request.id} onOpen={() => { setError(""); setSelectedId(request.id); }} onDelete={() => void deleteRequest(request)} />)}
-        </div>
+        view === "list" ? (
+          <FormList>
+            {page.requests.map((request, index) => <FormRow key={request.id} request={request} number={firstNumber + index} busy={busyId === request.id} downloading={downloadingId === request.id} onOpen={() => { setError(""); setSelectedId(request.id); }} onEdit={() => editRequest(request)} onDownload={() => downloadForm(request)} onDelete={() => void deleteRequest(request)} />)}
+          </FormList>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {page.requests.map((request, index) => <FormCard key={request.id} request={request} number={firstNumber + index} busy={busyId === request.id} onOpen={() => { setError(""); setSelectedId(request.id); }} onDelete={() => void deleteRequest(request)} />)}
+          </div>
+        )
       ) : (
         <div className="flex min-h-[340px] flex-col items-center justify-center rounded-[28px] border border-dashed border-[#dae6dd] bg-[#fbfdfb] p-8 text-center">
           <FileText size={30} className="mb-4 text-[#91b9a3]" />
@@ -433,8 +797,23 @@ export function FamilyLeaveRequestsPanel() {
       </div>
 
       <DialogPrimitive.Root open={Boolean(selected)} onOpenChange={(open) => { if (!open) setSelectedId(null); }}>
-        {selected ? <FormDrawer request={selected} supervisors={supervisors} acceptors={acceptors} busy={busyId === selected.id} pendingSupervisorSelection={pendingSupervisorSelection} pendingAcceptorSelection={pendingAcceptorSelection} error={error} onAssignSupervisor={(key) => void assignSupervisor(selected.id, key)} onAssignAcceptor={(employeeId) => void assignAcceptor(selected.id, employeeId)} onReview={(status) => void reviewRequest(selected.id, status)} onDelete={() => void deleteRequest(selected)} /> : null}
+        {selected ? <FormDrawer request={selected} supervisors={supervisors} acceptors={acceptors} busy={busyId === selected.id} downloading={downloadingId === selected.id} pendingSupervisorSelection={pendingSupervisorSelection} pendingAcceptorSelection={pendingAcceptorSelection} error={error} onAssignSupervisor={(key) => void assignSupervisor(selected.id, key)} onAssignAcceptor={(employeeId) => void assignAcceptor(selected.id, employeeId)} onReview={(status) => void reviewRequest(selected.id, status)} onEdit={() => editRequest(selected)} onDownload={() => downloadForm(selected)} onDelete={() => void deleteRequest(selected)} /> : null}
       </DialogPrimitive.Root>
+
+      <DialogPrimitive.Root open={Boolean(receiverFor)} onOpenChange={(open) => { if (!open && busyId !== receiverFor?.id) { setReceiverFor(null); setError(""); } }}>
+        {receiverFor ? <ReceiverPrompt key={receiverFor.id} request={receiverFor} acceptors={acceptors} busy={busyId === receiverFor.id} error={error} onConfirm={(employeeId) => void assignReceiverAndDownload(receiverFor, employeeId)} /> : null}
+      </DialogPrimitive.Root>
+
+      {editing ? (
+        <FamilyLeaveRequestDialog
+          employeeId={editing.employeeId}
+          presetLeaveType={editing.leaveType}
+          editRequest={editing.edit}
+          open
+          onOpenChange={(open) => { if (!open) setEditing(null); }}
+          onSubmitted={refresh}
+        />
+      ) : null}
     </div>
   );
 }
