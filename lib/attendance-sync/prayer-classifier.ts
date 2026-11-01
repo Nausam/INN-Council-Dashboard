@@ -154,6 +154,43 @@ export function selectEarliestPunchForPrayer(
   });
 }
 
+/** A second punch this soon after the first is treated as a double tap. */
+const CARRY_OVER_MIN_GAP_MINUTES = 20;
+
+/**
+ * Staff often sign in for the next prayer a little before the halfway point
+ * between two prayers, so both punches land in the earlier prayer and the
+ * next one looks missed. When a prayer has a later, separate punch and the
+ * next prayer has none, that punch counts for the next prayer instead, as
+ * long as it is within the usual distance of that prayer's time.
+ */
+export function carryOverSecondPunches(
+  grouped: Map<MosquePrayer, PunchCandidate[]>,
+  prayerTimes: PrayerTimesByKey,
+): Map<MosquePrayer, PunchCandidate[]> {
+  const result = new Map(grouped);
+  for (let i = 0; i < PRAYER_ORDER.length - 1; i += 1) {
+    const current = PRAYER_ORDER[i]!.field;
+    const next = PRAYER_ORDER[i + 1]!;
+    if ((result.get(next.field) ?? []).length > 0) continue;
+
+    const candidates = result.get(current) ?? [];
+    const first = selectEarliestPunchForPrayer(candidates);
+    if (!first) continue;
+    const nextMinutes = localTimeToMinutes(prayerTimes[next.key]);
+    const firstMs = new Date(first.timestampUtc).getTime();
+    const carried = candidates
+      .filter((candidate) => new Date(candidate.timestampUtc).getTime() - firstMs >= CARRY_OVER_MIN_GAP_MINUTES * 60_000)
+      .filter((candidate) => circularDistanceMinutes(candidate.localMinutes, nextMinutes) <= MAX_PRAYER_DISTANCE_MINUTES)
+      .sort((a, b) => new Date(a.timestampUtc).getTime() - new Date(b.timestampUtc).getTime())[0];
+    if (!carried) continue;
+
+    result.set(current, candidates.filter((candidate) => candidate !== carried));
+    result.set(next.field, [carried]);
+  }
+  return result;
+}
+
 export function groupCandidatesByPrayer(
   punches: Array<{
     punchLogId: string;

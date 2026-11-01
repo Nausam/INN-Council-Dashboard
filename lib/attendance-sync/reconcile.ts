@@ -12,6 +12,7 @@ import {
 import { findDuplicateRowsForDate } from "@/lib/attendance-sync/ensure-sheets";
 import {
   calculateMinutesLate,
+  carryOverSecondPunches,
   classifyPunch,
   groupCandidatesByPrayer,
   selectEarliestPunchForPrayer,
@@ -41,6 +42,9 @@ const PRAYER_TO_TIME_KEY = {
   maqribSignInTime: "maqribTime",
   ishaSignInTime: "ishaTime",
 } as const;
+
+// Days before this keep the sheets they had when the carry-over rule was added.
+const CARRY_OVER_FROM = "2026-10-01";
 
 function readAutomation(row: MosqueAttendanceDoc): MosqueAttendanceAutomation {
   const stored = row.automation as MosqueAttendanceAutomation | undefined;
@@ -155,7 +159,8 @@ export async function reconcileMosqueAttendanceDate(
         })
       : [];
 
-    const grouped = groupCandidatesByPrayer(classified);
+    const byWindow = groupCandidatesByPrayer(classified);
+    const grouped = prayerTimes && date >= CARRY_OVER_FROM ? carryOverSecondPunches(byWindow, prayerTimes) : byWindow;
     const prayerResults: ReconcilePrayerPreview[] = [];
     const updates: Partial<MosqueAttendanceDoc> = {};
     const nextAutomation: MosqueAttendanceAutomation = {
