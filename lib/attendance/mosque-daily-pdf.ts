@@ -74,7 +74,7 @@ export async function downloadMosqueDailyPdf(report: {
       text(`${report.designation ? `${report.designation} · ` : ""}${report.monthLabel}`, margin + 7, margin + 18, { size: 9.5, color: MUTED });
       text("Raa Innamaadhoo Council", pageWidth - margin, margin + 4.5, { size: 8, color: MUTED, align: "right" });
       text(`${report.grandTotal} min`, pageWidth - margin, margin + 13, { size: 17, bold: true, color: [180, 100, 60], align: "right" });
-      text("late this month", pageWidth - margin, margin + 18, { size: 8.5, color: MUTED, align: "right" });
+      text("late in this period", pageWidth - margin, margin + 18, { size: 8.5, color: MUTED, align: "right" });
       return margin + 26;
     }
     text(`${report.employeeName} · ${report.monthLabel}`, margin, margin + 4, { size: 9, color: MUTED, bold: true });

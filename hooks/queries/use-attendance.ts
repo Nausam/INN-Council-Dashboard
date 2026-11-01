@@ -15,6 +15,7 @@ import {
   fetchMosqueAttendanceForMonth,
   fetchMosqueAttendanceForPeriod,
   fetchMosqueDailyAttendanceForMonth,
+  fetchMosqueDailyAttendanceForRange,
   fetchPrayerTimesForMonth,
   fetchPrayerTimesByDate,
 } from "@/lib/actions/hr.actions";
@@ -107,6 +108,21 @@ export function useMosqueDailyAttendanceMonthQuery(
     queryKey: [...queryKeys.attendance.mosqueDailyMonth(month), employeeId] as const,
     queryFn: () => fetchMosqueDailyAttendanceForMonth(month, employeeId),
     enabled: Boolean(month) && Boolean(employeeId),
+    staleTime: QUERY_STALE_TIME_ATTENDANCE,
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** One employee's mosque rows from `start` to `end`, both inclusive. */
+export function useMosqueDailyAttendanceRangeQuery(
+  start: string,
+  end: string,
+  employeeId: string,
+) {
+  return useQuery({
+    queryKey: [...queryKeys.attendance.mosqueDailyRange(start, end), employeeId] as const,
+    queryFn: () => fetchMosqueDailyAttendanceForRange(start, end, employeeId),
+    enabled: Boolean(start) && Boolean(end) && Boolean(employeeId),
     staleTime: QUERY_STALE_TIME_ATTENDANCE,
     placeholderData: keepPreviousData,
   });

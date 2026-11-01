@@ -18,6 +18,8 @@ export const queryKeys = {
       ["attendance", "mosque", "period", startDate, endDate] as const,
     mosqueDailyMonth: (month: string) =>
       ["attendance", "mosque", "daily", month] as const,
+    mosqueDailyRange: (start: string, end: string) =>
+      ["attendance", "mosque", "daily", start, end] as const,
   },
   dashboard: {
     byDate: (date: string) => ["dashboard", date] as const,

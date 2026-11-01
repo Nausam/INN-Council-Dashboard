@@ -1496,6 +1496,17 @@ export async function fetchMosqueDailyAttendanceForMonth(
   return fetchMosqueAttendanceForEmployeeRange(employeeId, start, endExclusive);
 }
 
+/** One employee's mosque rows from `start` to `end`, both inclusive. */
+export async function fetchMosqueDailyAttendanceForRange(
+  start: string,
+  end: string,
+  employeeId: string,
+): Promise<MosqueAttendanceDoc[]> {
+  const next = new Date(`${end}T00:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return fetchMosqueAttendanceForEmployeeRange(employeeId, start, next.toISOString().slice(0, 10));
+}
+
 export async function fetchAttendanceForEmployeeMonth(
   month: string,
   employeeId: string,

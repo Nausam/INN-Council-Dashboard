@@ -13,6 +13,7 @@ export {
   useMosqueAttendanceMonthQuery,
   useMosqueAttendancePeriodQuery,
   useMosqueDailyAttendanceMonthQuery,
+  useMosqueDailyAttendanceRangeQuery,
   usePrayerTimesMonthQuery,
   usePrayerTimesByDateQuery,
   useAllEmployeesActionQuery,

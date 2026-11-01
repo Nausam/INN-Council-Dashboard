@@ -19,7 +19,7 @@ import { reverseLeaveTypeMapping } from "@/constants";
 import {
   useEmployeesQuery,
   useMosqueAssistantsQuery,
-  useMosqueDailyAttendanceMonthQuery,
+  useMosqueDailyAttendanceRangeQuery,
 } from "@/hooks/queries";
 import {
   fetchAllEmployees,
@@ -257,24 +257,35 @@ function normalizeAttendanceRows(raw: unknown): AttendanceRow[] {
   return rows.sort((a, b) => a.date.localeCompare(b.date));
 }
 
-function getMaldivesMonth(): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Indian/Maldives",
-    year: "numeric",
-    month: "2-digit",
-  }).formatToParts(new Date());
-  const year = parts.find((part) => part.type === "year")?.value;
-  const month = parts.find((part) => part.type === "month")?.value;
-  return year && month ? `${year}-${month}` : new Date().toISOString().slice(0, 7);
+/** The longest range the report covers at once. */
+const MAX_RANGE_DAYS = 366;
+
+const isIsoDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+/** The current month in the Maldives, as its first and last day. */
+function currentMonthRange(today: string): { start: string; end: string } {
+  const [year, month] = today.split("-").map(Number);
+  const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return { start: `${today.slice(0, 7)}-01`, end: `${today.slice(0, 7)}-${String(last).padStart(2, "0")}` };
 }
 
-function formatMonth(month: string): string {
-  if (!/^\d{4}-\d{2}$/.test(month)) return "Select a month";
-  return new Intl.DateTimeFormat("en-US", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${month}-01T00:00:00Z`));
+function rangeDays(start: string, end: string): number {
+  return Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000) + 1;
+}
+
+/** "October 2026" for a whole month, otherwise "28 Sep – 3 Oct 2026". */
+function formatRange(start: string, end: string): string {
+  if (!isIsoDate(start) || !isIsoDate(end)) return "Select dates";
+  const format = (iso: string, options: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat("en-GB", { ...options, timeZone: "UTC" }).format(new Date(`${iso}T00:00:00Z`));
+  const wholeMonth =
+    start.slice(0, 7) === end.slice(0, 7) &&
+    start.endsWith("-01") &&
+    end === currentMonthRange(start).end;
+  if (wholeMonth) return format(start, { month: "long", year: "numeric" });
+  if (start === end) return format(start, { day: "numeric", month: "short", year: "numeric" });
+  const sameYear = start.slice(0, 4) === end.slice(0, 4);
+  return `${format(start, sameYear ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" })} – ${format(end, { day: "numeric", month: "short", year: "numeric" })}`;
 }
 
 function formatDate(date: string): string {
@@ -452,16 +463,18 @@ export function MosqueDailyReportsView({
   initialAssistants?: Awaited<ReturnType<typeof fetchMosqueAssistants>>;
   initialEmployees?: Awaited<ReturnType<typeof fetchAllEmployees>>;
 }) {
-  const currentMonth = useMemo(getMaldivesMonth, []);
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const today = useMemo(maldivesTodayIso, []);
+  const [fromDate, setFromDate] = useState(() => currentMonthRange(today).start);
+  const [toDate, setToDate] = useState(() => currentMonthRange(today).end);
   const [selectedEmployee, setSelectedEmployee] = useState("");
-  const [reportMonth, setReportMonth] = useState("");
+  const [reportRange, setReportRange] = useState<{ start: string; end: string } | null>(null);
   const [reportEmployeeId, setReportEmployeeId] = useState("");
   const [makingPdf, setMakingPdf] = useState(false);
-  const [pickEmployeeHint, setPickEmployeeHint] = useState(false);
-  const monthRef = useRef<HTMLInputElement>(null);
+  const [formHint, setFormHint] = useState<string | null>(null);
+  const fromRef = useRef<HTMLInputElement>(null);
+  const toRef = useRef<HTMLInputElement>(null);
   const employeeRef = useRef<HTMLSelectElement>(null);
-  const today = useMemo(maldivesTodayIso, []);
+  const reportLabel = reportRange ? formatRange(reportRange.start, reportRange.end) : "";
 
   const {
     data: assistantsResponse,
@@ -501,18 +514,21 @@ export function MosqueDailyReportsView({
     isError,
     isSuccess,
     refetch,
-  } = useMosqueDailyAttendanceMonthQuery(reportMonth, reportEmployeeId);
+  } = useMosqueDailyAttendanceRangeQuery(
+    reportRange?.start ?? "",
+    reportRange?.end ?? "",
+    reportEmployeeId,
+  );
 
   const attendanceData = useMemo(
     () =>
-      reportMonth && reportEmployeeId
-        ? normalizeAttendanceRows(rawAttendance).filter(
-            (row) =>
-              row.date.slice(0, 10).startsWith(`${reportMonth}-`) &&
-              row.date.slice(0, 10) <= today,
-          )
+      reportRange && reportEmployeeId
+        ? normalizeAttendanceRows(rawAttendance).filter((row) => {
+            const date = row.date.slice(0, 10);
+            return date >= reportRange.start && date <= reportRange.end && date <= today;
+          })
         : [],
-    [rawAttendance, reportMonth, reportEmployeeId, today],
+    [rawAttendance, reportRange, reportEmployeeId, today],
   );
 
   const dayTotals = useMemo(
@@ -573,7 +589,7 @@ export function MosqueDailyReportsView({
   }, [attendanceData]);
 
   const loading =
-    Boolean(reportMonth && reportEmployeeId) && (isLoading || isFetching);
+    Boolean(reportRange && reportEmployeeId) && (isLoading || isFetching);
   const reportAvailable =
     Boolean(reportEmployeeId) && isSuccess && !isError && attendanceData.length > 0;
 
@@ -583,28 +599,41 @@ export function MosqueDailyReportsView({
   useEffect(() => {
     const shownEmployee = employeeRef.current?.value ?? "";
     if (shownEmployee && shownEmployee !== selectedEmployee) setSelectedEmployee(shownEmployee);
-    const shownMonth = monthRef.current?.value ?? "";
-    if (/^\d{4}-\d{2}$/.test(shownMonth) && shownMonth !== selectedMonth) setSelectedMonth(shownMonth);
+    const shownFrom = fromRef.current?.value ?? "";
+    if (isIsoDate(shownFrom) && shownFrom !== fromDate) setFromDate(shownFrom);
+    const shownTo = toRef.current?.value ?? "";
+    if (isIsoDate(shownTo) && shownTo !== toDate) setToDate(shownTo);
     // Only when the fields first appear and when the employee list arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employees]);
 
   const handleGenerateReport = () => {
     const employeeId = selectedEmployee || employeeRef.current?.value || "";
-    const shownMonth = monthRef.current?.value ?? "";
-    const month = /^\d{4}-\d{2}$/.test(shownMonth) ? shownMonth : selectedMonth;
+    const shownFrom = fromRef.current?.value ?? "";
+    const shownTo = toRef.current?.value ?? "";
+    const start = isIsoDate(shownFrom) ? shownFrom : fromDate;
+    const end = isIsoDate(shownTo) ? shownTo : toDate;
     if (!employeeId) {
-      setPickEmployeeHint(true);
+      setFormHint("Choose an employee first.");
       return;
     }
-    setPickEmployeeHint(false);
+    if (!isIsoDate(start) || !isIsoDate(end) || start > end) {
+      setFormHint("Choose a From date on or before the To date.");
+      return;
+    }
+    if (rangeDays(start, end) > MAX_RANGE_DAYS) {
+      setFormHint(`Choose ${MAX_RANGE_DAYS} days or fewer.`);
+      return;
+    }
+    setFormHint(null);
     if (employeeId !== selectedEmployee) setSelectedEmployee(employeeId);
-    if (month !== selectedMonth) setSelectedMonth(month);
-    if (reportMonth === month && reportEmployeeId === employeeId) {
+    if (start !== fromDate) setFromDate(start);
+    if (end !== toDate) setToDate(end);
+    if (reportRange?.start === start && reportRange.end === end && reportEmployeeId === employeeId) {
       void refetch();
       return;
     }
-    setReportMonth(month);
+    setReportRange({ start, end });
     setReportEmployeeId(employeeId);
   };
 
@@ -661,7 +690,7 @@ export function MosqueDailyReportsView({
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `Mosque_Daily_Attendance_${reportMonth}_${reportEmployee.name.replace(/\s+/g, "_")}.csv`;
+    link.download = `Mosque_Daily_Attendance_${reportRange?.start}_to_${reportRange?.end}_${reportEmployee.name.replace(/\s+/g, "_")}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -673,7 +702,7 @@ export function MosqueDailyReportsView({
       await downloadMosqueDailyPdf({
         employeeName: reportEmployee.name,
         designation: reportEmployee.designation,
-        monthLabel: formatMonth(reportMonth),
+        monthLabel: reportLabel,
         prayerLabels: PRAYERS.map((prayer) => prayer.label),
         rows: attendanceData.map((row, index) => ({
           date: formatDate(row.date),
@@ -682,7 +711,7 @@ export function MosqueDailyReportsView({
           total: dayTotals[index].total,
         })),
         grandTotal,
-        fileName: `Mosque_Daily_Attendance_${reportMonth}_${reportEmployee.name.replace(/\s+/g, "_")}.pdf`,
+        fileName: `Mosque_Daily_Attendance_${reportRange?.start}_to_${reportRange?.end}_${reportEmployee.name.replace(/\s+/g, "_")}.pdf`,
       });
     } finally {
       setMakingPdf(false);
@@ -723,26 +752,53 @@ export function MosqueDailyReportsView({
                 </p>
                 <p className="mt-1 text-sm text-slate-500">
                   {selectedEmployeeDetails?.designation || "Mosque attendance"}
-                  {selectedMonth ? ` · ${formatMonth(selectedMonth)}` : ""}
+                  {` · ${formatRange(fromDate, toDate)}`}
                 </p>
               </div>
             </div>
 
             <div className="border-t border-slate-100 bg-white p-5 sm:p-6 xl:border-l xl:border-t-0">
-              <div className="grid gap-4 md:grid-cols-[0.8fr_1.2fr_auto] md:items-end">
+              <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-[0.7fr_0.7fr_1.2fr_auto] md:items-end">
                 <div>
                   <label
-                    htmlFor="daily-report-month"
+                    htmlFor="daily-report-from"
                     className="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-slate-500"
                   >
-                    Month
+                    From
                   </label>
                   <input
-                    ref={monthRef}
-                    id="daily-report-month"
-                    type="month"
-                    value={selectedMonth}
-                    onChange={(event) => setSelectedMonth(event.target.value)}
+                    ref={fromRef}
+                    id="daily-report-from"
+                    type="date"
+                    value={fromDate}
+                    max={toDate || undefined}
+                    onChange={(event) => {
+                      const next = event.target.value;
+                      setFromDate(next);
+                      if (toDate && next > toDate) setToDate(next);
+                      setFormHint(null);
+                    }}
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none transition focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="daily-report-to"
+                    className="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-slate-500"
+                  >
+                    To
+                  </label>
+                  <input
+                    ref={toRef}
+                    id="daily-report-to"
+                    type="date"
+                    value={toDate}
+                    min={fromDate || undefined}
+                    onChange={(event) => {
+                      setToDate(event.target.value);
+                      setFormHint(null);
+                    }}
                     className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none transition focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
                   />
                 </div>
@@ -760,7 +816,7 @@ export function MosqueDailyReportsView({
                     value={selectedEmployee}
                     onChange={(event) => {
                       setSelectedEmployee(event.target.value);
-                      setPickEmployeeHint(false);
+                      setFormHint(null);
                     }}
                     className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none transition focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
                   >
@@ -774,9 +830,9 @@ export function MosqueDailyReportsView({
                       </option>
                     ))}
                   </select>
-                  {pickEmployeeHint ? (
+                  {formHint ? (
                     <p className="mt-1.5 text-xs font-semibold text-rose-600" role="alert">
-                      Choose an employee first.
+                      {formHint}
                     </p>
                   ) : null}
                 </div>
@@ -840,9 +896,9 @@ export function MosqueDailyReportsView({
                   : "Daily attendance register"}
               </h2>
               <p className="mt-1 text-sm text-slate-500">
-                {reportMonth
-                  ? `${formatMonth(reportMonth)} · Saved timings are shown in Maldives attendance time`
-                  : "Choose an employee and month to generate the report"}
+                {reportRange
+                  ? `${reportLabel} · Saved timings are shown in Maldives attendance time`
+                  : "Choose an employee and dates to generate the report"}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -891,7 +947,7 @@ export function MosqueDailyReportsView({
               <EmptyState
                 icon={UserRound}
                 title="Select an employee"
-                description="Choose a mosque employee and month above, then generate the daily attendance report."
+                description="Choose a mosque employee and dates above, then generate the daily attendance report."
               />
             </div>
           ) : !reportAvailable ? (
@@ -899,7 +955,7 @@ export function MosqueDailyReportsView({
               <EmptyState
                 icon={CalendarSearch}
                 title="No attendance records found"
-                description={`No mosque attendance sheets were found for ${reportEmployee?.name || "this employee"} in ${formatMonth(reportMonth)}.`}
+                description={`No mosque attendance sheets were found for ${reportEmployee?.name || "this employee"} for ${reportLabel}.`}
               />
             </div>
           ) : (
@@ -984,7 +1040,7 @@ export function MosqueDailyReportsView({
               <TableFooter>
                 <TableRow className="border-slate-200 bg-slate-900 hover:bg-slate-900">
                   <TableCell colSpan={3 + PRAYERS.length} className="px-5 py-4 text-sm font-bold text-white">
-                    Grand total of late minutes · {formatMonth(reportMonth)}
+                    Grand total of late minutes · {reportLabel}
                     <span className="ml-2 text-xs font-medium text-slate-300">
                       A prayer not signed in counts as {ABSENT_PRAYER_MINUTES} minutes
                     </span>

@@ -137,6 +137,13 @@ export async function fetchMosqueDailyAttendanceForMonth(
   return hr.fetchMosqueDailyAttendanceForMonth(...args);
 }
 
+export async function fetchMosqueDailyAttendanceForRange(
+  ...args: Parameters<typeof hr.fetchMosqueDailyAttendanceForRange>
+) {
+  if (!(await hasEmployeeProfileAccess(args[2]))) throw new Error("Unauthorized");
+  return hr.fetchMosqueDailyAttendanceForRange(...args);
+}
+
 export async function fetchOvertimeRequests(
   ...args: Parameters<typeof hr.fetchOvertimeRequests>
 ) {
