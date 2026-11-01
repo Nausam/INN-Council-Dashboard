@@ -4,7 +4,13 @@ import { listCouncilEmployees, listMachineEligibleEmployees } from "@/lib/attend
 import { EMPLOYEE_NAMES } from "@/constants";
 import { computeCouncilMinutesLate } from "@/lib/attendance/council-lateness";
 import { maldivesTodayIso } from "@/lib/employees/details-dashboard";
-import { fetchAllEmployees, fetchAttendanceForMonth, fetchHolidayCalendar } from "@/lib/firebase/hr";
+import { fromFirestoreDocs } from "@/lib/firebase/adapters";
+import { COLLECTIONS, getFirestoreDb } from "@/lib/firebase/admin";
+import { fetchAllEmployees, fetchHolidayDatesBetween } from "@/lib/firebase/hr";
+import type { AttendanceDoc } from "@/lib/firebase/types";
+
+/** The longest range the report counts at once. */
+export const COUNCIL_REPORT_MAX_DAYS = 366;
 
 export type CouncilMonthRow = {
   employeeId: string;
@@ -21,53 +27,84 @@ export type CouncilMonthRow = {
 };
 
 export type CouncilMonthSummary = {
-  month: string;
+  /** The range asked for, inclusive. */
+  start: string;
+  end: string;
   /** Working days so far: weekdays that aren't public holidays, up to today. */
   workingDays: number;
-  /** The last day counted, when the month isn't over yet. */
+  /** The last day counted, when the range runs past today. */
   countedThrough: string | null;
   rows: CouncilMonthRow[];
+  error?: string;
 };
 
 const nameKey = (name: string) =>
   name.toLowerCase().trim().replace(/[^a-z]/g, "").replace(/(.)\1+/g, "$1");
 const ORDER = new Map(EMPLOYEE_NAMES.map((name, index) => [nameKey(name), index]));
 
-function monthDates(month: string, until: string): string[] {
-  const [year, monthNumber] = month.split("-").map(Number);
-  const days = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
-  return Array.from({ length: days }, (_, index) => `${month}-${String(index + 1).padStart(2, "0")}`)
-    .filter((date) => date <= until);
+function addDays(iso: string, days: number): string {
+  const date = new Date(`${iso}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
-/** Each council employee's days at the office and late minutes for `month`. */
-export async function buildCouncilMonthSummary(month: string): Promise<CouncilMonthSummary> {
+function datesBetween(start: string, end: string): string[] {
+  const dates: string[] = [];
+  for (let date = start; date <= end; date = addDays(date, 1)) dates.push(date);
+  return dates;
+}
+
+/** First and last day of a `YYYY-MM` month. */
+export function monthRange(month: string): { start: string; end: string } {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const last = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  return { start: `${month}-01`, end: `${month}-${String(last).padStart(2, "0")}` };
+}
+
+/**
+ * Each council employee's days at the office and late minutes between
+ * `start` and `end` (inclusive). Days after today aren't counted yet.
+ */
+export async function buildCouncilMonthSummary(start: string, end: string): Promise<CouncilMonthSummary> {
+  const empty = { start, end, workingDays: 0, countedThrough: null, rows: [] };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || start > end) {
+    return { ...empty, error: "Choose a valid date range." };
+  }
+  if (addDays(start, COUNCIL_REPORT_MAX_DAYS) <= end) {
+    return { ...empty, error: `Choose ${COUNCIL_REPORT_MAX_DAYS} days or fewer.` };
+  }
   const today = maldivesTodayIso();
+  const until = end < today ? end : today;
+
   const [employees, rows, holidays] = await Promise.all([
     fetchAllEmployees(),
-    fetchAttendanceForMonth(month),
-    fetchHolidayCalendar(month),
+    start <= until
+      ? getFirestoreDb()
+          .collection(COLLECTIONS.attendance)
+          .where("date", ">=", start)
+          .where("date", "<=", until)
+          .get()
+          .then((snap) => fromFirestoreDocs<AttendanceDoc>(snap.docs))
+      : Promise.resolve([] as AttendanceDoc[]),
+    start <= until ? fetchHolidayDatesBetween(start, until) : Promise.resolve([] as string[]),
   ]);
-  const holidayDates = new Set(holidays?.holidayDates ?? []);
-  const dates = monthDates(month, today);
-  const workingDays = dates.filter((date) => {
+  const holidayDates = new Set(holidays);
+  const workingDays = (start <= until ? datesBetween(start, until) : []).filter((date) => {
     const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
     return weekday !== 5 && weekday !== 6 && !holidayDates.has(date);
   }).length;
-  const lastDate = monthDates(month, "9999-12-31").at(-1) ?? `${month}-01`;
-  const tracked = new Set(listMachineEligibleEmployees(employees, lastDate).map(({ employee }) => employee.$id));
+  const tracked = new Set(listMachineEligibleEmployees(employees, end).map(({ employee }) => employee.$id));
 
-  const byEmployee = new Map<string, typeof rows>();
+  const byEmployee = new Map<string, AttendanceDoc[]>();
   for (const row of rows) {
-    if (row.date > today) continue;
     byEmployee.set(row.employeeId, [...(byEmployee.get(row.employeeId) ?? []), row]);
   }
 
   const summaryRows = listCouncilEmployees(employees).map((employee): CouncilMonthRow => {
     const own = byEmployee.get(employee.$id) ?? [];
     const attended = own.filter((row) => row.signInTime && !row.leaveType);
-    // Worked out from the sign-in with today's rule (08:31 is 1 minute late):
-    // some saved rows still carry minutes from an older rounding.
+    // Worked out from the sign-in with today's rule (08:31 is 1 minute late),
+    // rather than trusting minutes saved under older rules.
     const late = attended.map((row) => computeCouncilMinutesLate(row.signInTime!, row.date));
     return {
       employeeId: employee.$id,
@@ -89,9 +126,10 @@ export async function buildCouncilMonthSummary(month: string): Promise<CouncilMo
   });
 
   return {
-    month,
+    start,
+    end,
     workingDays,
-    countedThrough: lastDate > today ? today : null,
+    countedThrough: end > today ? today : null,
     rows: summaryRows,
   };
 }

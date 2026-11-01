@@ -3,36 +3,63 @@
 import { AvatarGlow } from "@/components/design-system";
 import type { CouncilMonthSummary } from "@/lib/attendance/council-month-summary";
 import { cn } from "@/lib/utils";
-import { ChevronLeft, ChevronRight, Download, Loader2 } from "lucide-react";
+import { maldivesTodayIso } from "@/lib/employees/details-dashboard";
+import { Download, Loader2 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
-
-const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-
-function monthTitle(month: string): string {
-  const [year, monthNumber] = month.split("-").map(Number);
-  return `${MONTHS[monthNumber - 1] ?? month} ${year}`;
-}
-
-function shiftMonth(month: string, by: number): string {
-  const [year, monthNumber] = month.split("-").map(Number);
-  const date = new Date(Date.UTC(year, monthNumber - 1 + by, 1));
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
-}
+import { useEffect, useMemo, useState, useTransition } from "react";
 
 function shortDate(iso: string): string {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { day: "numeric", month: "short", timeZone: "UTC" });
 }
 
+/** "1 – 28 Oct 2026", "28 Sep – 3 Oct 2026" or across years in full. */
+function rangeTitle(start: string, end: string): string {
+  const format = (iso: string, options: Intl.DateTimeFormatOptions) =>
+    new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { ...options, timeZone: "UTC" });
+  if (start === end) return format(start, { day: "numeric", month: "short", year: "numeric" });
+  if (start.slice(0, 4) !== end.slice(0, 4)) {
+    return `${format(start, { day: "numeric", month: "short", year: "numeric" })} – ${format(end, { day: "numeric", month: "short", year: "numeric" })}`;
+  }
+  if (start.slice(0, 7) === end.slice(0, 7)) {
+    return `${Number(start.slice(8))} – ${format(end, { day: "numeric", month: "short", year: "numeric" })}`;
+  }
+  return `${format(start, { day: "numeric", month: "short" })} – ${format(end, { day: "numeric", month: "short", year: "numeric" })}`;
+}
+
+function monthBounds(year: number, month0: number): { start: string; end: string } {
+  const first = new Date(Date.UTC(year, month0, 1));
+  const last = new Date(Date.UTC(year, month0 + 1, 0));
+  return { start: first.toISOString().slice(0, 10), end: last.toISOString().slice(0, 10) };
+}
+
+/** Quick ranges, worked out from today's Maldives date. */
+function presets(): Array<{ id: string; label: string; start: string; end: string }> {
+  const [year, month] = maldivesTodayIso().split("-").map(Number);
+  return [
+    { id: "this", label: "This month", ...monthBounds(year, month - 1) },
+    { id: "last", label: "Last month", ...monthBounds(year, month - 2) },
+    { id: "year", label: "This year", start: `${year}-01-01`, end: `${year}-12-31` },
+  ];
+}
+
 /**
- * Council attendance for a month: each employee's days at the office (out of
- * the working days so far) and late minutes.
+ * Council attendance for a date range: each employee's days at the office
+ * (out of the working days so far) and late minutes.
  */
 export function CouncilReportsView({ summary }: { summary: CouncilMonthSummary }) {
   const router = useRouter();
   const pathname = usePathname();
   const [pending, startTransition] = useTransition();
   const [section, setSection] = useState("All");
+  const [from, setFrom] = useState(summary.start);
+  const [to, setTo] = useState(summary.end);
+  const quickRanges = useMemo(presets, []);
+
+  // Back to the shown range when another one has loaded.
+  useEffect(() => {
+    setFrom(summary.start);
+    setTo(summary.end);
+  }, [summary.start, summary.end]);
 
   const sections = useMemo(
     () => ["All", ...Array.from(new Set(summary.rows.map((row) => row.section).filter(Boolean)))],
@@ -46,10 +73,12 @@ export function CouncilReportsView({ summary }: { summary: CouncilMonthSummary }
     ? Math.round(tracked.reduce((total, row) => total + row.daysAttended, 0) / tracked.length)
     : 0;
 
-  const goToMonth = (month: string) => {
-    if (!/^\d{4}-\d{2}$/.test(month) || month === summary.month) return;
-    startTransition(() => router.push(`${pathname}?month=${month}`));
+  const showRange = (start: string, end: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end) || start > end) return;
+    if (start === summary.start && end === summary.end) return;
+    startTransition(() => router.push(`${pathname}?from=${start}&to=${end}`));
   };
+  const title = rangeTitle(summary.start, summary.end);
 
   const downloadCSV = () => {
     const header = ["Name", "Designation", "Section", "Days attended", "Working days", "Late minutes", "Late days", "Leave days"];
@@ -61,7 +90,7 @@ export function CouncilReportsView({ summary }: { summary: CouncilMonthSummary }
     const blob = new Blob([[header.join(","), ...lines].join("\n")], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `Council_Attendance_${summary.month}.csv`;
+    link.download = `Council_Attendance_${summary.start}_to_${summary.end}.csv`;
     link.click();
     URL.revokeObjectURL(link.href);
   };
@@ -74,39 +103,9 @@ export function CouncilReportsView({ summary }: { summary: CouncilMonthSummary }
           <h1 className="text-4xl font-black tracking-[-0.045em] text-[#1b302e] sm:text-5xl">
             Council attendance<span className="text-[#8cc9b1]">.</span>
           </h1>
-          <p className="mt-2 text-sm text-[#84918e]">Days at the office and late minutes for each employee</p>
+          <p className="mt-2 text-sm text-[#84918e]">Days at the office and late minutes for each employee · {title}</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center rounded-full border border-[#dbe6df] bg-white p-1 shadow-sm">
-            <button
-              type="button"
-              onClick={() => goToMonth(shiftMonth(summary.month, -1))}
-              disabled={pending}
-              aria-label="Previous month"
-              className="flex h-9 w-9 items-center justify-center rounded-full text-[#527668] hover:bg-[#f2f8f3] disabled:opacity-40"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <label className="relative cursor-pointer px-2 text-sm font-black text-[#1b302e]">
-              {monthTitle(summary.month)}
-              <input
-                type="month"
-                value={summary.month}
-                onChange={(event) => goToMonth(event.target.value)}
-                aria-label="Choose month"
-                className="absolute inset-0 cursor-pointer opacity-0"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => goToMonth(shiftMonth(summary.month, 1))}
-              disabled={pending}
-              aria-label="Next month"
-              className="flex h-9 w-9 items-center justify-center rounded-full text-[#527668] hover:bg-[#f2f8f3] disabled:opacity-40"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
           <button
             type="button"
             onClick={downloadCSV}
@@ -119,6 +118,68 @@ export function CouncilReportsView({ summary }: { summary: CouncilMonthSummary }
           </button>
         </div>
       </header>
+
+      <div className="mb-5 flex flex-wrap items-end gap-3">
+        <div className="flex flex-wrap gap-1 rounded-full border border-white bg-[#f2f5f3] p-1" role="group" aria-label="Quick ranges">
+          {quickRanges.map((range) => {
+            const active = range.start === summary.start && range.end === summary.end;
+            return (
+              <button
+                key={range.id}
+                type="button"
+                onClick={() => showRange(range.start, range.end)}
+                disabled={pending}
+                aria-pressed={active}
+                className={cn(
+                  "min-h-[34px] rounded-full px-4 text-xs font-extrabold transition",
+                  active ? "bg-[#17191d] text-white shadow-[0_5px_14px_rgba(23,25,29,0.16)]" : "text-[#5f706c] hover:text-[#17191d]",
+                )}
+              >
+                {range.label}
+              </button>
+            );
+          })}
+        </div>
+        <form
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            showRange(from, to);
+          }}
+        >
+          <label className="grid gap-1 text-[11px] font-extrabold uppercase tracking-wide text-[#6f7f7b]">
+            From
+            <input
+              type="date"
+              value={from}
+              max={to || undefined}
+              onChange={(event) => setFrom(event.target.value)}
+              className="h-10 rounded-xl border border-[#dbe6df] bg-white px-3 text-sm font-semibold text-[#243635]"
+            />
+          </label>
+          <label className="grid gap-1 text-[11px] font-extrabold uppercase tracking-wide text-[#6f7f7b]">
+            To
+            <input
+              type="date"
+              value={to}
+              min={from || undefined}
+              onChange={(event) => setTo(event.target.value)}
+              className="h-10 rounded-xl border border-[#dbe6df] bg-white px-3 text-sm font-semibold text-[#243635]"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={pending || !from || !to || from > to || (from === summary.start && to === summary.end)}
+            className="h-10 rounded-full border border-[#dbe6df] bg-white px-4 text-xs font-extrabold text-[#1e4642] shadow-sm hover:bg-[#f2f8f3] disabled:opacity-40"
+          >
+            Show
+          </button>
+        </form>
+      </div>
+
+      {summary.error ? (
+        <p role="alert" className="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{summary.error}</p>
+      ) : null}
 
       <div className="mb-5 grid grid-cols-3 gap-3 sm:max-w-2xl">
         <div className="rounded-2xl bg-[#eef4ff] px-4 py-3 text-[#3d6ea8]">
@@ -158,12 +219,12 @@ export function CouncilReportsView({ summary }: { summary: CouncilMonthSummary }
 
       {pending ? (
         <p className="flex items-center gap-2 py-10 text-sm font-semibold text-[#84918e]">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading {monthTitle(summary.month)}…
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading…
         </p>
       ) : !hasRecords ? (
         <div className="rounded-[24px] border border-[#e8ece9] bg-[#fbfcfb] px-6 py-12 text-center">
-          <p className="font-black text-[#1c2d2e]">No council attendance for {monthTitle(summary.month)}</p>
-          <p className="mt-1 text-sm text-[#7b8a8b]">Attendance sheets for this month haven&rsquo;t been made yet.</p>
+          <p className="font-black text-[#1c2d2e]">No council attendance for {title}</p>
+          <p className="mt-1 text-sm text-[#7b8a8b]">There are no attendance sheets for these dates yet.</p>
         </div>
       ) : (
         <div className="overflow-hidden rounded-[24px] border border-[#e8ece9] bg-white shadow-[0_9px_25px_rgba(61,50,73,0.06)]">
