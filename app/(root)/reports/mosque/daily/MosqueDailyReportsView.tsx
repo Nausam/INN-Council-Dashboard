@@ -10,6 +10,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -24,6 +25,11 @@ import {
   fetchAllEmployees,
   fetchMosqueAssistants,
 } from "@/lib/actions/hr.actions";
+import {
+  downloadMosqueDailyPdf,
+  type MosqueDailyCell,
+} from "@/lib/attendance/mosque-daily-pdf";
+import { maldivesTodayIso } from "@/lib/employees/details-dashboard";
 import { isOnAttendanceLeave } from "@/lib/salary-slips/pay-period";
 import { cn } from "@/lib/utils";
 import {
@@ -33,11 +39,13 @@ import {
   CheckCircle2,
   CircleOff,
   Download,
+  FileDown,
   FileText,
+  Loader2,
   RefreshCw,
   UserRound,
 } from "lucide-react";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 type EmployeeRef =
   | string
@@ -315,14 +323,40 @@ function formatPrayerStatus(
   return "Not signed in";
 }
 
-function getDailyStatusLabel(
-  recordedForDay: number,
-  leaveType: string | null,
-): string {
-  if (isOnAttendanceLeave(leaveType)) return formatLeaveLabel(leaveType);
-  if (recordedForDay === PRAYERS.length) return "Complete";
-  if (recordedForDay === 0) return "No check-ins";
-  return "Partial";
+/** A prayer not signed in counts as this many minutes late. */
+const ABSENT_PRAYER_MINUTES = 60;
+
+/**
+ * Each prayer's cell and the day's late minutes: late minutes for each
+ * sign-in plus 60 for each prayer not signed in. Leave days count nothing
+ * (total null); today's prayers not signed in yet aren't counted.
+ */
+function dayLateMinutes(
+  row: AttendanceRow,
+  today: string,
+): { cells: MosqueDailyCell[]; total: number | null } {
+  if (isOnAttendanceLeave(row.leaveType)) {
+    const label = formatLeaveLabel(row.leaveType);
+    return {
+      cells: PRAYERS.map(() => ({ kind: "leave", text: "On leave", note: label })),
+      total: null,
+    };
+  }
+  let total = 0;
+  const cells = PRAYERS.map((prayer): MosqueDailyCell => {
+    const signedIn = row[prayer.timeKey];
+    if (signedIn) {
+      const late = Math.max(0, row[prayer.lateKey]);
+      total += late;
+      return late > 0
+        ? { kind: "late", text: formatTime(signedIn), note: `+${late} min` }
+        : { kind: "time", text: formatTime(signedIn), note: "On time" };
+    }
+    if (row.date.slice(0, 10) >= today) return { kind: "pending", text: "Not yet", note: "" };
+    total += ABSENT_PRAYER_MINUTES;
+    return { kind: "absent", text: "Not signed in", note: `${ABSENT_PRAYER_MINUTES} min` };
+  });
+  return { cells, total };
 }
 
 function employeeInitials(name: string): string {
@@ -385,50 +419,28 @@ function StatCard({
   );
 }
 
-function PrayerTimeCell({
-  value,
-  minutesLate,
-  leaveType,
-}: {
-  value: string | null;
-  minutesLate: number;
-  leaveType: string | null;
-}) {
-  if (!value) {
-    if (isOnAttendanceLeave(leaveType)) {
-      const leaveLabel = formatLeaveLabel(leaveType);
-      return (
-        <div className="mx-auto flex min-w-[112px] flex-col items-center rounded-xl bg-sky-50 px-3 py-2 ring-1 ring-inset ring-sky-100">
-          <span className="text-xs font-bold text-sky-800">On leave</span>
-          <span className="mt-0.5 text-center text-[10px] font-medium text-sky-600">
-            {leaveLabel}
-          </span>
-        </div>
-      );
-    }
+const CELL_TONES: Record<MosqueDailyCell["kind"], string> = {
+  time: "bg-teal-50 text-teal-700 ring-teal-100",
+  late: "bg-orange-50 text-orange-700 ring-orange-100",
+  absent: "bg-rose-50 text-rose-700 ring-rose-100",
+  leave: "bg-sky-50 text-sky-800 ring-sky-100",
+  pending: "bg-slate-50 text-slate-500 ring-slate-100",
+};
 
-    return (
-      <div className="mx-auto flex min-w-[112px] flex-col items-center rounded-xl bg-rose-50 px-3 py-2 ring-1 ring-inset ring-rose-100">
-        <span className="text-xs font-bold text-rose-700">Not signed in</span>
-        <span className="mt-0.5 text-[10px] font-medium text-rose-500">Absent</span>
-      </div>
-    );
-  }
-
-  const late = minutesLate > 0;
+function PrayerTimeCell({ cell }: { cell: MosqueDailyCell }) {
   return (
     <div
       className={cn(
         "mx-auto flex min-w-[112px] flex-col items-center rounded-xl px-3 py-2 ring-1 ring-inset",
-        late
-          ? "bg-rose-50 text-rose-700 ring-rose-100"
-          : "bg-teal-50 text-teal-700 ring-teal-100",
+        CELL_TONES[cell.kind],
       )}
     >
-      <span className="text-sm font-bold">{formatTime(value)}</span>
-      <span className="mt-0.5 text-[10px] font-semibold">
-        {late ? `+${minutesLate} min late` : "On time"}
+      <span className={cn("font-bold", cell.kind === "time" || cell.kind === "late" ? "text-sm" : "text-xs")}>
+        {cell.text}
       </span>
+      {cell.note ? (
+        <span className="mt-0.5 text-center text-[10px] font-semibold opacity-90">{cell.note}</span>
+      ) : null}
     </div>
   );
 }
@@ -445,6 +457,11 @@ export function MosqueDailyReportsView({
   const [selectedEmployee, setSelectedEmployee] = useState("");
   const [reportMonth, setReportMonth] = useState("");
   const [reportEmployeeId, setReportEmployeeId] = useState("");
+  const [makingPdf, setMakingPdf] = useState(false);
+  const [pickEmployeeHint, setPickEmployeeHint] = useState(false);
+  const monthRef = useRef<HTMLInputElement>(null);
+  const employeeRef = useRef<HTMLSelectElement>(null);
+  const today = useMemo(maldivesTodayIso, []);
 
   const {
     data: assistantsResponse,
@@ -489,12 +506,20 @@ export function MosqueDailyReportsView({
   const attendanceData = useMemo(
     () =>
       reportMonth && reportEmployeeId
-        ? normalizeAttendanceRows(rawAttendance).filter((row) =>
-            row.date.slice(0, 10).startsWith(`${reportMonth}-`),
+        ? normalizeAttendanceRows(rawAttendance).filter(
+            (row) =>
+              row.date.slice(0, 10).startsWith(`${reportMonth}-`) &&
+              row.date.slice(0, 10) <= today,
           )
         : [],
-    [rawAttendance, reportMonth, reportEmployeeId],
+    [rawAttendance, reportMonth, reportEmployeeId, today],
   );
+
+  const dayTotals = useMemo(
+    () => attendanceData.map((row) => dayLateMinutes(row, today)),
+    [attendanceData, today],
+  );
+  const grandTotal = dayTotals.reduce((sum, day) => sum + (day.total ?? 0), 0);
 
   const reportEmployee = useMemo(
     () => employees.find((employee) => employee.$id === reportEmployeeId),
@@ -552,17 +577,35 @@ export function MosqueDailyReportsView({
   const reportAvailable =
     Boolean(reportEmployeeId) && isSuccess && !isError && attendanceData.length > 0;
 
+  // A choice made before the page finished loading, or one the browser
+  // restored after a reload, shows in the fields without reaching React's
+  // state; pick it up so Generate uses what the fields show.
+  useEffect(() => {
+    const shownEmployee = employeeRef.current?.value ?? "";
+    if (shownEmployee && shownEmployee !== selectedEmployee) setSelectedEmployee(shownEmployee);
+    const shownMonth = monthRef.current?.value ?? "";
+    if (/^\d{4}-\d{2}$/.test(shownMonth) && shownMonth !== selectedMonth) setSelectedMonth(shownMonth);
+    // Only when the fields first appear and when the employee list arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employees]);
+
   const handleGenerateReport = () => {
-    if (!selectedEmployee) return;
-    if (
-      reportMonth === selectedMonth &&
-      reportEmployeeId === selectedEmployee
-    ) {
+    const employeeId = selectedEmployee || employeeRef.current?.value || "";
+    const shownMonth = monthRef.current?.value ?? "";
+    const month = /^\d{4}-\d{2}$/.test(shownMonth) ? shownMonth : selectedMonth;
+    if (!employeeId) {
+      setPickEmployeeHint(true);
+      return;
+    }
+    setPickEmployeeHint(false);
+    if (employeeId !== selectedEmployee) setSelectedEmployee(employeeId);
+    if (month !== selectedMonth) setSelectedMonth(month);
+    if (reportMonth === month && reportEmployeeId === employeeId) {
       void refetch();
       return;
     }
-    setReportMonth(selectedMonth);
-    setReportEmployeeId(selectedEmployee);
+    setReportMonth(month);
+    setReportEmployeeId(employeeId);
   };
 
   const downloadCSV = () => {
@@ -578,10 +621,10 @@ export function MosqueDailyReportsView({
         `${prayer.label} Late (mins)`,
       ]),
       "Recorded Prayers",
-      "Daily Status",
+      "Total Late (mins)",
     ];
 
-    const rows = attendanceData.map((row) => {
+    const rows = attendanceData.map((row, index) => {
       const recordedForDay = PRAYERS.filter(
         (prayer) => row[prayer.timeKey],
       ).length;
@@ -593,14 +636,23 @@ export function MosqueDailyReportsView({
         reportEmployee.designation,
         ...PRAYERS.flatMap((prayer) => [
           formatPrayerStatus(row[prayer.timeKey], row.leaveType),
-          onLeave && !row[prayer.timeKey] ? "" : row[prayer.lateKey],
+          row[prayer.timeKey]
+            ? row[prayer.lateKey]
+            : onLeave || row.date.slice(0, 10) >= today
+              ? ""
+              : ABSENT_PRAYER_MINUTES,
         ]),
         onLeave ? "On leave" : `${recordedForDay}/${PRAYERS.length}`,
-        getDailyStatusLabel(recordedForDay, row.leaveType),
+        dayTotals[index].total ?? "Leave",
       ];
     });
+    const footer = [
+      "Grand Total",
+      ...Array(headers.length - 2).fill(""),
+      grandTotal,
+    ];
 
-    const csv = [headers, ...rows]
+    const csv = [headers, ...rows, footer]
       .map((row) => row.map(csvCell).join(","))
       .join("\n");
     const blob = new Blob([`\uFEFF${csv}`], {
@@ -612,6 +664,29 @@ export function MosqueDailyReportsView({
     link.download = `Mosque_Daily_Attendance_${reportMonth}_${reportEmployee.name.replace(/\s+/g, "_")}.csv`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const downloadPDF = async () => {
+    if (!reportAvailable || !reportEmployee) return;
+    setMakingPdf(true);
+    try {
+      await downloadMosqueDailyPdf({
+        employeeName: reportEmployee.name,
+        designation: reportEmployee.designation,
+        monthLabel: formatMonth(reportMonth),
+        prayerLabels: PRAYERS.map((prayer) => prayer.label),
+        rows: attendanceData.map((row, index) => ({
+          date: formatDate(row.date),
+          day: formatWeekday(row.date),
+          cells: dayTotals[index].cells,
+          total: dayTotals[index].total,
+        })),
+        grandTotal,
+        fileName: `Mosque_Daily_Attendance_${reportMonth}_${reportEmployee.name.replace(/\s+/g, "_")}.pdf`,
+      });
+    } finally {
+      setMakingPdf(false);
+    }
   };
 
   return (
@@ -663,6 +738,7 @@ export function MosqueDailyReportsView({
                     Month
                   </label>
                   <input
+                    ref={monthRef}
                     id="daily-report-month"
                     type="month"
                     value={selectedMonth}
@@ -679,9 +755,13 @@ export function MosqueDailyReportsView({
                     Employee
                   </label>
                   <select
+                    ref={employeeRef}
                     id="daily-report-employee"
                     value={selectedEmployee}
-                    onChange={(event) => setSelectedEmployee(event.target.value)}
+                    onChange={(event) => {
+                      setSelectedEmployee(event.target.value);
+                      setPickEmployeeHint(false);
+                    }}
                     className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none transition focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
                   >
                     <option value="">
@@ -694,6 +774,11 @@ export function MosqueDailyReportsView({
                       </option>
                     ))}
                   </select>
+                  {pickEmployeeHint ? (
+                    <p className="mt-1.5 text-xs font-semibold text-rose-600" role="alert">
+                      Choose an employee first.
+                    </p>
+                  ) : null}
                 </div>
 
                 <Button
@@ -701,7 +786,7 @@ export function MosqueDailyReportsView({
                   variant="council"
                   className="h-11 px-5"
                   onClick={handleGenerateReport}
-                  disabled={!selectedEmployee || loading}
+                  disabled={loading}
                 >
                   <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
                   {loading ? "Generating" : "Generate"}
@@ -728,9 +813,9 @@ export function MosqueDailyReportsView({
           />
           <StatCard
             icon={AlertTriangle}
-            label="Late check-ins"
-            value={String(summary.late)}
-            detail="Saved check-ins marked late"
+            label="Late minutes"
+            value={reportAvailable ? `${grandTotal} min` : "0 min"}
+            detail={`${summary.late} late check-in${summary.late === 1 ? "" : "s"} · missed prayer = 60 min`}
             tone="amber"
           />
           <StatCard
@@ -760,16 +845,28 @@ export function MosqueDailyReportsView({
                   : "Choose an employee and month to generate the report"}
               </p>
             </div>
-            <Button
-              type="button"
-              variant="council-outline"
-              className="h-10"
-              onClick={downloadCSV}
-              disabled={!reportAvailable || loading}
-            >
-              <Download className="h-4 w-4" />
-              Download CSV
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="council-outline"
+                className="h-10"
+                onClick={downloadCSV}
+                disabled={!reportAvailable || loading}
+              >
+                <Download className="h-4 w-4" />
+                CSV
+              </Button>
+              <Button
+                type="button"
+                variant="council"
+                className="h-10"
+                onClick={() => void downloadPDF()}
+                disabled={!reportAvailable || loading || makingPdf}
+              >
+                {makingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+                Download PDF
+              </Button>
+            </div>
           </div>
 
           {loading ? (
@@ -826,8 +923,8 @@ export function MosqueDailyReportsView({
                       {prayer.label}
                     </TableHead>
                   ))}
-                  <TableHead className="min-w-[135px] px-5 text-right text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Daily status
+                  <TableHead className="min-w-[120px] px-5 text-right text-xs font-bold uppercase tracking-wider text-slate-500">
+                    Total
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -836,13 +933,7 @@ export function MosqueDailyReportsView({
                   const recordedForDay = PRAYERS.filter(
                     (prayer) => row[prayer.timeKey],
                   ).length;
-                  const onLeave = isOnAttendanceLeave(row.leaveType);
-                  const complete = !onLeave && recordedForDay === PRAYERS.length;
-                  const absent = !onLeave && recordedForDay === 0;
-                  const dailyStatus = getDailyStatusLabel(
-                    recordedForDay,
-                    row.leaveType,
-                  );
+                  const { cells, total } = dayTotals[index];
 
                   return (
                     <TableRow
@@ -860,42 +951,49 @@ export function MosqueDailyReportsView({
                       <TableCell className="font-medium text-slate-500">
                         {formatWeekday(row.date)}
                       </TableCell>
-                      {PRAYERS.map((prayer) => (
+                      {PRAYERS.map((prayer, prayerIndex) => (
                         <TableCell key={prayer.label} className="text-center">
-                          <PrayerTimeCell
-                            value={row[prayer.timeKey]}
-                            minutesLate={row[prayer.lateKey]}
-                            leaveType={row.leaveType}
-                          />
+                          <PrayerTimeCell cell={cells[prayerIndex]} />
                         </TableCell>
                       ))}
                       <TableCell className="px-5 text-right">
-                        <div className="flex flex-col items-end gap-1">
-                          <span
-                            className={cn(
-                              "inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ring-inset",
-                              onLeave
-                                ? "bg-sky-50 text-sky-800 ring-sky-100"
-                                : complete
-                                  ? "bg-teal-50 text-teal-700 ring-teal-100"
-                                  : absent
-                                    ? "bg-rose-50 text-rose-700 ring-rose-100"
-                                    : "bg-amber-50 text-amber-700 ring-amber-100",
-                            )}
-                          >
-                            {dailyStatus}
+                        {total === null ? (
+                          <span className="inline-flex rounded-full bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-800 ring-1 ring-inset ring-sky-100">
+                            Leave
                           </span>
-                          <span className="text-xs font-medium text-slate-500">
-                            {onLeave
-                              ? "Leave day"
-                              : `${recordedForDay}/${PRAYERS.length} prayers`}
-                          </span>
-                        </div>
+                        ) : (
+                          <div className="flex flex-col items-end">
+                            <span
+                              className={cn(
+                                "text-base font-black tabular-nums",
+                                total > 0 ? "text-orange-700" : "text-teal-700",
+                              )}
+                            >
+                              {total} min
+                            </span>
+                            <span className="text-xs font-medium text-slate-500">
+                              {recordedForDay}/{PRAYERS.length} prayers
+                            </span>
+                          </div>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
                 })}
               </TableBody>
+              <TableFooter>
+                <TableRow className="border-slate-200 bg-slate-900 hover:bg-slate-900">
+                  <TableCell colSpan={3 + PRAYERS.length} className="px-5 py-4 text-sm font-bold text-white">
+                    Grand total of late minutes · {formatMonth(reportMonth)}
+                    <span className="ml-2 text-xs font-medium text-slate-300">
+                      A prayer not signed in counts as {ABSENT_PRAYER_MINUTES} minutes
+                    </span>
+                  </TableCell>
+                  <TableCell className="px-5 py-4 text-right text-lg font-black tabular-nums text-white">
+                    {grandTotal} min
+                  </TableCell>
+                </TableRow>
+              </TableFooter>
             </Table>
           )}
         </CouncilCard>
