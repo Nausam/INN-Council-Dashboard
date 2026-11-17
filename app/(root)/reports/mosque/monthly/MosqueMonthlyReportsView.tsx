@@ -1,21 +1,12 @@
 "use client";
 
 import SkeletonReportsTable from "@/components/skeletons/SkeletonReportsTable";
-import { CouncilCard } from "@/components/design-system/council-card";
 import { CouncilDatePicker } from "@/components/design-system/council-date-picker";
 import { EmptyState } from "@/components/design-system/empty-state";
 import { PageHeader } from "@/components/design-system/page-header";
 import { PageShell } from "@/components/design-system/page-shell";
+import motifs from "@/components/employee-portal/portal-motifs.module.css";
 import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableFooter,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   useEmployeesQuery,
   useMosqueAssistantsQuery,
@@ -38,11 +29,13 @@ import {
   Clock3,
   Download,
   FileBarChart2,
+  Palmtree,
   RefreshCw,
   Users,
   Wallet,
 } from "lucide-react";
 import React, { useMemo, useState } from "react";
+import styles from "./mosque-monthly-report.module.css";
 
 type EmployeeRef =
   | string
@@ -696,60 +689,174 @@ function csvCell(value: string | number): string {
   return `"${String(value).replace(/"/g, '""')}"`;
 }
 
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  detail,
-  tone,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: string;
-  detail: string;
-  tone: "teal" | "blue" | "amber" | "rose";
-}) {
-  const tones = {
-    teal: "bg-teal-50 text-teal-700 ring-teal-100",
-    blue: "bg-blue-50 text-blue-700 ring-blue-100",
-    amber: "bg-amber-50 text-amber-700 ring-amber-100",
-    rose: "bg-rose-50 text-rose-700 ring-rose-100",
-  };
+type Tone = "present" | "late" | "missed" | "annual" | "leave";
 
+/** Glossy icon tile in the employee-portal style, including a rose "missed" tone. */
+function GlossTile({
+  tone,
+  icon: Icon,
+  className,
+}: {
+  tone: Tone;
+  icon: React.ComponentType<{ className?: string }>;
+  className?: string;
+}) {
   return (
-    <CouncilCard interactive="none" className="p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-            {label}
-          </p>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
-            {value}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">{detail}</p>
-        </div>
-        <div
-          className={cn(
-            "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ring-1",
-            tones[tone],
-          )}
-        >
-          <Icon className="h-5 w-5" />
-        </div>
-      </div>
-    </CouncilCard>
+    <span
+      className={cn(motifs.glossIcon, tone === "missed" && styles.missedTone, className)}
+      data-tone={tone}
+      aria-hidden
+    >
+      <Icon />
+    </span>
   );
 }
 
-function LateMinutes({ value }: { value: number }) {
-  if (value <= 0) {
-    return <span className="font-medium text-slate-400">0</span>;
-  }
-
+function StatCard({
+  icon,
+  label,
+  value,
+  unit,
+  aside,
+  detail,
+  tone,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value?: string;
+  unit?: string;
+  aside?: string;
+  detail?: string;
+  tone: Tone;
+  children?: React.ReactNode;
+}) {
   return (
-    <span className="inline-flex min-w-14 items-center justify-center rounded-full bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-700 ring-1 ring-inset ring-rose-100">
-      +{value} min
+    <div className={styles.stat} data-tone={tone}>
+      <GlossTile tone={tone} icon={icon} className={styles.statIcon} />
+      <div className={styles.statBody}>
+        <p className={styles.label}>{label}</p>
+        {value !== undefined ? (
+          <p className={styles.statValue}>
+            {value}
+            {unit ? <small>{unit}</small> : null}
+            {aside ? <span className={styles.statAside}>{aside}</span> : null}
+          </p>
+        ) : null}
+        {children}
+        {detail ? <p className={styles.statDetail}>{detail}</p> : null}
+      </div>
+    </div>
+  );
+}
+
+function SectionHead({
+  icon,
+  tone,
+  title,
+  subtitle,
+  action,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  tone: Tone;
+  title: string;
+  subtitle: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className={styles.sectionHead}>
+      <div className={styles.sectionTitle}>
+        <GlossTile tone={tone} icon={icon} className={styles.sectionIcon} />
+        <div>
+          <h2>{title}</h2>
+          <p>{subtitle}</p>
+        </div>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function PersonCell({ name, detail, index }: { name: string; detail?: string; index: number }) {
+  return (
+    <div className={styles.person}>
+      <span className={styles.avatar} data-tint={index % 4}>
+        {initials(name)}
+      </span>
+      <span className={styles.personText}>
+        <strong>{name}</strong>
+        {detail ? <span>{detail}</span> : null}
+      </span>
+    </div>
+  );
+}
+
+function MinutesChip({
+  value,
+  tone = "late",
+  absences = 0,
+}: {
+  value: number;
+  tone?: Tone;
+  /** Prayers not signed in, shown inside the same pill after the minutes. */
+  absences?: number;
+}) {
+  if (value <= 0) return <span className={styles.chip} data-tone="zero">0</span>;
+  return (
+    <span className={styles.chip} data-tone={tone}>
+      {new Intl.NumberFormat("en-US").format(value)}
+      <small>min</small>
+      {absences > 0 ? <span className={styles.absent}>{absences} absent</span> : null}
     </span>
+  );
+}
+
+/** 1531 → "25 h 31 min"; whole hours drop the minutes. */
+function formatHoursMinutes(totalMinutes: number): string {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes ? `${hours} h ${minutes} min` : `${hours} h`;
+}
+
+function shiftMonthKey(month: string, delta: number): string {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const date = new Date(Date.UTC(year, monthNumber - 1 + delta, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/** The 11th of the previous month through the 10th of `month`. */
+function reportCycle(month: string): ReportPeriod {
+  return { startDate: `${shiftMonthKey(month, -1)}-11`, endDate: `${month}-10` };
+}
+
+function calendarMonth(month: string): ReportPeriod {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  return { startDate: `${month}-01`, endDate: `${month}-${String(lastDay).padStart(2, "0")}` };
+}
+
+function periodDays(period: ReportPeriod): number {
+  return (
+    Math.round(
+      (Date.parse(`${period.endDate}T00:00:00Z`) - Date.parse(`${period.startDate}T00:00:00Z`)) / 86_400_000,
+    ) + 1
+  );
+}
+
+function datePart(iso: string, options: Intl.DateTimeFormatOptions): string {
+  return new Intl.DateTimeFormat("en-GB", { ...options, timeZone: "UTC" }).format(
+    new Date(`${iso}T00:00:00Z`),
+  );
+}
+
+/** Tear-off calendar page for one date: month band, big day, weekday. */
+function CalendarPage({ iso, tone }: { iso: string; tone: Tone }) {
+  return (
+    <div className={cn(motifs.calendarPage, styles.heroPage)} data-tone={tone}>
+      <span className={motifs.calendarPageTop}>{datePart(iso, { month: "short", year: "2-digit" })}</span>
+      <strong>{datePart(iso, { day: "numeric" })}</strong>
+      <small>{datePart(iso, { weekday: "short" })}</small>
+    </div>
   );
 }
 
@@ -809,10 +916,14 @@ export function MosqueMonthlyReportsView({
     [assistants, allEmployees],
   );
 
-  const reportData = useMemo(
-    () => buildMosqueReport(reportPeriod, rawAttendance, employeesById),
-    [reportPeriod, rawAttendance, employeesById],
-  );
+  // The period sections cover the two imams only, in the same order as Leave details.
+  const reportData = useMemo(() => {
+    const rank = (name: string) =>
+      LEAVE_DETAIL_STAFF.findIndex((staff) => staff.toLowerCase() === name.trim().toLowerCase());
+    return buildMosqueReport(reportPeriod, rawAttendance, employeesById)
+      .filter((employee) => rank(employee.name) >= 0)
+      .sort((a, b) => rank(a.name) - rank(b.name));
+  }, [reportPeriod, rawAttendance, employeesById]);
 
   const leaveDetails = useMemo(
     () => buildLeaveDetails(reportPeriod, rawAttendance, employeesById),
@@ -1069,168 +1180,206 @@ export function MosqueMonthlyReportsView({
     );
   };
 
+  const presets = (() => {
+    const month = getMaldivesMonth();
+    return [
+      { key: "cycle", label: "This cycle", ...reportCycle(month) },
+      { key: "last-cycle", label: "Last cycle", ...reportCycle(shiftMonthKey(month, -1)) },
+      { key: "month", label: "This month", ...calendarMonth(month) },
+      { key: "last-month", label: "Last month", ...calendarMonth(shiftMonthKey(month, -1)) },
+    ];
+  })();
+
+  // A preset sets the dates and runs the report straight away.
+  const applyPreset = (period: ReportPeriod) => {
+    setSelectedPeriod(period);
+    if (period.startDate === reportPeriod.startDate && period.endDate === reportPeriod.endDate) {
+      void refetch();
+      return;
+    }
+    setReportPeriod(period);
+  };
+
+  const topPrayerMinutes = summary.highestPrayer.minutes;
+
   return (
     <PageShell maxWidth="full">
-      <div className="mx-auto max-w-[1500px]">
+      <div className={cn("mx-auto max-w-[1500px]", styles.page)}>
         <PageHeader
           icon={FileBarChart2}
           title="Mosque Attendance Report"
-          subtitle="Late-arrival summary for any selected date range"
+          subtitle="Late arrivals, leave and the attendance allowance for mosque staff"
           className="mb-8"
         />
 
-        <CouncilCard
-          interactive="none"
-          className="mb-6 overflow-hidden border border-teal-100 p-0"
-        >
-          <div className="grid lg:grid-cols-[1fr_auto]">
-            <div className="flex items-center gap-4 bg-gradient-to-r from-teal-50 via-white to-white p-5 sm:p-6">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-teal-600 text-white shadow-sm shadow-teal-600/20">
-                <CalendarRange className="h-6 w-6" />
-              </div>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-teal-700">
-                  Reporting period
-                </p>
-                <p className="mt-1 text-lg font-bold text-slate-950 sm:text-xl">
-                  {formatPeriod(reportPeriod)}
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
-                  Choose any start and end date, then generate the report.
-                </p>
-              </div>
+        <section className={styles.hero} aria-label="Reporting period">
+          <div className={styles.heroPeriod}>
+            <div className={styles.heroPages}>
+              <CalendarPage iso={reportPeriod.startDate} tone="annual" />
+              <span className={styles.heroArrow}>
+                <b>→</b>
+                {periodDays(reportPeriod)} days
+              </span>
+              <CalendarPage iso={reportPeriod.endDate} tone="present" />
             </div>
-
-            <div className="flex min-w-[340px] flex-col justify-center border-t border-slate-100 bg-white p-5 lg:border-l lg:border-t-0">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <label
-                    htmlFor="report-start-date"
-                    className="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-slate-500"
-                  >
-                    From
-                  </label>
-                  <CouncilDatePicker
-                    id="report-start-date"
-                    value={selectedPeriod.startDate}
-                    onChange={(startDate) =>
-                      setSelectedPeriod((current) => ({
-                        ...current,
-                        startDate,
-                      }))
-                    }
-                    placeholder="Start date"
-                  />
-                </div>
-                <div>
-                  <label
-                    htmlFor="report-end-date"
-                    className="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-slate-500"
-                  >
-                    To
-                  </label>
-                  <CouncilDatePicker
-                    id="report-end-date"
-                    value={selectedPeriod.endDate}
-                    onChange={(endDate) =>
-                      setSelectedPeriod((current) => ({
-                        ...current,
-                        endDate,
-                      }))
-                    }
-                    placeholder="End date"
-                  />
-                </div>
-              </div>
-              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <p
-                  className={cn(
-                    "text-xs",
-                    selectedPeriodValid ? "text-slate-500" : "font-medium text-rose-600",
-                  )}
-                >
-                  {selectedPeriodValid
-                    ? `Selected: ${formatPeriod(selectedPeriod)}`
-                    : "End date must be on or after the start date."}
-                </p>
-                <Button
-                  type="button"
-                  variant="council"
-                  className="h-11 px-5"
-                  onClick={handleGenerateReport}
-                  disabled={loading || !selectedPeriodValid}
-                >
-                  <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-                  {loading ? "Generating" : "Generate"}
-                </Button>
-              </div>
+            <div>
+              <p className={styles.label}>Reporting period</p>
+              <p className={styles.heroTitle}>{formatPeriod(reportPeriod)}</p>
+              <p className={styles.heroSub}>
+                Pick a preset or any two dates. The allowance below always uses its own fixed cycle.
+              </p>
             </div>
           </div>
-        </CouncilCard>
 
-        <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className={styles.heroControls}>
+            <div className={styles.presets}>
+              {presets.map((preset) => (
+                <button
+                  key={preset.key}
+                  type="button"
+                  className={styles.preset}
+                  data-active={
+                    preset.startDate === reportPeriod.startDate && preset.endDate === reportPeriod.endDate
+                  }
+                  onClick={() => applyPreset({ startDate: preset.startDate, endDate: preset.endDate })}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            <div className={styles.dates}>
+              <label className={styles.dateField} htmlFor="report-start-date">
+                <span>From</span>
+                <CouncilDatePicker
+                  id="report-start-date"
+                  value={selectedPeriod.startDate}
+                  onChange={(startDate) =>
+                    setSelectedPeriod((current) => ({ ...current, startDate }))
+                  }
+                  placeholder="Start date"
+                />
+              </label>
+              <label className={styles.dateField} htmlFor="report-end-date">
+                <span>To</span>
+                <CouncilDatePicker
+                  id="report-end-date"
+                  value={selectedPeriod.endDate}
+                  onChange={(endDate) =>
+                    setSelectedPeriod((current) => ({ ...current, endDate }))
+                  }
+                  placeholder="End date"
+                />
+              </label>
+              <Button
+                type="button"
+                variant="council"
+                className="col-span-2 h-11 rounded-full px-5 sm:col-span-1"
+                onClick={handleGenerateReport}
+                disabled={loading || !selectedPeriodValid}
+              >
+                <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+                {loading ? "Generating" : "Generate"}
+              </Button>
+            </div>
+            <p className={styles.hint} data-error={!selectedPeriodValid}>
+              {selectedPeriodValid
+                ? `Selected: ${formatPeriod(selectedPeriod)}`
+                : "End date must be on or after the start date."}
+            </p>
+          </div>
+        </section>
+
+        <div className={styles.stats}>
           <StatCard
             icon={Users}
             label="Employees"
             value={String(reportData.length)}
             detail="Staff with attendance sheets"
-            tone="teal"
+            tone="annual"
           />
           <StatCard
             icon={Clock3}
             label="Total late time"
-            value={formatDuration(summary.totalMinutes)}
-            detail="Combined across all five prayers"
-            tone="rose"
+            value={new Intl.NumberFormat("en-US").format(summary.totalMinutes)}
+            unit="min"
+            aside={summary.totalMinutes >= 60 ? formatHoursMinutes(summary.totalMinutes) : undefined}
+            detail={`${summary.lateCheckIns} late check-in${summary.lateCheckIns === 1 ? "" : "s"} across all five prayers`}
+            tone="late"
           />
           <StatCard
             icon={AlarmClock}
             label="Late employee-days"
             value={String(summary.lateDays)}
             detail="Days with at least one late prayer"
-            tone="amber"
-          />
-          <StatCard
-            icon={CalendarRange}
-            label="Most delayed prayer"
-            value={summary.highestPrayer.minutes > 0 ? summary.highestPrayer.label : "None"}
-            detail={
-              summary.highestPrayer.minutes > 0
-                ? `${summary.highestPrayer.minutes} minutes combined`
-                : "No late minutes recorded"
-            }
-            tone="blue"
+            tone="missed"
           />
         </div>
 
-        <CouncilCard interactive="none" className="overflow-hidden p-0">
-          <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-            <div>
-              <h2 className="text-lg font-bold text-slate-950">
-                Employee late-time breakdown
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Minutes late by prayer for {formatPeriod(reportPeriod)}
-              </p>
+        <section className={styles.section}>
+          <SectionHead
+            icon={CalendarRange}
+            tone="leave"
+            title="Late minutes by prayer"
+            subtitle={`All staff combined · ${formatPeriod(reportPeriod)}`}
+          />
+          <div className={styles.sectionBody}>
+            <div className={styles.prayerGrid}>
+              {summary.prayerTotals.map((prayer) => {
+                const top = topPrayerMinutes > 0 && prayer.minutes === topPrayerMinutes;
+                const share = summary.totalMinutes > 0
+                  ? Math.round((prayer.minutes / summary.totalMinutes) * 100)
+                  : 0;
+                return (
+                  <div key={prayer.label} className={styles.prayerCard} data-top={top}>
+                    <div className={styles.prayerCardHead}>
+                      <p>{prayer.label}</p>
+                      {top ? <span className={styles.prayerTop}>Most late</span> : null}
+                    </div>
+                    <p className={styles.prayerMinutes}>
+                      {new Intl.NumberFormat("en-US").format(prayer.minutes)}
+                      <small>min</small>
+                    </p>
+                    <p className={styles.prayerHours}>
+                      {prayer.minutes >= 60 ? formatHoursMinutes(prayer.minutes) : "Under an hour"}
+                    </p>
+                    <div className={styles.barTrack}>
+                      <span
+                        style={{
+                          width: `${topPrayerMinutes > 0 ? (prayer.minutes / topPrayerMinutes) * 100 : 0}%`,
+                        }}
+                      />
+                    </div>
+                    <p className={styles.prayerShare}>{share}% of all late time</p>
+                  </div>
+                );
+              })}
             </div>
-            <Button
-              type="button"
-              variant="council-outline"
-              className="h-10"
-              onClick={downloadCSV}
-              disabled={!reportAvailable || loading}
-            >
-              <Download className="h-4 w-4" />
-              Download CSV
-            </Button>
           </div>
+        </section>
 
-          {loading ? (
-            <div className="p-5 sm:p-6">
+        <section className={styles.section}>
+          <SectionHead
+            icon={Clock3}
+            tone="late"
+            title="Late-time breakdown"
+            subtitle={`Minutes late by prayer · ${formatPeriod(reportPeriod)}`}
+            action={
+              <Button
+                type="button"
+                variant="council-outline"
+                className="h-10 rounded-full"
+                onClick={downloadCSV}
+                disabled={!reportAvailable || loading}
+              >
+                <Download className="h-4 w-4" />
+                CSV
+              </Button>
+            }
+          />
+          <div className={styles.sectionBody}>
+            {loading ? (
               <SkeletonReportsTable />
-            </div>
-          ) : isError ? (
-            <div className="p-5 sm:p-6">
+            ) : isError ? (
               <EmptyState
                 icon={CalendarSearch}
                 title="The report could not be loaded"
@@ -1241,235 +1390,167 @@ export function MosqueMonthlyReportsView({
                   </Button>
                 }
               />
-            </div>
-          ) : !reportAvailable ? (
-            <div className="p-5 sm:p-6">
+            ) : !reportAvailable ? (
               <EmptyState
                 icon={CalendarSearch}
                 title="No attendance records in this period"
                 description={`No mosque attendance sheets were found from ${formatPeriod(reportPeriod)}.`}
               />
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-200 bg-slate-50 hover:bg-slate-50">
-                  <TableHead className="w-14 px-5 text-xs font-bold uppercase tracking-wider text-slate-500">
-                    #
-                  </TableHead>
-                  <TableHead className="min-w-[230px] text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Employee
-                  </TableHead>
-                  <TableHead className="min-w-[150px] text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Designation
-                  </TableHead>
-                  {prayerColumns.map((prayer) => (
-                    <TableHead
-                      key={prayer.key}
-                      className="min-w-[105px] text-center text-xs font-bold uppercase tracking-wider text-slate-500"
-                    >
-                      {prayer.label}
-                    </TableHead>
-                  ))}
-                  <TableHead className="min-w-[105px] text-center text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Late days
-                  </TableHead>
-                  <TableHead className="min-w-[130px] px-5 text-right text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Total late
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {reportData.map((employee, index) => (
-                  <TableRow
-                    key={employee.id}
-                    className="border-slate-100 hover:bg-teal-50/30"
-                  >
-                    <TableCell className="px-5 font-medium text-slate-400">
-                      {String(index + 1).padStart(2, "0")}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-100 text-xs font-bold text-teal-700">
-                          {initials(employee.name)}
-                        </div>
-                        <div>
-                          <p className="font-semibold text-slate-900">
-                            {employee.name}
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            {employee.lateCheckIns} late prayer{employee.lateCheckIns === 1 ? "" : "s"}
-                          </p>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                        {employee.designation || "Not specified"}
-                      </span>
-                    </TableCell>
-                    {prayerColumns.map((prayer) => (
-                      <TableCell key={prayer.key} className="text-center">
-                        <LateMinutes value={employee[prayer.key]} />
-                      </TableCell>
+            ) : (
+              <div className={styles.tableWrap}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      <th>Designation</th>
+                      {prayerColumns.map((prayer) => (
+                        <th key={prayer.key}>{prayer.label}</th>
+                      ))}
+                      <th>Late days</th>
+                      <th>Total late</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reportData.map((employee, index) => (
+                      <tr key={employee.id}>
+                        <td>
+                          <PersonCell
+                            name={employee.name}
+                            index={index}
+                            detail={`${employee.lateCheckIns} late prayer${employee.lateCheckIns === 1 ? "" : "s"}`}
+                          />
+                        </td>
+                        <td>
+                          <span className={styles.role}>{employee.designation || "Not specified"}</span>
+                        </td>
+                        {prayerColumns.map((prayer) => (
+                          <td key={prayer.key}>
+                            <MinutesChip value={employee[prayer.key]} />
+                          </td>
+                        ))}
+                        <td>
+                          <span className={styles.chip} data-tone={employee.lateDays > 0 ? "annual" : "zero"}>
+                            {employee.lateDays}
+                          </span>
+                        </td>
+                        <td>
+                          <div className={styles.total}>
+                            <strong data-tone={employee.totalMinutesLate > 0 ? "late" : "zero"}>
+                              {formatDuration(employee.totalMinutesLate)}
+                            </strong>
+                            {employee.totalMinutesLate >= 60 ? (
+                              <span>{formatHoursMinutes(employee.totalMinutesLate)}</span>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
                     ))}
-                    <TableCell className="text-center">
-                      <span
-                        className={cn(
-                          "inline-flex min-w-10 items-center justify-center rounded-full px-2.5 py-1 text-xs font-bold",
-                          employee.lateDays > 0
-                            ? "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-100"
-                            : "text-slate-400",
-                        )}
-                      >
-                        {employee.lateDays}
-                      </span>
-                    </TableCell>
-                    <TableCell className="px-5 text-right">
-                      <span
-                        className={cn(
-                          "font-bold",
-                          employee.totalMinutesLate > 0
-                            ? "text-rose-700"
-                            : "text-slate-500",
-                        )}
-                      >
-                        {formatDuration(employee.totalMinutesLate)}
-                      </span>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-              <TableFooter>
-                <TableRow className="border-t border-slate-200 bg-slate-50 hover:bg-slate-50">
-                  <TableCell colSpan={3} className="px-5 font-bold text-slate-900">
-                    Report total
-                  </TableCell>
-                  {summary.prayerTotals.map((prayer) => (
-                    <TableCell
-                      key={prayer.label}
-                      className="text-center font-bold text-slate-700"
-                    >
-                      {prayer.minutes} min
-                    </TableCell>
-                  ))}
-                  <TableCell className="text-center font-bold text-amber-700">
-                    {summary.lateDays}
-                  </TableCell>
-                  <TableCell className="px-5 text-right font-bold text-rose-700">
-                    {formatDuration(summary.totalMinutes)}
-                  </TableCell>
-                </TableRow>
-              </TableFooter>
-            </Table>
-          )}
-        </CouncilCard>
-
-        <CouncilCard interactive="none" className="mt-6 overflow-hidden p-0">
-          <div className="flex items-start gap-3 border-b border-slate-100 px-5 py-5 sm:px-6">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
-              <CalendarOff className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-slate-950">Leave details</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Leave taken by Zahidh and Shahidh, {formatPeriod(reportPeriod)}
-              </p>
-            </div>
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={2}>Report total</td>
+                      {summary.prayerTotals.map((prayer) => (
+                        <td key={prayer.label}>
+                          <span className={styles.footValue}>{prayer.minutes} min</span>
+                        </td>
+                      ))}
+                      <td>
+                        <span className={styles.footValue}>{summary.lateDays}</span>
+                      </td>
+                      <td>
+                        <span className={styles.footTotal}>{formatDuration(summary.totalMinutes)}</span>
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
           </div>
+        </section>
 
-          {loading ? (
-            <div className="p-5 sm:p-6">
+        <section className={styles.section}>
+          <SectionHead
+            icon={Palmtree}
+            tone="leave"
+            title="Leave details"
+            subtitle={`Leave taken by Zahidh and Shahidh · ${formatPeriod(reportPeriod)}`}
+          />
+          <div className={styles.sectionBody}>
+            {loading ? (
               <SkeletonReportsTable />
-            </div>
-          ) : isError ? (
-            <p className="p-5 text-sm text-slate-500 sm:p-6">
-              Leave details could not be loaded.
-            </p>
-          ) : (
-            <div className="grid gap-4 p-5 sm:p-6 md:grid-cols-2">
-              {leaveDetails.map((staff) => (
-                <div
-                  key={staff.name}
-                  className="rounded-2xl border border-slate-100 bg-gradient-to-br from-violet-50/60 via-white to-white p-5"
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-xs font-bold text-violet-700">
-                        {initials(staff.name)}
+            ) : isError ? (
+              <p className={styles.leaveError}>Leave details could not be loaded.</p>
+            ) : (
+              <div className={styles.leaveGrid}>
+                {leaveDetails.map((staff) => (
+                  <div key={staff.name} className={styles.leaveCard} data-empty={staff.total === 0}>
+                    <GlossTile
+                      tone={staff.total > 0 ? "leave" : "present"}
+                      icon={staff.total > 0 ? Palmtree : CalendarOff}
+                      className={styles.leaveIcon}
+                    />
+                    <div className={styles.leaveBody}>
+                      <div className={styles.leaveTop}>
+                        <p>{staff.name}</p>
+                        <span className={styles.leaveCount}>
+                          {staff.total}
+                          <small>day{staff.total === 1 ? "" : "s"}</small>
+                        </span>
                       </div>
-                      <p className="font-semibold text-slate-900">{staff.name}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-2xl font-bold tracking-tight text-slate-950">
-                        {staff.total}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        leave{staff.total === 1 ? "" : "s"}
-                      </p>
+                      {staff.total === 0 ? (
+                        <p className={styles.leaveNone}>No leave taken in this period.</p>
+                      ) : (
+                        <div className={styles.leaveTypes}>
+                          {staff.byType.map((type) => (
+                            <span key={type.label} className={styles.leaveType}>
+                              {type.label}
+                              <b>{type.count}</b>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
-
-                  {staff.total === 0 ? (
-                    <p className="mt-4 text-sm text-slate-500">
-                      No leave taken in this period.
-                    </p>
-                  ) : (
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {staff.byType.map((type) => (
-                        <span
-                          key={type.label}
-                          className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700 ring-1 ring-inset ring-violet-100"
-                        >
-                          {type.label}
-                          <span className="font-bold">{type.count}</span>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </CouncilCard>
-
-        <CouncilCard interactive="none" className="mt-6 overflow-hidden p-0">
-          <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-100 text-teal-700">
-                <Wallet className="h-5 w-5" />
+                ))}
               </div>
-              <div>
-                <h2 className="text-lg font-bold text-slate-950">
-                  Attendance Allowance
-                </h2>
-                <p className="mt-1 text-sm font-semibold text-slate-800">
-                  {formatPeriod(allowancePeriod)}
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
-                  Fixed cycle from the previous month&apos;s 16th through this
-                  month&apos;s 15th. Friday Dhuhr counts as Hukuru.
-                </p>
-              </div>
-            </div>
-            <Button
-              type="button"
-              variant="council-outline"
-              className="h-10"
-              onClick={downloadAllowanceCSV}
-              disabled={!allowanceAvailable || allowanceBusy}
-            >
-              <Download className="h-4 w-4" />
-              Download CSV
-            </Button>
+            )}
           </div>
+        </section>
 
-          {allowanceBusy ? (
-            <div className="p-5 sm:p-6">
+        <div className={styles.cycleBand}>
+          <div className={styles.cycleTitle}>
+            <h2>Allowance cycle</h2>
+            <span className={styles.cyclePill}>
+              <CalendarRange className="h-3.5 w-3.5" />
+              {formatPeriod(allowancePeriod)}
+            </span>
+          </div>
+          <p>The previous month&apos;s 16th through this month&apos;s 15th, whatever period is picked above.</p>
+        </div>
+
+        <section className={styles.section}>
+          <SectionHead
+            icon={Wallet}
+            tone="present"
+            title="Attendance allowance"
+            subtitle="Amount per signed-in prayer, with the count in brackets. Friday Dhuhr counts as Hukuru; leave days earn nothing."
+            action={
+              <Button
+                type="button"
+                variant="council-outline"
+                className="h-10 rounded-full"
+                onClick={downloadAllowanceCSV}
+                disabled={!allowanceAvailable || allowanceBusy}
+              >
+                <Download className="h-4 w-4" />
+                CSV
+              </Button>
+            }
+          />
+          <div className={styles.sectionBody}>
+            {allowanceBusy ? (
               <SkeletonReportsTable />
-            </div>
-          ) : allowanceError ? (
-            <div className="p-5 sm:p-6">
+            ) : allowanceError ? (
               <EmptyState
                 icon={CalendarSearch}
                 title="The allowance report could not be loaded"
@@ -1480,146 +1561,98 @@ export function MosqueMonthlyReportsView({
                   </Button>
                 }
               />
-            </div>
-          ) : !allowanceAvailable ? (
-            <div className="p-5 sm:p-6">
+            ) : !allowanceAvailable ? (
               <EmptyState
                 icon={CalendarSearch}
                 title="No attendance records in this period"
                 description={`No mosque attendance sheets were found from ${formatPeriod(allowancePeriod)}.`}
               />
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-200 bg-slate-50 hover:bg-slate-50">
-                  <TableHead className="min-w-[230px] px-5 text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Name
-                  </TableHead>
-                  {allowanceColumns.map((column) => (
-                    <TableHead
-                      key={column.key}
-                      className="min-w-[100px] text-center text-xs font-bold uppercase tracking-wider text-slate-500"
-                    >
-                      {column.label}
-                    </TableHead>
-                  ))}
-                  <TableHead className="min-w-[110px] px-5 text-right text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Total
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {allowanceData.map((employee) => (
-                  <TableRow
-                    key={employee.id}
-                    className="border-slate-100 hover:bg-teal-50/30"
-                  >
-                    <TableCell className="px-5">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-100 text-xs font-bold text-teal-700">
-                          {initials(employee.name)}
-                        </div>
-                        <p className="font-semibold text-slate-900">
-                          {employee.name}
-                        </p>
-                      </div>
-                    </TableCell>
-                    {allowanceColumns.map((column) => {
-                      const amount = employee[column.key];
-                      const count = employee.counts[column.key];
-                      return (
-                        <TableCell
-                          key={column.key}
-                          className="text-center font-semibold text-slate-700"
-                        >
-                          {amount > 0 ? (
-                            <>
-                              {formatAllowance(amount)}{" "}
-                              <span className="font-medium text-slate-500">
-                                ({count})
-                              </span>
-                            </>
-                          ) : (
-                            <span className="font-medium text-slate-400">0</span>
-                          )}
-                        </TableCell>
-                      );
-                    })}
-                    <TableCell className="px-5 text-right font-bold text-teal-700">
-                      {formatAllowance(employee.total)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-              <TableFooter>
-                <TableRow className="border-t border-slate-200 bg-slate-50 hover:bg-slate-50">
-                  <TableCell className="px-5 font-bold text-slate-900">
-                    Report total
-                  </TableCell>
-                  {allowanceSummary.prayerTotals.map((column) => (
-                    <TableCell
-                      key={column.key}
-                      className="text-center font-bold text-slate-700"
-                    >
-                      {column.amount > 0 ? (
-                        <>
-                          {formatAllowance(column.amount)}{" "}
-                          <span className="font-semibold text-slate-500">
-                            ({column.count})
+            ) : (
+              <div className={styles.tableWrap}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      {allowanceColumns.map((column) => (
+                        <th key={column.key}>{column.label}</th>
+                      ))}
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allowanceData.map((employee, index) => (
+                      <tr key={employee.id}>
+                        <td>
+                          <PersonCell name={employee.name} index={index} />
+                        </td>
+                        {allowanceColumns.map((column) => {
+                          const amount = employee[column.key];
+                          const count = employee.counts[column.key];
+                          return (
+                            <td key={column.key}>
+                              {amount > 0 ? (
+                                <span className={styles.chip} data-tone="present">
+                                  {formatAllowance(amount)}
+                                  <small>({count})</small>
+                                </span>
+                              ) : (
+                                <span className={styles.chip} data-tone="zero">0</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td>
+                          <div className={styles.total}>
+                            <strong data-tone="present">{formatAllowance(employee.total)}</strong>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td>Report total</td>
+                      {allowanceSummary.prayerTotals.map((column) => (
+                        <td key={column.key}>
+                          <span className={styles.footValue}>
+                            {column.amount > 0 ? `${formatAllowance(column.amount)} (${column.count})` : "0"}
                           </span>
-                        </>
-                      ) : (
-                        "0"
-                      )}
-                    </TableCell>
-                  ))}
-                  <TableCell className="px-5 text-right font-bold text-teal-700">
-                    {formatAllowance(allowanceSummary.total)}
-                  </TableCell>
-                </TableRow>
-              </TableFooter>
-            </Table>
-          )}
-        </CouncilCard>
-
-        <CouncilCard interactive="none" className="mt-6 overflow-hidden p-0">
-          <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
-                <AlarmClock className="h-5 w-5" />
+                        </td>
+                      ))}
+                      <td>
+                        <span className={styles.footTotal}>{formatAllowance(allowanceSummary.total)}</span>
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
-              <div>
-                <h2 className="text-lg font-bold text-slate-950">
-                  Late & Absent Calculation
-                </h2>
-                <p className="mt-1 text-sm font-semibold text-slate-800">
-                  {formatPeriod(allowancePeriod)}
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
-                  Actual late minutes plus {ABSENT_PRAYER_LATE_MINUTES} minutes
-                  for each absent prayer. Leave days are excluded.
-                </p>
-              </div>
-            </div>
-            <Button
-              type="button"
-              variant="council-outline"
-              className="h-10"
-              onClick={downloadLateAbsentCSV}
-              disabled={!lateAbsentAvailable || allowanceBusy}
-            >
-              <Download className="h-4 w-4" />
-              Download CSV
-            </Button>
+            )}
           </div>
+        </section>
 
-          {allowanceBusy ? (
-            <div className="p-5 sm:p-6">
+        <section className={styles.section}>
+          <SectionHead
+            icon={AlarmClock}
+            tone="missed"
+            title="Late & absent calculation"
+            subtitle={`Late minutes plus ${ABSENT_PRAYER_LATE_MINUTES} minutes for each prayer not signed in. Leave days are left out.`}
+            action={
+              <Button
+                type="button"
+                variant="council-outline"
+                className="h-10 rounded-full"
+                onClick={downloadLateAbsentCSV}
+                disabled={!lateAbsentAvailable || allowanceBusy}
+              >
+                <Download className="h-4 w-4" />
+                CSV
+              </Button>
+            }
+          />
+          <div className={styles.sectionBody}>
+            {allowanceBusy ? (
               <SkeletonReportsTable />
-            </div>
-          ) : allowanceError ? (
-            <div className="p-5 sm:p-6">
+            ) : allowanceError ? (
               <EmptyState
                 icon={CalendarSearch}
                 title="The late & absent report could not be loaded"
@@ -1630,115 +1663,77 @@ export function MosqueMonthlyReportsView({
                   </Button>
                 }
               />
-            </div>
-          ) : !lateAbsentAvailable ? (
-            <div className="p-5 sm:p-6">
+            ) : !lateAbsentAvailable ? (
               <EmptyState
                 icon={CalendarSearch}
                 title="No attendance records in this period"
                 description={`No mosque attendance sheets were found from ${formatPeriod(allowancePeriod)}.`}
               />
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-200 bg-slate-50 hover:bg-slate-50">
-                  <TableHead className="min-w-[230px] px-5 text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Name
-                  </TableHead>
-                  {lateAbsentColumns.map((column) => (
-                    <TableHead
-                      key={column.key}
-                      className="min-w-[110px] text-center text-xs font-bold uppercase tracking-wider text-slate-500"
-                    >
-                      {column.label}
-                    </TableHead>
-                  ))}
-                  <TableHead className="min-w-[130px] px-5 text-right text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Total
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {lateAbsentData.map((employee) => (
-                  <TableRow
-                    key={employee.id}
-                    className="border-slate-100 hover:bg-rose-50/30"
-                  >
-                    <TableCell className="px-5">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-xs font-bold text-rose-700">
-                          {initials(employee.name)}
-                        </div>
-                        <p className="font-semibold text-slate-900">
-                          {employee.name}
-                        </p>
-                      </div>
-                    </TableCell>
-                    {lateAbsentColumns.map((column) => {
-                      const minutes = employee[column.key];
-                      const absences = employee.absentCounts[column.key];
-                      return (
-                        <TableCell
-                          key={column.key}
-                          className="text-center font-semibold text-slate-700"
-                        >
-                          {minutes > 0 ? (
-                            <>
-                              {minutes}{" "}
-                              <span className="font-medium text-slate-500">
-                                min
-                              </span>
-                              {absences > 0 ? (
-                                <span className="ml-1 font-medium text-rose-600">
-                                  ({absences} abs)
-                                </span>
-                              ) : null}
-                            </>
-                          ) : (
-                            <span className="font-medium text-slate-400">0</span>
-                          )}
-                        </TableCell>
-                      );
-                    })}
-                    <TableCell className="px-5 text-right font-bold text-rose-700">
-                      {formatDuration(employee.total)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-              <TableFooter>
-                <TableRow className="border-t border-slate-200 bg-slate-50 hover:bg-slate-50">
-                  <TableCell className="px-5 font-bold text-slate-900">
-                    Report total
-                  </TableCell>
-                  {lateAbsentSummary.prayerTotals.map((column) => (
-                    <TableCell
-                      key={column.key}
-                      className="text-center font-bold text-slate-700"
-                    >
-                      {column.minutes > 0 ? (
-                        <>
-                          {column.minutes} min
-                          {column.absentCount > 0 ? (
-                            <span className="ml-1 font-semibold text-rose-600">
-                              ({column.absentCount} abs)
-                            </span>
-                          ) : null}
-                        </>
-                      ) : (
-                        "0"
-                      )}
-                    </TableCell>
-                  ))}
-                  <TableCell className="px-5 text-right font-bold text-rose-700">
-                    {formatDuration(lateAbsentSummary.total)}
-                  </TableCell>
-                </TableRow>
-              </TableFooter>
-            </Table>
-          )}
-        </CouncilCard>
+            ) : (
+              <div className={styles.tableWrap}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      {lateAbsentColumns.map((column) => (
+                        <th key={column.key}>{column.label}</th>
+                      ))}
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lateAbsentData.map((employee, index) => (
+                      <tr key={employee.id}>
+                        <td>
+                          <PersonCell name={employee.name} index={index} />
+                        </td>
+                        {lateAbsentColumns.map((column) => {
+                          const minutes = employee[column.key];
+                          const absences = employee.absentCounts[column.key];
+                          return (
+                            <td key={column.key}>
+                              <MinutesChip
+                                value={minutes}
+                                tone={absences > 0 ? "missed" : "late"}
+                                absences={absences}
+                              />
+                            </td>
+                          );
+                        })}
+                        <td>
+                          <div className={styles.total}>
+                            <strong data-tone={employee.total > 0 ? "missed" : "zero"}>
+                              {formatDuration(employee.total)}
+                            </strong>
+                            {employee.total >= 60 ? <span>{formatHoursMinutes(employee.total)}</span> : null}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td>Report total</td>
+                      {lateAbsentSummary.prayerTotals.map((column) => (
+                        <td key={column.key}>
+                          <span className={styles.footValue}>
+                            {column.minutes > 0 ? `${column.minutes} min` : "0"}
+                            {column.absentCount > 0 ? (
+                              <span className={styles.absent}>{column.absentCount} absent</span>
+                            ) : null}
+                          </span>
+                        </td>
+                      ))}
+                      <td>
+                        <span className={styles.footTotal}>{formatDuration(lateAbsentSummary.total)}</span>
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
+        </section>
       </div>
     </PageShell>
   );
