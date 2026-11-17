@@ -5,7 +5,8 @@ export type ImamOptionKey =
   | "Neem"
   | "Yazaan"
   | "Ibraheem"
-  | "Waseem";
+  | "Waseem"
+  | "Dhaain";
 
 export type SignatureConfig = {
   /** Single signature image; omit until the asset exists. */

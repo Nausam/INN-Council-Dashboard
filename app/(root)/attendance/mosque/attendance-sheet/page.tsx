@@ -465,6 +465,7 @@ export default function Page() {
     Yazaan: "މުދިމު: ޙުސައިން ޔަޒާން އަޙްމަދު / އޯޝަންވިލާ",
     Ibraheem: "މުދިމު: އިބްރާޙީމް ޙަލީމް / ހަވީރީނާޒް",
     Waseem: " އިމާމް: އިބްރާހިމް ވަސީމް / ފިނިފަރު",
+    Dhaain: "މުދިމު: މުޙައްމަދު ދާއިން / ޑްރީމީ ލައިފް",
   };
 
   const [imamKey, setImamKey] = useState<ImamOptionKey>("Shahidh");

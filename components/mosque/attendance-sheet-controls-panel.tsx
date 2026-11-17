@@ -87,6 +87,7 @@ const IMAM_OPTIONS: { value: ImamOptionKey; label: string }[] = [
   { value: "Yazaan", label: "ޔަޒާން" },
   { value: "Ibraheem", label: "އިބްރާޙީމް ޙަލީމް" },
   { value: "Waseem", label: "އިބްރާހިމް ވަސީމް" },
+  { value: "Dhaain", label: "މުޙައްމަދު ދާއިން" },
 ];
 
 const HEADING_OPTIONS: { value: HeadingMode; label: string }[] = [
