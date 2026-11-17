@@ -1,0 +1,114 @@
+/*
+ * Mosque daily report: the employee portal's light pastel look (glossy
+ * status tiles, tear-off calendar dates, white-bordered soft cards).
+ */
+
+.page { --ink: #17191d; --muted: #8a8792; --soft-shadow: 0 10px 28px rgba(67,53,82,.07); color: var(--ink); }
+
+.label { color: #6f6a78; font-size: .66rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+
+/* ---------- Selection card ---------- */
+.selection { display: grid; gap: 1.25rem; margin-bottom: 1.5rem; padding: 1.25rem; border: 1px solid #fff; border-radius: 25px; background: linear-gradient(110deg, #f5e9ff, #e9faed 55%, #ffe9dd); box-shadow: var(--soft-shadow); }
+@media (min-width: 640px) { .selection { padding: 1.5rem; } }
+
+.people { display: grid; gap: .65rem; margin-top: .6rem; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+.person { display: flex; align-items: center; gap: .75rem; min-width: 0; padding: .7rem .85rem; border: 1px solid rgba(255,255,255,.9); border-radius: 20px; background: rgba(255,255,255,.5); text-align: left; transition: background .15s, box-shadow .15s, transform .15s; }
+.person:hover { background: rgba(255,255,255,.85); transform: translateY(-1px); }
+.person:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.person[data-selected="true"] { background: #fff; box-shadow: 0 0 0 2px var(--ink), 0 12px 24px -12px rgba(67,53,82,.35); }
+.personText { display: grid; min-width: 0; }
+.personName { overflow: hidden; color: var(--ink); font-size: .9rem; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+.personRole { color: var(--muted); font-size: .72rem; font-weight: 600; }
+.personEmpty { padding: .8rem 0; color: var(--muted); font-size: .85rem; }
+
+.avatar { width: 44px; height: 44px; flex: none; display: grid; place-items: center; border: 3px solid #fff; border-radius: 50%; background: linear-gradient(145deg, #dbf7eb, #efe4ff); color: #242329; font-size: .85rem; font-weight: 800; box-shadow: 0 6px 14px rgba(68,50,75,.1); }
+.avatar[data-tint="1"] { background: linear-gradient(145deg, #ffe8dc, #efe4ff); }
+.avatar[data-tint="2"] { background: linear-gradient(145deg, #e3eefc, #dbf7eb); }
+.avatar[data-tint="3"] { background: linear-gradient(145deg, #fde7f0, #ffe8dc); }
+
+.when { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .75rem 1rem; margin-top: .6rem; }
+.presets { display: flex; flex-wrap: wrap; gap: .4rem; }
+.preset { height: 44px; padding: 0 1rem; border: 1px solid #fff; border-radius: 99px; background: rgba(255,255,255,.55); color: #4a4652; font-size: .8rem; font-weight: 750; transition: background .15s, box-shadow .15s; }
+.preset:hover { background: rgba(255,255,255,.9); }
+.preset[data-active="true"] { background: #fff; color: var(--ink); box-shadow: 0 0 0 2px var(--ink); }
+.dates { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.dateField { display: grid; gap: .3rem; }
+.dateField span { color: #6f6a78; font-size: .62rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.dateInput { height: 44px; padding: 0 .8rem; border: 1px solid #fff; border-radius: 14px; background: #fff; color: var(--ink); font-size: .85rem; font-weight: 700; box-shadow: 0 4px 12px rgba(61,50,73,.06); outline: none; }
+.dateInput:focus { box-shadow: 0 0 0 3px rgba(125,100,201,.25); }
+.dateArrow { align-self: flex-end; padding-bottom: .7rem; color: var(--muted); font-weight: 700; }
+.generate { margin-left: auto; }
+.hint { margin-top: -.5rem; color: #b23a55; font-size: .78rem; font-weight: 700; }
+
+/* ---------- Stat cards ---------- */
+.stats { display: grid; gap: 1rem; margin-bottom: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.stat { display: flex; align-items: flex-start; gap: .9rem; padding: 1.15rem 1.2rem; border: 1px solid #fff; border-radius: 25px; background: #fff; box-shadow: var(--soft-shadow); }
+.stat[data-tone="annual"] { background: #f7f5ff; }
+.stat[data-tone="present"] { background: #f1fbf4; }
+.stat[data-tone="late"] { background: #fff4ef; }
+.stat[data-tone="missed"] { background: #fff2f4; }
+.statIcon { width: 46px; height: 46px; border-radius: 16px; }
+.statIcon :global(svg) { width: 20px; height: 20px; }
+.statBody { min-width: 0; flex: 1; }
+.statValue { margin-top: .3rem; color: var(--ink); font-size: 1.65rem; font-weight: 850; line-height: 1.05; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.statValue small { margin-left: .2rem; color: var(--muted); font-size: .85rem; font-weight: 750; letter-spacing: 0; }
+.statAside { display: inline-block; margin-left: .55rem; padding: .2rem .6rem; border: 1px solid #fff; border-radius: 99px; background: rgba(255,255,255,.75); color: #b4643c; font-size: .78rem; font-weight: 800; letter-spacing: 0; vertical-align: middle; white-space: nowrap; }
+.statDetail { margin-top: .3rem; color: var(--muted); font-size: .72rem; font-weight: 600; }
+.meter { height: 6px; margin-top: .65rem; overflow: hidden; border-radius: 99px; background: rgba(23,25,29,.07); }
+.meter > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #8fe0c2, #2f9c80); transition: width .4s; }
+
+/* Rose tone the shared motifs don't have. Doubled class beats their specificity. */
+.missedTone.missedTone { background: linear-gradient(155deg, #ffb7c4, #d25a73); color: #fff; box-shadow: 0 8px 16px -10px rgba(210,90,115,.9); }
+
+/* ---------- Register ---------- */
+.register { overflow: hidden; border: 1px solid #fff; border-radius: 25px; background: #fff; box-shadow: var(--soft-shadow); }
+.registerHead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.25rem 1.25rem 1rem; }
+@media (min-width: 640px) { .registerHead { padding: 1.4rem 1.5rem 1rem; } }
+.registerTitle { color: var(--ink); font-size: 1.1rem; font-weight: 800; letter-spacing: -.01em; }
+.registerSub { margin-top: .2rem; color: var(--muted); font-size: .8rem; font-weight: 600; }
+.registerBody { padding: 0 1.25rem 1.25rem; }
+@media (min-width: 640px) { .registerBody { padding: 0 1.5rem 1.5rem; } }
+
+.tableWrap { overflow-x: auto; border: 1px solid #f0edf3; border-radius: 20px; }
+.table { width: 100%; min-width: 1120px; border-collapse: separate; border-spacing: 0; }
+.table th { padding: .8rem .6rem; background: #faf9fc; color: #6f6a78; font-size: .64rem; font-weight: 800; letter-spacing: .12em; text-align: center; text-transform: uppercase; white-space: nowrap; }
+.table th:first-child { padding-left: 1rem; text-align: left; }
+.table th:last-child { padding-right: 1rem; text-align: right; }
+.table td { padding: .6rem; border-top: 1px solid #f3f1f6; vertical-align: middle; }
+.table td:first-child { padding-left: 1rem; }
+.table td:last-child { padding-right: 1rem; text-align: right; }
+.table tbody tr { transition: background .15s; }
+.table tbody tr:hover { background: #fcfbfe; }
+
+.dateCell { display: flex; align-items: center; gap: .75rem; }
+.datePage { width: 58px; flex: none; }
+.calendarMissed.calendarMissed { --band: #ffe4ea; --band-ink: #b23a55; }
+.calendarPending.calendarPending { --band: #f1f0f4; --band-ink: #6f6a78; }
+.dateText { display: grid; }
+.dateText strong { color: var(--ink); font-size: .85rem; font-weight: 800; white-space: nowrap; }
+.dateText span { color: var(--muted); font-size: .72rem; font-weight: 650; }
+
+.prayer { display: flex; align-items: center; gap: .75rem; min-width: 158px; min-height: 58px; margin: 0 auto; padding: .6rem .9rem .6rem .6rem; border: 1px solid transparent; border-radius: 20px; text-align: left; }
+.prayer[data-kind="time"] { background: #f1fbf4; color: #1f7a55; }
+.prayer[data-kind="late"] { background: #fff4ef; color: #b4643c; }
+.prayer[data-kind="absent"] { background: #fff2f4; color: #b23a55; }
+.prayer[data-kind="leave"] { background: #f1f6ff; color: #3d6ea8; }
+.prayer[data-kind="pending"] { border: 1.5px dashed #e2dfe7; background: #fff; color: var(--muted); }
+.prayerIcon { width: 36px; height: 36px; border-radius: 12px; }
+.prayerIcon :global(svg) { width: 18px; height: 18px; }
+.prayerText { display: grid; gap: .15rem; min-width: 0; line-height: 1.15; }
+.prayerText strong { font-size: 1rem; font-weight: 800; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.prayerText span { font-size: .75rem; font-weight: 700; opacity: .85; white-space: nowrap; }
+
+.total { display: grid; justify-items: end; }
+.total strong { font-size: 1rem; font-weight: 850; font-variant-numeric: tabular-nums; }
+.total strong[data-late="true"] { color: #b4643c; }
+.total strong[data-late="false"] { color: #1f7a55; }
+.total span { color: var(--muted); font-size: .68rem; font-weight: 650; }
+.leavePill { display: inline-flex; padding: .3rem .7rem; border-radius: 99px; background: #e3eefc; color: #3d6ea8; font-size: .7rem; font-weight: 800; }
+
+.footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; margin-top: 1rem; padding: 1rem 1.25rem; border: 1px solid #fff; border-radius: 20px; background: linear-gradient(110deg, #f5e9ff, #e9faed 55%, #ffe9dd); }
+.footer p { color: var(--ink); font-size: .85rem; font-weight: 800; }
+.footer small { display: block; margin-top: .15rem; color: #6f6a78; font-size: .7rem; font-weight: 650; }
+.footerTotal { color: var(--ink); font-size: 1.6rem; font-weight: 850; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.footerTotal small { display: inline; margin-left: .25rem; font-size: .85rem; }

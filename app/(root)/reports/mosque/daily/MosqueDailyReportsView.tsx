@@ -1,20 +1,10 @@
 "use client";
 
-import { CouncilCard } from "@/components/design-system/council-card";
 import { EmptyState } from "@/components/design-system/empty-state";
 import { PageHeader } from "@/components/design-system/page-header";
 import { PageShell } from "@/components/design-system/page-shell";
 import SkeletonReportsTable from "@/components/skeletons/SkeletonReportsTable";
 import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableFooter,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { reverseLeaveTypeMapping } from "@/constants";
 import {
   useEmployeesQuery,
@@ -32,20 +22,26 @@ import {
 import { maldivesTodayIso } from "@/lib/employees/details-dashboard";
 import { isOnAttendanceLeave } from "@/lib/salary-slips/pay-period";
 import { cn } from "@/lib/utils";
+import motifs from "@/components/employee-portal/portal-motifs.module.css";
 import {
-  AlertTriangle,
   CalendarDays,
   CalendarSearch,
+  Check,
   CheckCircle2,
   CircleOff,
+  Clock3,
   Download,
   FileDown,
   FileText,
+  Hourglass,
   Loader2,
+  Palmtree,
   RefreshCw,
   UserRound,
+  X,
 } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import styles from "./mosque-daily-report.module.css";
 
 type EmployeeRef =
   | string
@@ -385,75 +381,122 @@ function csvCell(value: string | number): string {
   return `"${String(value).replace(/"/g, '""')}"`;
 }
 
-function StatCard({
+/** A day's overall status, shown as its tile and calendar-page color. */
+type DayTone = "present" | "late" | "missed" | "leave" | "pending";
+
+function dayTone(day: { cells: MosqueDailyCell[]; total: number | null }): DayTone {
+  if (day.total === null) return "leave";
+  if (day.cells.some((cell) => cell.kind === "absent")) return "missed";
+  if (day.cells.some((cell) => cell.kind === "late")) return "late";
+  if (day.cells.every((cell) => cell.kind === "pending")) return "pending";
+  return "present";
+}
+
+/** Glossy icon tile in the employee-portal style, including the rose "missed" tone. */
+function GlossTile({
+  tone,
   icon: Icon,
+  className,
+}: {
+  tone: DayTone | "annual";
+  icon: React.ComponentType<{ className?: string }>;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(motifs.glossIcon, tone === "missed" && styles.missedTone, className)}
+      data-tone={tone}
+      aria-hidden
+    >
+      <Icon />
+    </span>
+  );
+}
+
+function StatCard({
+  icon,
   label,
   value,
+  unit,
+  aside,
   detail,
   tone,
+  meter,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
+  unit?: string;
+  /** Small pill beside the value, e.g. the same amount in hours. */
+  aside?: string;
   detail: string;
-  tone: "teal" | "blue" | "amber" | "rose";
+  tone: "annual" | "present" | "late" | "missed";
+  meter?: number;
 }) {
-  const tones = {
-    teal: "bg-teal-50 text-teal-700 ring-teal-100",
-    blue: "bg-blue-50 text-blue-700 ring-blue-100",
-    amber: "bg-amber-50 text-amber-700 ring-amber-100",
-    rose: "bg-rose-50 text-rose-700 ring-rose-100",
-  };
-
   return (
-    <CouncilCard interactive="none" className="p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-            {label}
-          </p>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
-            {value}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">{detail}</p>
-        </div>
-        <div
-          className={cn(
-            "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ring-1",
-            tones[tone],
-          )}
-        >
-          <Icon className="h-5 w-5" />
-        </div>
+    <div className={styles.stat} data-tone={tone}>
+      <GlossTile tone={tone} icon={icon} className={styles.statIcon} />
+      <div className={styles.statBody}>
+        <p className={styles.label}>{label}</p>
+        <p className={styles.statValue}>
+          {value}
+          {unit ? <small>{unit}</small> : null}
+          {aside ? <span className={styles.statAside}>{aside}</span> : null}
+        </p>
+        {meter !== undefined ? (
+          <div className={styles.meter} aria-hidden>
+            <span style={{ width: `${Math.min(100, Math.max(0, meter))}%` }} />
+          </div>
+        ) : null}
+        <p className={styles.statDetail}>{detail}</p>
       </div>
-    </CouncilCard>
+    </div>
   );
 }
 
-const CELL_TONES: Record<MosqueDailyCell["kind"], string> = {
-  time: "bg-teal-50 text-teal-700 ring-teal-100",
-  late: "bg-orange-50 text-orange-700 ring-orange-100",
-  absent: "bg-rose-50 text-rose-700 ring-rose-100",
-  leave: "bg-sky-50 text-sky-800 ring-sky-100",
-  pending: "bg-slate-50 text-slate-500 ring-slate-100",
+const CELL_ICON: Record<MosqueDailyCell["kind"], { tone: DayTone; icon: React.ComponentType<{ className?: string }> }> = {
+  time: { tone: "present", icon: Check },
+  late: { tone: "late", icon: Clock3 },
+  absent: { tone: "missed", icon: X },
+  leave: { tone: "leave", icon: Palmtree },
+  pending: { tone: "pending", icon: Hourglass },
 };
 
 function PrayerTimeCell({ cell }: { cell: MosqueDailyCell }) {
+  const { tone, icon } = CELL_ICON[cell.kind];
   return (
-    <div
-      className={cn(
-        "mx-auto flex min-w-[112px] flex-col items-center rounded-xl px-3 py-2 ring-1 ring-inset",
-        CELL_TONES[cell.kind],
-      )}
-    >
-      <span className={cn("font-bold", cell.kind === "time" || cell.kind === "late" ? "text-sm" : "text-xs")}>
-        {cell.text}
+    <div className={styles.prayer} data-kind={cell.kind}>
+      <GlossTile tone={tone} icon={icon} className={styles.prayerIcon} />
+      <span className={styles.prayerText}>
+        <strong>{cell.text}</strong>
+        {cell.note ? <span>{cell.note}</span> : null}
       </span>
-      {cell.note ? (
-        <span className="mt-0.5 text-center text-[10px] font-semibold opacity-90">{cell.note}</span>
-      ) : null}
     </div>
   );
+}
+
+function shortDate(date: string, options: Intl.DateTimeFormatOptions): string {
+  return new Intl.DateTimeFormat("en-GB", { ...options, timeZone: "UTC" }).format(
+    new Date(`${date.slice(0, 10)}T00:00:00Z`),
+  );
+}
+
+/** First and last day of the month `delta` months from today's. */
+function monthRangeFrom(today: string, delta: number): { start: string; end: string } {
+  const [year, month] = today.split("-").map(Number);
+  const first = new Date(Date.UTC(year, month - 1 + delta, 1)).toISOString().slice(0, 10);
+  return currentMonthRange(first);
+}
+
+/** 1531 → "25 h 31 min"; whole hours drop the minutes. */
+function formatHoursMinutes(totalMinutes: number): string {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes ? `${hours} h ${minutes} min` : `${hours} h`;
+}
+
+function daysBefore(iso: string, days: number): string {
+  return new Date(Date.parse(`${iso}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10);
 }
 
 export function MosqueDailyReportsView({
@@ -473,7 +516,14 @@ export function MosqueDailyReportsView({
   const [formHint, setFormHint] = useState<string | null>(null);
   const fromRef = useRef<HTMLInputElement>(null);
   const toRef = useRef<HTMLInputElement>(null);
-  const employeeRef = useRef<HTMLSelectElement>(null);
+  const presets = useMemo(
+    () => [
+      { key: "this", label: "This month", ...currentMonthRange(today) },
+      { key: "last", label: "Last month", ...monthRangeFrom(today, -1) },
+      { key: "30", label: "Last 30 days", start: daysBefore(today, 29), end: today },
+    ],
+    [today],
+  );
   const reportLabel = reportRange ? formatRange(reportRange.start, reportRange.end) : "";
 
   const {
@@ -542,11 +592,6 @@ export function MosqueDailyReportsView({
     [employees, reportEmployeeId],
   );
 
-  const selectedEmployeeDetails = useMemo(
-    () => employees.find((employee) => employee.$id === selectedEmployee),
-    [employees, selectedEmployee],
-  );
-
   const summary = useMemo(() => {
     let recorded = 0;
     let missing = 0;
@@ -597,8 +642,6 @@ export function MosqueDailyReportsView({
   // restored after a reload, shows in the fields without reaching React's
   // state; pick it up so Generate uses what the fields show.
   useEffect(() => {
-    const shownEmployee = employeeRef.current?.value ?? "";
-    if (shownEmployee && shownEmployee !== selectedEmployee) setSelectedEmployee(shownEmployee);
     const shownFrom = fromRef.current?.value ?? "";
     if (isIsoDate(shownFrom) && shownFrom !== fromDate) setFromDate(shownFrom);
     const shownTo = toRef.current?.value ?? "";
@@ -607,12 +650,17 @@ export function MosqueDailyReportsView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employees]);
 
-  const handleGenerateReport = () => {
-    const employeeId = selectedEmployee || employeeRef.current?.value || "";
+  /** The dates the fields show, which can be ahead of React state after a restore. */
+  const shownRange = () => {
     const shownFrom = fromRef.current?.value ?? "";
     const shownTo = toRef.current?.value ?? "";
-    const start = isIsoDate(shownFrom) ? shownFrom : fromDate;
-    const end = isIsoDate(shownTo) ? shownTo : toDate;
+    return {
+      start: isIsoDate(shownFrom) ? shownFrom : fromDate,
+      end: isIsoDate(shownTo) ? shownTo : toDate,
+    };
+  };
+
+  const runReport = (employeeId: string, start: string, end: string) => {
     if (!employeeId) {
       setFormHint("Choose an employee first.");
       return;
@@ -635,6 +683,25 @@ export function MosqueDailyReportsView({
     }
     setReportRange({ start, end });
     setReportEmployeeId(employeeId);
+  };
+
+  const handleGenerateReport = () => {
+    const { start, end } = shownRange();
+    runReport(selectedEmployee, start, end);
+  };
+
+  // Picking a person runs the report straight away for the dates shown.
+  const pickEmployee = (employeeId: string) => {
+    const { start, end } = shownRange();
+    runReport(employeeId, start, end);
+  };
+
+  // A preset sets the dates, and reruns the report when someone is picked.
+  const pickPreset = (start: string, end: string) => {
+    setFromDate(start);
+    setToDate(end);
+    setFormHint(null);
+    if (selectedEmployee) runReport(selectedEmployee, start, end);
   };
 
   const downloadCSV = () => {
@@ -720,7 +787,7 @@ export function MosqueDailyReportsView({
 
   return (
     <PageShell maxWidth="full">
-      <div className="mx-auto max-w-[1500px]">
+      <div className={cn("mx-auto max-w-[1500px]", styles.page)}>
         <PageHeader
           icon={FileText}
           title="Mosque Daily Attendance Report"
@@ -728,44 +795,59 @@ export function MosqueDailyReportsView({
           className="mb-8"
         />
 
-        <CouncilCard
-          interactive="none"
-          className="mb-6 overflow-hidden border border-teal-100 p-0"
-        >
-          <div className="grid xl:grid-cols-[minmax(300px,0.8fr)_minmax(600px,1.2fr)]">
-            <div className="flex items-center gap-4 bg-gradient-to-r from-teal-50 via-white to-white p-5 sm:p-6">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-teal-600 text-white shadow-sm shadow-teal-600/20">
-                {selectedEmployeeDetails ? (
-                  <span className="text-sm font-bold">
-                    {employeeInitials(selectedEmployeeDetails.name)}
-                  </span>
-                ) : (
-                  <UserRound className="h-6 w-6" />
-                )}
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-teal-700">
-                  Report selection
+        <section className={styles.selection} aria-label="Report selection">
+          <div>
+            <p className={styles.label}>Who</p>
+            <div className={styles.people}>
+              {employees.length === 0 ? (
+                <p className={styles.personEmpty}>
+                  {assistantsPending ? "Loading employees..." : "No mosque employees found."}
                 </p>
-                <p className="mt-1 truncate text-lg font-bold text-slate-950 sm:text-xl">
-                  {selectedEmployeeDetails?.name || "Choose an employee"}
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
-                  {selectedEmployeeDetails?.designation || "Mosque attendance"}
-                  {` · ${formatRange(fromDate, toDate)}`}
-                </p>
-              </div>
-            </div>
-
-            <div className="border-t border-slate-100 bg-white p-5 sm:p-6 xl:border-l xl:border-t-0">
-              <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-[0.7fr_0.7fr_1.2fr_auto] md:items-end">
-                <div>
-                  <label
-                    htmlFor="daily-report-from"
-                    className="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-slate-500"
+              ) : (
+                employees.map((employee, index) => (
+                  <button
+                    key={employee.$id}
+                    type="button"
+                    className={styles.person}
+                    data-selected={employee.$id === selectedEmployee}
+                    aria-pressed={employee.$id === selectedEmployee}
+                    onClick={() => pickEmployee(employee.$id)}
                   >
-                    From
-                  </label>
+                    <span className={styles.avatar} data-tint={index % 4}>
+                      {employeeInitials(employee.name)}
+                    </span>
+                    <span className={styles.personText}>
+                      <span className={styles.personName}>{employee.name}</span>
+                      <span className={styles.personRole}>
+                        {employee.designation || "Mosque staff"}
+                      </span>
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div>
+            <p className={styles.label}>When · {formatRange(fromDate, toDate)}</p>
+            <div className={styles.when}>
+              <div className={styles.presets}>
+                {presets.map((preset) => (
+                  <button
+                    key={preset.key}
+                    type="button"
+                    className={styles.preset}
+                    data-active={preset.start === fromDate && preset.end === toDate}
+                    onClick={() => pickPreset(preset.start, preset.end)}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className={styles.dates}>
+                <label className={styles.dateField} htmlFor="daily-report-from">
+                  <span>From</span>
                   <input
                     ref={fromRef}
                     id="daily-report-from"
@@ -778,17 +860,12 @@ export function MosqueDailyReportsView({
                       if (toDate && next > toDate) setToDate(next);
                       setFormHint(null);
                     }}
-                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none transition focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
+                    className={styles.dateInput}
                   />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="daily-report-to"
-                    className="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-slate-500"
-                  >
-                    To
-                  </label>
+                </label>
+                <span className={styles.dateArrow} aria-hidden>→</span>
+                <label className={styles.dateField} htmlFor="daily-report-to">
+                  <span>To</span>
                   <input
                     ref={toRef}
                     id="daily-report-to"
@@ -799,80 +876,55 @@ export function MosqueDailyReportsView({
                       setToDate(event.target.value);
                       setFormHint(null);
                     }}
-                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none transition focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
+                    className={styles.dateInput}
                   />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="daily-report-employee"
-                    className="mb-2 block text-xs font-bold uppercase tracking-[0.12em] text-slate-500"
-                  >
-                    Employee
-                  </label>
-                  <select
-                    ref={employeeRef}
-                    id="daily-report-employee"
-                    value={selectedEmployee}
-                    onChange={(event) => {
-                      setSelectedEmployee(event.target.value);
-                      setFormHint(null);
-                    }}
-                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 shadow-sm outline-none transition focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
-                  >
-                    <option value="">
-                      {assistantsPending ? "Loading employees..." : "Select employee"}
-                    </option>
-                    {employees.map((employee) => (
-                      <option key={employee.$id} value={employee.$id}>
-                        {employee.name}
-                        {employee.designation ? ` — ${employee.designation}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                  {formHint ? (
-                    <p className="mt-1.5 text-xs font-semibold text-rose-600" role="alert">
-                      {formHint}
-                    </p>
-                  ) : null}
-                </div>
-
-                <Button
-                  type="button"
-                  variant="council"
-                  className="h-11 px-5"
-                  onClick={handleGenerateReport}
-                  disabled={loading}
-                >
-                  <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-                  {loading ? "Generating" : "Generate"}
-                </Button>
+                </label>
               </div>
+
+              <Button
+                type="button"
+                variant="council"
+                className={cn("h-11 rounded-full px-5", styles.generate)}
+                onClick={handleGenerateReport}
+                disabled={loading}
+              >
+                <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+                {loading ? "Generating" : "Generate"}
+              </Button>
             </div>
           </div>
-        </CouncilCard>
 
-        <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {formHint ? (
+            <p className={styles.hint} role="alert">
+              {formHint}
+            </p>
+          ) : null}
+        </section>
+
+        <div className={styles.stats}>
           <StatCard
             icon={CalendarDays}
             label="Attendance days"
             value={String(attendanceData.length)}
             detail={`${summary.completeDays} day${summary.completeDays === 1 ? "" : "s"} fully recorded`}
-            tone="blue"
+            tone="annual"
           />
           <StatCard
             icon={CheckCircle2}
             label="Recorded check-ins"
             value={String(summary.recorded)}
             detail={`${summary.attendanceRate}% of expected prayer check-ins`}
-            tone="teal"
+            tone="present"
+            meter={summary.attendanceRate}
           />
           <StatCard
-            icon={AlertTriangle}
+            icon={Clock3}
             label="Late minutes"
-            value={reportAvailable ? `${grandTotal} min` : "0 min"}
-            detail={`${summary.late} late check-in${summary.late === 1 ? "" : "s"} · missed prayer = 60 min`}
-            tone="amber"
+            value={String(reportAvailable ? grandTotal : 0)}
+            unit="min"
+            aside={reportAvailable && grandTotal >= 60 ? formatHoursMinutes(grandTotal) : undefined}
+            detail={`${summary.late} late check-in${summary.late === 1 ? "" : "s"} · missed prayer = ${ABSENT_PRAYER_MINUTES} min`}
+            tone="late"
           />
           <StatCard
             icon={CircleOff}
@@ -881,31 +933,31 @@ export function MosqueDailyReportsView({
             detail={
               summary.leaveDays > 0
                 ? `Excludes ${summary.leaveDays} leave day${summary.leaveDays === 1 ? "" : "s"}`
-                : "Prayer entries with no saved timing"
+                : "Prayers with no saved sign-in"
             }
-            tone="rose"
+            tone="missed"
           />
         </div>
 
-        <CouncilCard interactive="none" className="overflow-hidden p-0">
-          <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <section className={styles.register}>
+          <div className={styles.registerHead}>
             <div>
-              <h2 className="text-lg font-bold text-slate-950">
+              <h2 className={styles.registerTitle}>
                 {reportEmployee
                   ? `${reportEmployee.name}'s daily register`
                   : "Daily attendance register"}
               </h2>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className={styles.registerSub}>
                 {reportRange
-                  ? `${reportLabel} · Saved timings are shown in Maldives attendance time`
-                  : "Choose an employee and dates to generate the report"}
+                  ? `${reportLabel} · Times are Maldives attendance time`
+                  : "Pick a person and dates to see their days"}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
                 variant="council-outline"
-                className="h-10"
+                className="h-10 rounded-full"
                 onClick={downloadCSV}
                 disabled={!reportAvailable || loading}
               >
@@ -915,7 +967,7 @@ export function MosqueDailyReportsView({
               <Button
                 type="button"
                 variant="council"
-                className="h-10"
+                className="h-10 rounded-full"
                 onClick={() => void downloadPDF()}
                 disabled={!reportAvailable || loading || makingPdf}
               >
@@ -925,12 +977,10 @@ export function MosqueDailyReportsView({
             </div>
           </div>
 
-          {loading ? (
-            <div className="p-5 sm:p-6">
+          <div className={styles.registerBody}>
+            {loading ? (
               <SkeletonReportsTable />
-            </div>
-          ) : isError ? (
-            <div className="p-5 sm:p-6">
+            ) : isError ? (
               <EmptyState
                 icon={CalendarSearch}
                 title="The daily report could not be loaded"
@@ -941,118 +991,103 @@ export function MosqueDailyReportsView({
                   </Button>
                 }
               />
-            </div>
-          ) : !reportEmployeeId ? (
-            <div className="p-5 sm:p-6">
+            ) : !reportEmployeeId ? (
               <EmptyState
                 icon={UserRound}
-                title="Select an employee"
-                description="Choose a mosque employee and dates above, then generate the daily attendance report."
+                title="Pick someone to start"
+                description="Tap a person above. Their report opens for the dates shown, and you can change the dates any time."
               />
-            </div>
-          ) : !reportAvailable ? (
-            <div className="p-5 sm:p-6">
+            ) : !reportAvailable ? (
               <EmptyState
                 icon={CalendarSearch}
                 title="No attendance records found"
                 description={`No mosque attendance sheets were found for ${reportEmployee?.name || "this employee"} for ${reportLabel}.`}
               />
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-200 bg-slate-50 hover:bg-slate-50">
-                  <TableHead className="w-14 px-5 text-xs font-bold uppercase tracking-wider text-slate-500">
-                    #
-                  </TableHead>
-                  <TableHead className="min-w-[150px] text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Date
-                  </TableHead>
-                  <TableHead className="min-w-[110px] text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Day
-                  </TableHead>
-                  {PRAYERS.map((prayer) => (
-                    <TableHead
-                      key={prayer.label}
-                      className="min-w-[145px] text-center text-xs font-bold uppercase tracking-wider text-slate-500"
-                    >
-                      {prayer.label}
-                    </TableHead>
-                  ))}
-                  <TableHead className="min-w-[120px] px-5 text-right text-xs font-bold uppercase tracking-wider text-slate-500">
-                    Total
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {attendanceData.map((row, index) => {
-                  const recordedForDay = PRAYERS.filter(
-                    (prayer) => row[prayer.timeKey],
-                  ).length;
-                  const { cells, total } = dayTotals[index];
+            ) : (
+              <>
+                <div className={styles.tableWrap}>
+                  <table className={styles.table}>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        {PRAYERS.map((prayer) => (
+                          <th key={prayer.label}>{prayer.label}</th>
+                        ))}
+                        <th>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {attendanceData.map((row, index) => {
+                        const date = row.date.slice(0, 10);
+                        const recordedForDay = PRAYERS.filter(
+                          (prayer) => row[prayer.timeKey],
+                        ).length;
+                        const { cells, total } = dayTotals[index];
+                        const tone = dayTone(dayTotals[index]);
 
-                  return (
-                    <TableRow
-                      key={row.$id}
-                      className="border-slate-100 hover:bg-teal-50/30"
-                    >
-                      <TableCell className="px-5 font-medium text-slate-400">
-                        {String(index + 1).padStart(2, "0")}
-                      </TableCell>
-                      <TableCell>
-                        <span className="font-semibold text-slate-900">
-                          {formatDate(row.date)}
-                        </span>
-                      </TableCell>
-                      <TableCell className="font-medium text-slate-500">
-                        {formatWeekday(row.date)}
-                      </TableCell>
-                      {PRAYERS.map((prayer, prayerIndex) => (
-                        <TableCell key={prayer.label} className="text-center">
-                          <PrayerTimeCell cell={cells[prayerIndex]} />
-                        </TableCell>
-                      ))}
-                      <TableCell className="px-5 text-right">
-                        {total === null ? (
-                          <span className="inline-flex rounded-full bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-800 ring-1 ring-inset ring-sky-100">
-                            Leave
-                          </span>
-                        ) : (
-                          <div className="flex flex-col items-end">
-                            <span
-                              className={cn(
-                                "text-base font-black tabular-nums",
-                                total > 0 ? "text-orange-700" : "text-teal-700",
+                        return (
+                          <tr key={row.$id}>
+                            <td>
+                              <div className={styles.dateCell}>
+                                <div
+                                  className={cn(
+                                    motifs.calendarPage,
+                                    styles.datePage,
+                                    tone === "missed" && styles.calendarMissed,
+                                    tone === "pending" && styles.calendarPending,
+                                  )}
+                                  data-tone={tone === "missed" || tone === "pending" ? undefined : tone}
+                                >
+                                  <span className={motifs.calendarPageTop}>
+                                    {shortDate(date, { weekday: "short" })}
+                                  </span>
+                                  <strong>{shortDate(date, { day: "numeric" })}</strong>
+                                  <small>{shortDate(date, { month: "short", year: "2-digit" })}</small>
+                                </div>
+                                <div className={styles.dateText}>
+                                  <strong>{formatWeekday(date)}</strong>
+                                  <span>{date === today ? "Today" : formatDate(date)}</span>
+                                </div>
+                              </div>
+                            </td>
+                            {PRAYERS.map((prayer, prayerIndex) => (
+                              <td key={prayer.label}>
+                                <PrayerTimeCell cell={cells[prayerIndex]} />
+                              </td>
+                            ))}
+                            <td>
+                              {total === null ? (
+                                <span className={styles.leavePill}>Leave</span>
+                              ) : (
+                                <div className={styles.total}>
+                                  <strong data-late={total > 0}>{total} min</strong>
+                                  <span>
+                                    {recordedForDay}/{PRAYERS.length} prayers
+                                  </span>
+                                </div>
                               )}
-                            >
-                              {total} min
-                            </span>
-                            <span className="text-xs font-medium text-slate-500">
-                              {recordedForDay}/{PRAYERS.length} prayers
-                            </span>
-                          </div>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-              <TableFooter>
-                <TableRow className="border-slate-200 bg-slate-900 hover:bg-slate-900">
-                  <TableCell colSpan={3 + PRAYERS.length} className="px-5 py-4 text-sm font-bold text-white">
-                    Grand total of late minutes · {reportLabel}
-                    <span className="ml-2 text-xs font-medium text-slate-300">
-                      A prayer not signed in counts as {ABSENT_PRAYER_MINUTES} minutes
-                    </span>
-                  </TableCell>
-                  <TableCell className="px-5 py-4 text-right text-lg font-black tabular-nums text-white">
-                    {grandTotal} min
-                  </TableCell>
-                </TableRow>
-              </TableFooter>
-            </Table>
-          )}
-        </CouncilCard>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className={styles.footer}>
+                  <p>
+                    Total late minutes · {reportLabel}
+                    <small>A prayer not signed in counts as {ABSENT_PRAYER_MINUTES} minutes</small>
+                  </p>
+                  <p className={styles.footerTotal}>
+                    {grandTotal}
+                    <small>min</small>
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+        </section>
       </div>
     </PageShell>
   );
