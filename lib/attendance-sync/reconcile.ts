@@ -7,6 +7,7 @@ import {
 import type { MosqueAttendanceDoc } from "@/lib/firebase/types";
 import {
   graceMinutesForDesignation,
+  isLatenessExempt,
   listSyncEligibleEmployees,
 } from "@/lib/attendance-sync/employee-sync";
 import { findDuplicateRowsForDate } from "@/lib/attendance-sync/ensure-sheets";
@@ -236,11 +237,13 @@ export async function reconcileMosqueAttendanceDate(
 
       const signInTime = punchUtcToAttendanceIso(selected.timestampUtc, date);
       const prayerTimeKey = PRAYER_TO_TIME_KEY[prayer];
-      const minutesLate = calculateMinutesLate(
-        prayerTimes[prayerTimeKey],
-        selected.localMinutes,
-        designation,
-      );
+      const minutesLate = isLatenessExempt(employee.name, prayer, date)
+        ? 0
+        : calculateMinutesLate(
+            prayerTimes[prayerTimeKey],
+            selected.localMinutes,
+            designation,
+          );
 
       const unchanged =
         currentSignIn === signInTime &&

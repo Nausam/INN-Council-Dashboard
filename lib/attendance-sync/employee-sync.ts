@@ -1,5 +1,5 @@
 import type { EmployeeDoc } from "@/lib/firebase/types";
-import type { EmployeeAttendanceSyncConfig } from "@/lib/attendance-sync/types";
+import type { EmployeeAttendanceSyncConfig, MosquePrayer } from "@/lib/attendance-sync/types";
 import { isIsoDate } from "@/lib/attendance-sync/time";
 
 export type SyncEligibleEmployee = {
@@ -183,6 +183,22 @@ export function buildSourceEmployeeMaps(
     duplicateZkIds,
     duplicateEtimeCodes,
   };
+}
+
+/** Prayers an employee is never counted late for, from a given date on. */
+const LATENESS_EXEMPTIONS: Array<{ name: string; prayer: MosquePrayer; from: string }> = [
+  { name: "Hawwa Luiza", prayer: "ishaSignInTime", from: "2026-10-16" },
+];
+
+export function isLatenessExempt(
+  employeeName: string | undefined,
+  prayer: MosquePrayer,
+  date: string,
+): boolean {
+  const name = employeeName?.trim() ?? "";
+  return LATENESS_EXEMPTIONS.some(
+    (rule) => rule.name === name && rule.prayer === prayer && date >= rule.from,
+  );
 }
 
 export function graceMinutesForDesignation(designation?: string): number {
