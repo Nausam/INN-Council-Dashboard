@@ -322,6 +322,8 @@ export type LandStatementDoc = LegacyDocument & {
   snapshot_numberOfFineDays?: number | null;
   snapshot_fineAmount?: number | null;
   snapshot_latestPaymentDate?: string | null;
+  /** Date shown as the latest payment, set by hand; fines still use the snapshot. */
+  latestPaymentDateOverride?: string | null;
   snapshot_fineBreakdownJson?: string | null;
   snapshot_generatedAdjustmentRowsJson?: string | null;
   snapshot_rateBreakdownJson?: string | null;

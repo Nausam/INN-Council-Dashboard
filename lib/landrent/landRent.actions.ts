@@ -116,9 +116,23 @@ export type LandRentFixedAdjustmentRow = {
   sizeOfLand: number;
 };
 
+/** One month's share of a generated fine row. */
+export type LandRentMonthlyFineRow = {
+  key: string;
+  label: string;
+  /** YYYY-MM-DD the month's rent was due. */
+  dueDate: string;
+  rent: number;
+  /** Overdue days charged; 0 for a fixed monthly fine. */
+  days: number;
+  fine: number;
+};
+
 export type LandRentGeneratedAdjustmentRow = LandRentFixedAdjustmentRow & {
   description: string;
   displayMode: "description";
+  /** Per-month detail. Missing on statements saved before it was added. */
+  months?: LandRentMonthlyFineRow[];
 };
 
 export type LandRentRateBreakdownRow = {
@@ -191,6 +205,27 @@ function getStatementManualFines(statement?: Pick<LandStatementDoc, "manualFines
 
 function statementManualFineTotal(statement?: Pick<LandStatementDoc, "manualFines">) {
   return round2(getStatementManualFines(statement).reduce((sum, fine) => sum + fine.amount, 0));
+}
+
+/**
+ * Sets the latest payment date shown on a statement. Only the displayed date
+ * changes; the saved fine and rent figures keep using the original snapshot.
+ */
+export async function setLandStatementLatestPaymentDate(input: {
+  statementId: string;
+  leaseId: string;
+  date: string;
+}) {
+  await requireAdmin();
+  if (!input.statementId || !input.leaseId) throw new Error("Statement and lease are required.");
+  const date = String(input.date ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) {
+    throw new Error("Pick a valid date.");
+  }
+  const statement = await getDocument<LandStatementDoc>(COLLECTIONS.landStatements, input.statementId);
+  if (statement.leaseId !== input.leaseId) throw new Error("Statement does not belong to this lease.");
+  await updateDocument(COLLECTIONS.landStatements, statement.$id, { latestPaymentDateOverride: date });
+  return date;
 }
 
 export async function addLandStatementManualFine(input: {
@@ -1614,7 +1649,7 @@ export const getLandStatementDetails = async (params: {
     monthKey: statement.monthKey,
 
     // ✅ Frozen snapshot fields (never change after create)
-    latestPaymentDate: snapshot_latestPaymentDate,
+    latestPaymentDate: statement.latestPaymentDateOverride || snapshot_latestPaymentDate,
     numberOfFineDays: snapshot_numberOfFineDays,
     fineAmount: snapshot_fineAmount,
     numberOfDaysRentNotPaid: snapshot_numberOfFineDays,
@@ -2236,6 +2271,7 @@ function computePostCutoffFineRows(args: {
   if (computed.grossFineAmount <= 0) return [];
 
   const periodLabel = `${LAND_RENT_POST_CUTOFF_FINE_LABEL} (${dateToMonthKeyUTC(chargeFrom)}–${dateToMonthKeyUTC(toMonth)})`;
+  const months = monthlyFineRowsFromBuckets(computed.buckets);
 
   return [
     {
@@ -2250,8 +2286,28 @@ function computePostCutoffFineRows(args: {
       sizeOfLand: round2(args.sizeSqft),
       description: periodLabel,
       displayMode: "description",
+      months,
     },
   ];
+}
+
+function monthlyFineRowsFromBuckets(
+  buckets: ReturnType<typeof computeBucketsWithPaymentsUTC>["buckets"],
+): LandRentMonthlyFineRow[] {
+  return buckets
+    .filter((bucket) => bucket.fineAccrued > 0)
+    .map((bucket) => ({
+      key: bucket.key,
+      label: bucket.label,
+      dueDate: dateToYmdUTC(bucket.dueDate),
+      rent: round2(bucket.principalDue),
+      days: bucket.fineDaysAccrued,
+      fine: round2(bucket.fineAccrued),
+    }));
+}
+
+function dateToYmdUTC(d: Date) {
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
 }
 
 function computeFixedMonthlyFineRows(
@@ -2296,6 +2352,7 @@ function computeFixedMonthlyFineRows(
       sizeOfLand: round2(args.sizeSqft),
       description: periodLabel,
       displayMode: "description",
+      months: monthlyFineRowsFromBuckets(finedBuckets),
     },
   ];
 }
@@ -2339,10 +2396,56 @@ function computeContinuousFineFromLastPayment(args: {
               label: "Overdue fine through July 31, 2025",
               days: fine.normalDays + fine.doubleDays,
               fine: fine.total,
+              months: splitContinuousFineByMonth(args, fine.total),
             },
           ]
         : [],
   };
+}
+
+/** The pre-August-2025 fine is one continuous period; show its share per calendar month. */
+function splitContinuousFineByMonth(
+  args: Parameters<typeof computeContinuousFineFromLastPayment>[0],
+  total: number,
+): LandRentMonthlyFineRow[] {
+  const cap = dateOnlyUTC(args.effectiveCap);
+  const lastMonth = startOfMonthUTC(
+    minDate(cap, addDaysUTC(LAND_RENT_POST_CUTOFF_FINE_START_DATE, -1)) ?? cap,
+  );
+  const rows: LandRentMonthlyFineRow[] = [];
+  for (
+    let ms = startOfMonthUTC(args.fromMonth);
+    ms.getTime() <= lastMonth.getTime();
+    ms = addMonthsUTC(ms, 1)
+  ) {
+    const monthEnd = addDaysUTC(addMonthsUTC(ms, 1), -1);
+    const part = fineBetweenDates({
+      from: ms,
+      through: minDate(monthEnd, cap) ?? monthEnd,
+      normalMonthlyRent: args.monthlyRent,
+      rentStart: args.rentStart,
+      rentEnd: args.rentEnd,
+      doubleRateAfterEnd: args.doubleRateAfterEnd,
+      released: args.released,
+      regime: "before-august-2025",
+    });
+    if (part.days <= 0 || part.amount <= 0) continue;
+    rows.push({
+      key: dateToMonthKeyUTC(ms),
+      label: fmtMonthYearUTC(ms),
+      dueDate: "",
+      rent: 0,
+      days: part.days,
+      fine: part.amount,
+    });
+  }
+  // Per-month rounding can drift a few laari from the period total.
+  if (rows.length) {
+    const drift = round2(total - rows.reduce((sum, r) => sum + r.fine, 0));
+    const last = rows[rows.length - 1];
+    last.fine = round2(last.fine + drift);
+  }
+  return rows;
 }
 
 /* =============================== Optional: Overview (kept) =============================== */

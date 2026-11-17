@@ -167,6 +167,71 @@ export default function MonthlyCalculationPanel({
       }))
     : [];
   const allFineBreakdown = [...fineBreakdown, ...generatedFineRows];
+
+  // Month-by-month fines. Fines before Aug 2025 are one continuous period, and
+  // statements saved before the monthly detail existed only have their total.
+  const monthlyFineRows: MonthlyFineRow[] = [
+    ...fineBreakdown.flatMap((row: any): MonthlyFineRow[] => {
+      const whole: MonthlyFineRow = {
+        key: `period-${row.key}`,
+        label: String(row.label ?? ""),
+        dueDate: null,
+        rent: null,
+        days: Number(row.days ?? 0),
+        fine: Number(row.fine ?? 0),
+        summary: true,
+        needsRecalc: row.key === "continuous-fine-period",
+      };
+      if (!Array.isArray(row.months) || !row.months.length) return [whole];
+      const months: MonthlyFineRow[] = row.months.map((m: any) => ({
+        key: `${row.key}-${m.key}`,
+        label: String(m.label ?? m.key),
+        dueDate: m.dueDate || null,
+        rent: Number(m.rent ?? 0) > 0 ? Number(m.rent) : null,
+        days: Number(m.days ?? 0),
+        fine: Number(m.fine ?? 0),
+      }));
+      // A later correction to the saved total is shown as its own line.
+      const extraDays = whole.days - months.reduce((s, m) => s + m.days, 0);
+      const extraFine = whole.fine - months.reduce((s, m) => s + m.fine, 0);
+      if (extraDays !== 0 || Math.abs(extraFine) >= 0.01) {
+        months.push({
+          key: `${row.key}-adjustment`,
+          label: "Older fine adjustment",
+          dueDate: null,
+          rent: null,
+          days: extraDays,
+          fine: Math.round(extraFine * 100) / 100,
+          summary: true,
+        });
+      }
+      return months;
+    }),
+    ...(Array.isArray((previewSource as any).generatedAdjustmentRows)
+      ? (previewSource as any).generatedAdjustmentRows.flatMap((row: any) =>
+          Array.isArray(row.months) && row.months.length
+            ? row.months.map((m: any) => ({
+                key: `${row.key}-${m.key}`,
+                label: String(m.label ?? m.key),
+                dueDate: m.dueDate ?? null,
+                rent: Number(m.rent ?? 0),
+                days: Number(m.days ?? 0),
+                fine: Number(m.fine ?? 0),
+                fixed: row.key === "generated-fixed-monthly-fine",
+              }))
+            : [{
+                key: `period-${row.key}`,
+                label: String(row.periodLabel ?? ""),
+                dueDate: null,
+                rent: null,
+                days: Number(row.fineDays ?? 0),
+                fine: Number(row.fineAmount ?? 0),
+                summary: true,
+                needsRecalc: true,
+              }]
+        )
+      : []),
+  ];
   const manualFines = previewSource.manualFines;
   const totalFineAmount = fineAmount + generatedFineAmount + previewSource.manualFineTotal;
   const totalFineDays = fineDays + generatedFineRows.reduce(
@@ -183,6 +248,22 @@ export default function MonthlyCalculationPanel({
     : Math.max(0, totalDue);
 
   const paidRatio = totalDue > 0 ? clamp01(paymentsTotal / totalDue) : 0;
+
+  // The saved count is from when the statement was made; reduce it as payments
+  // come in so a fully paid statement shows no unpaid months.
+  const unpaidMonthsNow = (previewSource as any).statement
+    ? remainingOutstanding <= 0.00001
+      ? 0
+      : monthlyRent > 0
+        ? Math.min(unpaidMonths, Math.ceil(remainingOutstanding / monthlyRent - 0.00001))
+        : unpaidMonths
+    : unpaidMonths;
+  // Same for the amounts: whatever is still owed counts as rent first, then fines.
+  const hasStatement = Boolean((previewSource as any).statement);
+  const rentDueNow = hasStatement ? Math.min(outstandingFees, remainingOutstanding) : outstandingFees;
+  const finesDueNow = hasStatement
+    ? Math.min(totalFineAmount, Math.max(0, remainingOutstanding - rentDueNow))
+    : totalFineAmount;
 
   return (
     <div className="w-full">
@@ -313,23 +394,25 @@ export default function MonthlyCalculationPanel({
               />
               <StatCard
                 title="Unpaid Months"
-                value={String(unpaidMonths)}
-                hint="Pending months count"
+                value={String(unpaidMonthsNow)}
+                hint={unpaidMonthsNow !== unpaidMonths ? `${unpaidMonths} billed on this statement` : "Pending months count"}
                 tone="amber"
                 icon="calendar"
               />
               <StatCard
                 title="Total Fines Due"
-                value={fmtMoney(totalFineAmount)}
-                hint={`${totalFineDays} fine days`}
+                value={fmtMoney(finesDueNow)}
+                hint={finesDueNow !== totalFineAmount
+                  ? `${fmtMoney(totalFineAmount)} billed · ${totalFineDays} fine days`
+                  : `${totalFineDays} fine days`}
                 tone="violet"
                 icon="spark"
               />
 
               <StatCard
                 title="Total Rent Due"
-                value={fmtMoney(outstandingFees)}
-                hint="Total rent due"
+                value={fmtMoney(rentDueNow)}
+                hint={rentDueNow !== outstandingFees ? `${fmtMoney(outstandingFees)} billed on this statement` : "Total rent due"}
                 tone="mint"
                 icon="tag"
               />
@@ -355,17 +438,21 @@ export default function MonthlyCalculationPanel({
 
             <div className="mt-4">
               <div className="text-3xl font-semibold tabular-nums tracking-tight text-slate-900">
-                {fmtMoney(totalDue)}
+                {fmtMoney(remainingOutstanding)}
               </div>
 
-              {paymentsTotal === 0 ? (
+              {paymentsTotal > 0 ? (
+                <div className="mt-1 text-xs text-slate-500 tabular-nums">
+                  {fmtMoney(totalDue)} billed on this statement
+                </div>
+              ) : (
                 <div className="mt-1 text-xs text-slate-500 tabular-nums">
                   Rent {fmtMoney(outstandingFees)} + fines {fmtMoney(totalFineAmount)}
                   {fixedAdjustmentTotal > 0
                     ? ` + saved adjustments ${fmtMoney(fixedAdjustmentTotal)}`
                     : ""}
                 </div>
-              ) : null}
+              )}
 
               <div className="mt-2 grid grid-cols-2 gap-3 text-sm">
                 <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
@@ -405,6 +492,8 @@ export default function MonthlyCalculationPanel({
             </div> */}
           </div>
         </div>
+
+        <MonthlyFinesSection rows={monthlyFineRows} />
 
         <div className="mt-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -611,6 +700,129 @@ export default function MonthlyCalculationPanel({
             leaseId={leaseId}
           />
         </PaymentsModal>
+      </div>
+    </div>
+  );
+}
+
+type MonthlyFineRow = {
+  key: string;
+  label: string;
+  dueDate: string | null;
+  rent: number | null;
+  days: number;
+  fine: number;
+  /** A whole period rather than a single month. */
+  summary?: boolean;
+  /** Flat fine per overdue month instead of a daily rate. */
+  fixed?: boolean;
+  needsRecalc?: boolean;
+};
+
+function MonthlyFinesSection({ rows }: { rows: MonthlyFineRow[] }) {
+  if (!rows.length) return null;
+
+  const totalFine = rows.reduce((sum, r) => sum + r.fine, 0);
+  const totalDays = rows.reduce((sum, r) => sum + r.days, 0);
+  const monthCount = rows.filter((r) => !r.summary).length;
+  const maxFine = Math.max(1, ...rows.map((r) => r.fine));
+  const needsRecalc = rows.some((r) => r.needsRecalc);
+
+  return (
+    <div className="mt-6 rounded-2xl bg-white shadow-sm ring-1 ring-slate-100">
+      <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="text-xl font-semibold text-slate-900">Monthly Fines</div>
+          <div className="mt-1 text-sm text-slate-500">
+            Fine charged on each unpaid month, from the day after its due date
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {monthCount > 0 ? (
+              <span className="rounded-full bg-violet-50 px-3 py-1 text-[12px] font-semibold text-violet-700 ring-1 ring-violet-100">
+                {monthCount} {monthCount === 1 ? "month" : "months"} fined
+              </span>
+            ) : null}
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-[12px] font-semibold text-slate-700 ring-1 ring-slate-200">
+              {totalDays} fine days
+            </span>
+          </div>
+        </div>
+
+        <div className="sm:text-right">
+          <div className="text-[12px] font-semibold text-slate-500">Calculated fines</div>
+          <div className="mt-1 inline-flex rounded-xl bg-violet-100 px-3 py-2 font-semibold tabular-nums text-violet-700 ring-1 ring-violet-200">
+            {fmtMoney(totalFine)}
+          </div>
+        </div>
+      </div>
+
+      {needsRecalc ? (
+        <div className="mx-5 mb-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-100">
+          This statement was saved before month-by-month fines were kept. Use Recalculate all to see each month.
+        </div>
+      ) : null}
+
+      <div className="h-px bg-slate-100" />
+
+      <div className="max-h-[480px] overflow-auto">
+        <table className="w-full min-w-[640px] text-sm">
+          <thead className="sticky top-0 z-10 bg-white">
+            <tr className="text-left text-[12px] font-semibold text-slate-500">
+              <th className="px-5 py-3">Month</th>
+              <th className="px-3 py-3">Due date</th>
+              <th className="px-3 py-3 text-right">Rent</th>
+              <th className="px-3 py-3 text-right">Days overdue</th>
+              <th className="px-3 py-3 text-right">Per day</th>
+              <th className="px-3 py-3 w-[18%]"></th>
+              <th className="px-5 py-3 text-right">Fine</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.map((r) => {
+              const perDay = !r.fixed && r.days > 0 ? r.fine / r.days : null;
+              const pct = Math.max(4, Math.round((r.fine / maxFine) * 100));
+              return (
+                <tr key={r.key} className={r.summary ? "bg-slate-50/70" : "hover:bg-slate-50/60"}>
+                  <td className="px-5 py-3">
+                    <span dir="auto" className={`font-semibold text-slate-900 ${r.summary ? "font-dh1 font-medium" : ""}`}>
+                      {r.label}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 tabular-nums text-slate-600">{r.dueDate ?? "—"}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-slate-600">
+                    {r.rent == null ? "—" : fmtMoney(r.rent)}
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums text-slate-900">
+                    {r.fixed ? (
+                      <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-100">
+                        Fixed
+                      </span>
+                    ) : (
+                      r.days
+                    )}
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums text-slate-600">
+                    {perDay == null ? "—" : fmtMoney(perDay)}
+                  </td>
+                  <td className="px-3 py-3">
+                    <ProgressBar pct={pct} />
+                  </td>
+                  <td className="px-5 py-3 text-right font-semibold tabular-nums text-slate-900">
+                    {fmtMoney(r.fine)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="border-t border-slate-200 bg-violet-50/60 font-semibold text-slate-900">
+              <td className="px-5 py-3" colSpan={3}>Total</td>
+              <td className="px-3 py-3 text-right tabular-nums">{totalDays}</td>
+              <td className="px-3 py-3" colSpan={2}></td>
+              <td className="px-5 py-3 text-right tabular-nums">{fmtMoney(totalFine)}</td>
+            </tr>
+          </tfoot>
+        </table>
       </div>
     </div>
   );
