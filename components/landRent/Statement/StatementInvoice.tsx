@@ -3,6 +3,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import CouncilInvoiceTemplate from "@/components/landRent/CouncilInvoiceTemplate";
+import { buildMonthlyFineRows, MonthlyFinesPrintPage } from "@/components/landRent/Statement/MonthlyFinesSection";
 import type { EditableLandRentPayment } from "@/components/landRent/Statement/PaymentEditDialog";
 import {
   fmtDateShort,
@@ -12,6 +13,14 @@ import {
 } from "@/components/landRent/Statement/landRentStatement.utils";
 import type { StatementDetails } from "@/components/landRent/Statement/useLandRentStatementPage";
 
+/** "2026-11" as "November 2026". */
+function fmtMonthKey(monthKey: string) {
+  const match = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!match) return monthKey;
+  return new Date(Number(match[1]), Number(match[2]) - 1, 1)
+    .toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+}
+
 /**
  * The printable land rent statement for one statement. Used on the statement
  * page and for exporting PDFs, including the bulk download on the overview.
@@ -19,10 +28,13 @@ import type { StatementDetails } from "@/components/landRent/Statement/useLandRe
 export default function StatementInvoice({
   statement,
   onEditPayment,
+  withMonthlyFines = false,
 }: {
   statement: StatementDetails;
   /** Shows an Edit button on each payment (never included in the PDF). */
   onEditPayment?: (payment: EditableLandRentPayment) => void;
+  /** Adds the Monthly Fines table as the last page of the PDF (hidden on screen). */
+  withMonthlyFines?: boolean;
 }) {
   const details = statement as any;
   const fixedAdjustmentRows = Array.isArray(details.fixedAdjustmentRows)
@@ -81,8 +93,10 @@ export default function StatementInvoice({
     : "-";
 
   const isFineOnly = details.statement?.kind === "FINE_ONLY";
+  const monthlyFineRows = withMonthlyFines ? buildMonthlyFineRows(details) : [];
 
   return (
+    <>
     <CouncilInvoiceTemplate
       leftLogoSrc="/assets/images/innamaadhoo-logo.png"
       crestSrc="/assets/images/crest.png"
@@ -399,5 +413,27 @@ export default function StatementInvoice({
         </div>
       </div>
     </CouncilInvoiceTemplate>
+    {monthlyFineRows.length ? (
+      <div className="pdf-only pdf-break">
+        <div className="a4-sheet font-sans">
+          <MonthlyFinesPrintPage
+            rows={monthlyFineRows}
+            details={[
+              { label: "Land", value: String(details.landName ?? ""), dhivehi: true },
+              { label: "Tenant", value: String(details.rentingPerson ?? ""), dhivehi: true },
+              { label: "Agreement no.", value: String(details.agreementNumber ?? "") },
+              { label: "Statement", value: fmtMonthKey(String(details.statement?.monthKey ?? "")) },
+            ]}
+            asOf={fmtDateShort(
+              details.statement?.recalculatedAt ??
+                details.statement?.createdAt ??
+                details.statement?.$createdAt ??
+                null
+            )}
+          />
+        </div>
+      </div>
+    ) : null}
+    </>
   );
 }

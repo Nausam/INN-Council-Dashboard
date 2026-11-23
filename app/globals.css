@@ -356,6 +356,22 @@ html.pdf-export .notice-page {
   margin: 0 auto;
 }
 
+/* Extra statement pages that only appear in the downloaded PDF */
+.pdf-only {
+  display: none;
+}
+html.pdf-export .pdf-only {
+  display: block;
+}
+
+/* An A4-wide sheet without a fixed height, so it never spills a blank page */
+html.pdf-export .a4-sheet {
+  width: 210mm;
+  padding: 16mm;
+  box-sizing: border-box;
+  margin: 0 auto;
+}
+
 /* Works for html2pdf/html2canvas when you add html.pdf-export */
 html.pdf-export .pdf-break {
   break-before: page;

@@ -7,6 +7,7 @@ import ManualFineButton from "@/components/landRent/Statement/ManualFineButton";
 import PaymentEditDialog, { type EditableLandRentPayment } from "@/components/landRent/Statement/PaymentEditDialog";
 import StatementDeleteDialog, { type DeletableLandStatement } from "@/components/landRent/Statement/StatementDeleteDialog";
 import { downloadElementAsPdf } from "@/components/landRent/Statement/landRentPdf.utils";
+import { buildMonthlyFineRows } from "@/components/landRent/Statement/MonthlyFinesSection";
 import StatementInvoice from "@/components/landRent/Statement/StatementInvoice";
 import {
     fmtDateShort,
@@ -46,6 +47,7 @@ export default function StatementsList({
   const [editingPayment, setEditingPayment] = useState<EditableLandRentPayment | null>(null);
   const [deletingStatement, setDeletingStatement] = useState<DeletableLandStatement | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [withMonthlyFines, setWithMonthlyFines] = useState(false);
   // Show one statement at a time; the newest unless another is picked.
   const selectedIndex = useMemo(() => {
     const index = statements.findIndex((s) => s.statement.$id === selectedId);
@@ -75,9 +77,15 @@ export default function StatementsList({
           const revisedBalanceDue = details.statement?.status === "PAID" &&
             Number(details.balanceRemaining ?? 0) > 0;
           const isLatest = idx === statements.length - 1;
+          const hasMonthlyFines = buildMonthlyFineRows(details).length > 0;
+          const includeFines = withMonthlyFines && hasMonthlyFines;
 
           const invoice = (
-            <StatementInvoice statement={s} onEditPayment={setEditingPayment} />
+            <StatementInvoice
+              statement={s}
+              onEditPayment={setEditingPayment}
+              withMonthlyFines={includeFines}
+            />
           );
 
           return (
@@ -172,6 +180,17 @@ export default function StatementsList({
                     Collect remaining balance
                   </button>
                 ) : null}
+                {hasMonthlyFines ? (
+                  <label className="inline-flex h-11 cursor-pointer select-none items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">
+                    <input
+                      type="checkbox"
+                      checked={withMonthlyFines}
+                      onChange={(e) => setWithMonthlyFines(e.target.checked)}
+                      className="h-4 w-4 accent-violet-600"
+                    />
+                    With monthly fines
+                  </label>
+                ) : null}
                 <button
                   type="button"
                   onClick={async () => {
@@ -182,7 +201,7 @@ export default function StatementsList({
 
                     await downloadElementAsPdf(
                       container,
-                      `land-rent-${details.statement.leaseId}-${details.statement.monthKey}.pdf`
+                      `land-rent-${details.statement.leaseId}-${details.statement.monthKey}${includeFines ? "-with-fines" : ""}.pdf`
                     );
                   }}
                   className="h-11 rounded-xl px-5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 disabled:hover:translate-y-0
@@ -204,7 +223,7 @@ export default function StatementsList({
         })()}
       </div>
     );
-  }, [statements, selectedIndex, options, latestInvoiceRef, onCollectRemaining, onStatementDeleted, onPaymentUpdated]);
+  }, [statements, selectedIndex, options, latestInvoiceRef, onCollectRemaining, onStatementDeleted, onPaymentUpdated, withMonthlyFines]);
 
   return <>
     {rendered}
