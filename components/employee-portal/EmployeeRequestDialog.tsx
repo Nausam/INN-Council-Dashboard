@@ -15,8 +15,8 @@ import { parseLeaveDateRange } from "@/lib/leave/date-range";
 import { isDhivehiText } from "@/lib/leave/dhivehi-text";
 import { maldivesDateTime } from "@/lib/dates/maldives";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Check, Loader2 } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
+import { Check, Clock, Loader2 } from "lucide-react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import styles from "@/components/Leave/family-leave-request.module.css";
 import motifs from "./portal-motifs.module.css";
 import { LeaveRangePreview } from "./LeaveRangePreview";
@@ -44,6 +44,119 @@ function minutesFromTime(value: string): number | null {
   if (!match) return null;
   return Number(match[1]) * 60 + Number(match[2]);
 }
+
+/** Overtime minutes between two HH:MM times; an earlier end runs past midnight. */
+function overtimeMinutes(startTime: string, endTime: string): number | null {
+  const start = minutesFromTime(startTime);
+  const end = minutesFromTime(endTime);
+  if (start === null || end === null) return null;
+  return (end - start + 1_440) % 1_440;
+}
+
+const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
+
+/**
+ * A time field that always shows 24-hour time, with an hour and minute
+ * dropdown. The native time input follows the phone's 12-hour setting.
+ */
+function TimeField24({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const fieldRef = useRef<HTMLDivElement>(null);
+  const [hour = "", minute = ""] = value ? value.split(":") : [];
+
+  // Close when tapping anywhere else.
+  useEffect(() => {
+    if (!open) return;
+    function closeOutside(event: PointerEvent) {
+      if (!fieldRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOutside);
+    return () => document.removeEventListener("pointerdown", closeOutside);
+  }, [open]);
+
+  return (
+    <div
+      ref={fieldRef}
+      className={styles.timeField}
+      onKeyDown={(event) => {
+        // Escape closes the dropdown, not the whole dialog.
+        if (event.key === "Escape" && open) {
+          event.stopPropagation();
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        id={id}
+        type="button"
+        className={styles.timeButton}
+        data-empty={value ? undefined : ""}
+        data-active={open ? "" : undefined}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen((prev) => !prev)}
+        dir="ltr"
+      >
+        <span>{value || "--:--"}</span>
+        <Clock aria-hidden="true" />
+      </button>
+      {open ? (
+        <div className={styles.timeDropdown} role="dialog" aria-label="24-hour time">
+          <div className={styles.timeColumns}>
+            <TimeColumn label="Hour" items={HOURS} value={hour} onPick={(h) => onChange(`${h}:${minute || "00"}`)} />
+            <TimeColumn label="Min" items={MINUTES} value={minute} onPick={(m) => onChange(`${hour || "00"}:${m}`)} />
+          </div>
+          <button type="button" className={styles.timeDone} onClick={() => setOpen(false)}>ނިމުނީ</button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** One scrolling column of the 24-hour picker, opened on the picked item. */
+function TimeColumn({
+  label,
+  items,
+  value,
+  onPick,
+}: {
+  label: string;
+  items: string[];
+  value: string;
+  onPick: (item: string) => void;
+}) {
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // Centre the picked item without scrolling the dialog itself.
+  useEffect(() => {
+    const list = listRef.current;
+    const picked = list?.querySelector<HTMLElement>("[aria-pressed='true']");
+    if (list && picked) list.scrollTop = picked.offsetTop - list.clientHeight / 2 + picked.clientHeight / 2;
+  }, [value]);
+
+  return (
+    <div className={styles.timeColumn}>
+      <small>{label}</small>
+      <div ref={listRef}>
+        {items.map((item) => (
+          <button key={item} type="button" aria-pressed={item === value} onClick={() => onPick(item)}>
+            {item}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 
 export function EmployeeRequestDialog({
   employeeId,
@@ -76,6 +189,8 @@ export function EmployeeRequestDialog({
   const [error, setError] = useState("");
 
   const editing = Boolean(editRequest);
+  const otMinutes = overtimeMinutes(startTime, endTime);
+  const otOvernight = otMinutes !== null && endTime < startTime;
 
   useEffect(() => {
     if (!open) return;
@@ -132,10 +247,8 @@ export function EmployeeRequestDialog({
       if (!takeoverEmployeeId) return "ޒިންމާތައް ހަވާލުކުރާނެ މުވައްޒަފަކު ހޮވާ.";
       return null;
     }
-    const start = minutesFromTime(startTime);
-    const end = minutesFromTime(endTime);
     // Matches the server: an end time earlier than the start runs past midnight.
-    const duration = start === null || end === null ? 0 : (end - start + 1_440) % 1_440;
+    const duration = overtimeMinutes(startTime, endTime) ?? 0;
     if (!workDate || duration < 1 || duration > MAX_OVERTIME_MINUTES) {
       return "ފެށި ގަޑިއާއި ނިމުނު ގަޑި ރަނގަޅަށް ހޮވާ. 16 ގަޑިއިރަށްވުރެ ދިގު ނުކުރައްވާ.";
     }
@@ -319,27 +432,33 @@ export function EmployeeRequestDialog({
                 <div className={styles.row}>
                   <div className={styles.field}>
                     <label htmlFor="overtime-start-time">ފެށި ގަޑި</label>
-                    <input
-                      id="overtime-start-time"
-                      type="time"
-                      value={startTime}
-                      onChange={(event) => setStartTime(event.target.value)}
-                      required
-                      dir="ltr"
-                    />
+                    <TimeField24 id="overtime-start-time" value={startTime} onChange={setStartTime} />
                   </div>
                   <div className={styles.field}>
                     <label htmlFor="overtime-end-time">ނިމުނު ގަޑި</label>
-                    <input
-                      id="overtime-end-time"
-                      type="time"
-                      value={endTime}
-                      onChange={(event) => setEndTime(event.target.value)}
-                      required
-                      dir="ltr"
-                    />
+                    <TimeField24 id="overtime-end-time" value={endTime} onChange={setEndTime} />
                   </div>
                 </div>
+
+                {otMinutes ? (
+                  <div
+                    className={cn(styles.otTotal, otMinutes > MAX_OVERTIME_MINUTES && styles.otTotalOver)}
+                    aria-live="polite"
+                  >
+                    <span>
+                      ޖުމްލަ އޯޓީ
+                      {otOvernight ? (
+                        <small>ރޭގަނޑު 12 ފަހަނަޅައި</small>
+                      ) : null}
+                    </span>
+                    <div>
+                      <strong dir="ltr">
+                        {Math.floor(otMinutes / 60)}:{String(otMinutes % 60).padStart(2, "0")}
+                      </strong>
+                      <small>ގަޑިއިރު</small>
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className={styles.field}>
                   <label htmlFor="overtime-details">ކުރި މަސައްކަތް</label>
