@@ -89,6 +89,7 @@ export const COLLECTIONS = {
   landLeases: "land_leases",
   landStatements: "land_statements",
   landPayments: "land_payments",
+  landNotices: "land_notices",
   posts: "posts",
   publications: "publications",
   wasteCustomers: "waste_customers",

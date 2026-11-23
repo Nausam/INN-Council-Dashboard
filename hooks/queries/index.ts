@@ -29,6 +29,7 @@ export {
 export {
   useLandRentOverviewQuery,
   useLandLeaseOptionsQuery,
+  useLandNoticesQuery,
   useLandRentStatementsQuery,
   useLandRentPreviewQuery,
 } from "./use-land-rent";

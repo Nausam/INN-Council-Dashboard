@@ -47,6 +47,7 @@ export const queryKeys = {
   landRent: {
     overview: ["land-rent", "overview"] as const,
     leaseOptions: ["land-rent", "lease-options"] as const,
+    notices: ["land-rent", "notices"] as const,
     statements: (leaseId: string, monthKey: string) =>
       ["land-rent", "statements", leaseId, monthKey] as const,
     preview: (leaseId: string, monthKey: string, capToEndDate: boolean) =>

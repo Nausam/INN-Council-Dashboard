@@ -7,6 +7,7 @@ import {
   fetchLandStatementsWithDetails,
   previewLandRentStatement,
 } from "@/lib/landrent/landRent.actions";
+import { listLandNotices } from "@/lib/landrent/landRentNotice.actions";
 import { useQuery } from "@tanstack/react-query";
 
 export function useLandRentOverviewQuery(options?: {
@@ -50,5 +51,12 @@ export function useLandRentPreviewQuery(
     queryFn: () =>
       previewLandRentStatement({ leaseId, monthKey, capToEndDate }),
     enabled: enabled && Boolean(leaseId) && Boolean(monthKey),
+  });
+}
+
+export function useLandNoticesQuery() {
+  return useQuery({
+    queryKey: queryKeys.landRent.notices,
+    queryFn: () => listLandNotices(),
   });
 }

@@ -101,14 +101,14 @@ function renderCell(v: CellValue) {
   );
 }
 
-function MailIcon(props: { className?: string }) {
+export function MailIcon(props: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className={props.className}>
       <path d="M20 4H4a2 2 0 0 0-2 2v.01L12 13 22 6.01V6a2 2 0 0 0-2-2Zm2 6.24-9.4 6.58a1 1 0 0 1-1.2 0L2 10.24V18a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-7.76Z" />
     </svg>
   );
 }
-function PhoneIcon(props: { className?: string }) {
+export function PhoneIcon(props: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className={props.className}>
       <path d="M20.5 16.9c-1.2 0-2.4-.2-3.5-.6a1 1 0 0 0-1 .2l-2.2 1.7a16.3 16.3 0 0 1-7.7-7.7l1.7-2.2a1 1 0 0 0 .2-1c-.4-1.1-.6-2.3-.6-3.5A1 1 0 0 0 6.4 3H4.2A1.2 1.2 0 0 0 3 4.2C3 14.6 9.4 21 19.8 21a1.2 1.2 0 0 0 1.2-1.2v-2.2a1 1 0 0 0-.5-.7 1 1 0 0 0-.5-.1Z" />
@@ -123,7 +123,7 @@ function WhatsAppIcon(props: { className?: string }) {
   );
 }
 
-function ContactChip(props: {
+export function ContactChip(props: {
   value: string;
   icon: React.ReactNode;
   accent: "blue" | "indigo" | "emerald";

@@ -124,6 +124,7 @@ export const councilSidebarNav: SidebarNavItem[] = [
     items: [
       { title: "Land Rent Leases", url: "/landRent" },
       { title: "Add Lease", url: "/landRent/new" },
+      { title: "Notices", url: "/landRent/notices" },
     ],
   },
 ];
