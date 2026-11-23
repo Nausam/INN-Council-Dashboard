@@ -45,7 +45,7 @@ function dayParts(iso: string) {
   };
 }
 
-function LeaveReminderDialog({
+export function LeaveReminderDialog({
   employeeId,
   employeeName,
   onClose,

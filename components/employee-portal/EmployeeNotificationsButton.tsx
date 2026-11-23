@@ -15,13 +15,17 @@ import {
   syncEmployeePush,
 } from "@/lib/employee-push";
 import { cn } from "@/lib/utils";
-import { ArrowRight, Bell, BellOff, BellRing, CalendarCheck, Loader2, Smartphone } from "lucide-react";
+import { ArrowRight, Bell, BellOff, BellRing, CalendarCheck, Loader2, MessageSquare, Send, Smartphone } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useState } from "react";
 import headerStyles from "./EmployeePortalHeader.module.css";
 import motifs from "./portal-motifs.module.css";
 import styles from "./EmployeeNotifications.module.css";
 
 type AlertsState = "loading" | "on" | "off" | "blocked" | "unsupported";
+
+// Only HR send reminders, so its dialog loads on first use.
+const LeaveReminderDialog = dynamic(() => import("./LeaveReminder").then((mod) => mod.LeaveReminderDialog));
 
 // The header remounts on every tab change; reuse what the bell loaded for a few minutes.
 const CACHE_MS = 5 * 60_000;
@@ -58,15 +62,19 @@ async function readAlertsState(): Promise<AlertsState> {
 export function EmployeeNotificationsButton({
   employeeId,
   onOpenRequests,
+  reminderEmployeeName,
 }: {
   employeeId: string;
   /** Opens the Requests screen; the bell links there when not given. */
   onOpenRequests?: () => void;
+  /** Set for HR: the panel also sends this employee a leave form reminder. */
+  reminderEmployeeName?: string;
 }) {
   const [data, setData] = useState<MyNotifications | null>(() =>
     cached?.employeeId === employeeId ? cached.value : null,
   );
   const [open, setOpen] = useState(false);
+  const [reminderOpen, setReminderOpen] = useState(false);
 
   const remember = useCallback((value: MyNotifications) => {
     cached = { employeeId, at: Date.now(), value };
@@ -115,7 +123,22 @@ export function EmployeeNotificationsButton({
           load={load}
           remember={remember}
           onOpenRequests={onOpenRequests}
+          onRemind={
+            reminderEmployeeName
+              ? () => {
+                  setOpen(false);
+                  setReminderOpen(true);
+                }
+              : undefined
+          }
           onClose={() => setOpen(false)}
+        />
+      ) : null}
+      {reminderOpen && reminderEmployeeName ? (
+        <LeaveReminderDialog
+          employeeId={employeeId}
+          employeeName={reminderEmployeeName}
+          onClose={() => setReminderOpen(false)}
         />
       ) : null}
     </>
@@ -128,6 +151,7 @@ function NotificationsDialog({
   load,
   remember,
   onOpenRequests,
+  onRemind,
   onClose,
 }: {
   employeeId: string;
@@ -135,6 +159,8 @@ function NotificationsDialog({
   load: () => Promise<void>;
   remember: (value: MyNotifications) => void;
   onOpenRequests?: () => void;
+  /** HR only: opens the leave form reminder for this employee. */
+  onRemind?: () => void;
   onClose: () => void;
 }) {
   const { toast } = useToast();
@@ -192,31 +218,50 @@ function NotificationsDialog({
     else window.location.assign(`/employees/details/${encodeURIComponent(employeeId)}?tab=requests`);
   };
 
+  const missingCount = missing?.length ?? 0;
+  const summary =
+    missing === null
+      ? loadFailed ? "Couldn't load. Check your connection." : "Checking your attendance…"
+      : missingCount
+        ? `${missingCount} leave ${missingCount === 1 ? "form" : "forms"} to submit`
+        : "You're all caught up";
+  const alertsOn = alerts === "on";
+
   return (
     <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
       <DialogContent className={styles.dialog} overlayClassName="bg-black/40">
         <DialogHeader className={styles.header}>
-          <span className={cn(motifs.glossIcon, styles.headIcon)} data-tone="leave" aria-hidden="true">
-            <Bell />
+          <span
+            className={cn(motifs.glossIcon, styles.headIcon)}
+            data-tone={missingCount ? "late" : "annual"}
+            aria-hidden="true"
+          >
+            {missingCount ? <BellRing /> : <Bell />}
           </span>
           <div className={styles.headText}>
             <DialogTitle className={styles.title}>Notifications</DialogTitle>
-            <DialogDescription className={styles.subtitle}>Leave forms and alerts on this phone</DialogDescription>
+            <DialogDescription className={styles.subtitle}>{summary}</DialogDescription>
           </div>
         </DialogHeader>
 
-        <section className={styles.card} aria-label="Missing leave forms">
-          <span className={styles.cardLabel}>
-            Missing leave forms <small>Last 30 days</small>
-          </span>
+        {/* Leave forms: the one thing to act on, so it leads. */}
+        <section
+          className={styles.forms}
+          data-state={missing === null ? "loading" : missingCount ? "todo" : "done"}
+          aria-label="Missing leave forms"
+        >
           {missing === null ? (
-            <span className={styles.note}>{loadFailed ? "Couldn't load them. Check your connection." : "Checking your attendance…"}</span>
-          ) : missing.length ? (
+            <span className={styles.note}>
+              {loadFailed ? "Couldn't load your leave forms." : "Checking your attendance…"}
+            </span>
+          ) : missingCount ? (
             <>
-              <p className={styles.lead}>
-                You were absent on {missing.length === 1 ? "this day" : `these ${missing.length} days`} with no leave form.
-                Please submit {missing.length === 1 ? "one" : "them"} in Requests.
-              </p>
+              <div className={styles.formsHead}>
+                <strong>
+                  {missingCount === 1 ? "1 absent day" : `${missingCount} absent days`} without a leave form
+                </strong>
+                <small>Last 30 days</small>
+              </div>
               <div className={styles.dayPages}>
                 {missing.map((date) => {
                   const parts = dayParts(date);
@@ -229,21 +274,42 @@ function NotificationsDialog({
                   );
                 })}
               </div>
-              <button type="button" onClick={openRequests} className={styles.primary}>
-                Submit leave forms <ArrowRight />
-              </button>
+              <div className={styles.formsActions}>
+                <button type="button" onClick={openRequests} className={styles.primary}>
+                  Submit {missingCount === 1 ? "leave form" : "leave forms"} <ArrowRight />
+                </button>
+                {onRemind ? (
+                  <button
+                    type="button"
+                    onClick={onRemind}
+                    className={styles.remind}
+                    aria-label="Send a leave form reminder to this employee"
+                  >
+                    <Send /> Remind
+                  </button>
+                ) : null}
+              </div>
             </>
           ) : (
-            <span className={styles.note} data-tone="done">
-              <CalendarCheck aria-hidden="true" /> You&rsquo;re all caught up. No missing leave forms.
-            </span>
+            <div className={styles.done}>
+              <span className={cn(motifs.glossIcon, styles.doneIcon)} data-tone="present" aria-hidden="true">
+                <CalendarCheck />
+              </span>
+              <span className={styles.doneText}>
+                <strong>No missing leave forms</strong>
+                <small>Every absence in the last 30 days is covered.</small>
+              </span>
+            </div>
           )}
         </section>
 
-        <section className={styles.card} aria-label="From HR">
-          <span className={styles.cardLabel}>From HR</span>
+        <section className={styles.inboxSection} aria-label="From HR">
+          <p className={styles.sectionLabel}>
+            From HR
+            {items.length ? <span className={styles.sectionCount}>{items.length}</span> : null}
+          </p>
           {!data ? (
-            <span className={styles.note}>{loadFailed ? "Couldn't load them. Check your connection." : "Loading…"}</span>
+            <span className={styles.note}>{loadFailed ? "Couldn't load messages." : "Loading…"}</span>
           ) : items.length ? (
             <ul className={styles.inbox}>
               {items.map((item) => (
@@ -262,34 +328,46 @@ function NotificationsDialog({
               ))}
             </ul>
           ) : (
-            <span className={styles.note}>No messages from HR yet.</span>
+            <p className={styles.empty}>
+              <MessageSquare aria-hidden="true" />
+              No messages yet. HR reminders will show here.
+            </p>
           )}
         </section>
 
         <section className={styles.alerts} data-state={alerts} aria-label="Alerts on this phone">
-          <span className={styles.alertsIcon} aria-hidden="true">
-            {alerts === "on" ? <BellRing /> : alerts === "blocked" ? <BellOff /> : <Smartphone />}
+          <span
+            className={cn(motifs.glossIcon, styles.alertsIcon)}
+            data-tone={alertsOn ? "present" : alerts === "blocked" ? "late" : "neutral"}
+            aria-hidden="true"
+          >
+            {alertsOn ? <BellRing /> : alerts === "blocked" ? <BellOff /> : <Smartphone />}
           </span>
           <span className={styles.alertsText}>
-            {alerts === "loading"
-              ? "Checking this phone…"
-              : alerts === "on"
-                ? "Alerts are on. HR reminders come to this phone."
-                : alerts === "off"
-                  ? "Turn on alerts to get HR reminders on this phone."
-                  : alerts === "blocked"
-                    ? "Notifications are blocked. Allow them for this app in your phone's settings."
-                    : "To get alerts on iPhone, add Employee Profile to your Home Screen and open it from there."}
+            <strong>Alerts on this phone</strong>
+            <small>
+              {alerts === "loading"
+                ? "Checking this phone…"
+                : alertsOn
+                  ? "HR reminders come to this phone."
+                  : alerts === "off"
+                    ? "Turn on to get HR reminders here."
+                    : alerts === "blocked"
+                      ? "Blocked. Allow notifications for this app in your phone's settings."
+                      : "On iPhone, add Employee Profile to your Home Screen and open it from there."}
+            </small>
           </span>
           {alerts === "on" || alerts === "off" ? (
             <button
               type="button"
-              onClick={() => void (alerts === "on" ? turnOff() : turnOn())}
+              role="switch"
+              aria-checked={alertsOn}
+              aria-label="Alerts on this phone"
+              onClick={() => void (alertsOn ? turnOff() : turnOn())}
               disabled={busy}
-              className={alerts === "on" ? styles.secondary : styles.primarySmall}
+              className={styles.switch}
             >
-              {busy ? <Loader2 className="animate-spin" /> : null}
-              {alerts === "on" ? "Turn off" : "Turn on"}
+              <span className={styles.switchKnob}>{busy ? <Loader2 className="animate-spin" /> : null}</span>
             </button>
           ) : null}
         </section>
