@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 
 /** Color families used by the employee portal's glossy tiles and calendar pages. */
-export type GlossTone = "present" | "late" | "leave" | "annual" | "pending" | "neutral";
+export type GlossTone = "present" | "late" | "leave" | "absent" | "annual" | "pending" | "neutral";
 
 /** Each leave type keeps one icon and color everywhere it appears. */
 const LEAVE_VISUALS: Record<string, { icon: LucideIcon; tone: GlossTone }> = {

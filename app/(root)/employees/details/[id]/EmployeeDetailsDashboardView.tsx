@@ -19,16 +19,30 @@ import type {
 import {
   buildAttendanceSummary,
   buildLastWeekAttendance,
+  buildMosqueLastWeek,
+  buildMosqueMonthTotals,
+  buildMosqueWeek,
+  MOSQUE_PRAYERS,
+  MOSQUE_WEEK_DAYS,
   WORK_WEEK_DAYS,
   currentLimitedLeaveRemaining,
   formatDateLabel,
   formatMoney,
+  formatMosqueSignIn,
   leaveLabel,
   maldivesTodayIso,
   toEmployeeDetailsView,
   type AttendanceSummary,
   type EmployeeDetailsView,
   type LeaveBalanceView,
+  type MosqueMonthTotals,
+  type MosquePrayerKey,
+  type MosqueWeekSummary,
+  type PrayerDay,
+  type PrayerDayStatus,
+  type PrayerSchedule,
+  type PrayerSlot,
+  type PrayerSlotStatus,
   type WeekDayAttendance,
 } from "@/lib/employees/details-dashboard";
 import { cn } from "@/lib/utils";
@@ -43,6 +57,7 @@ import {
   ArrowRight,
   Banknote,
   CircleSlash,
+  CloudSun,
   BriefcaseBusiness,
   CalendarCheck,
   CalendarDays,
@@ -56,10 +71,13 @@ import {
   Landmark,
   LayoutGrid,
   MapPin,
+  Moon,
   MoonStar,
   Phone,
   ShieldCheck,
   Sun,
+  Sunrise,
+  Sunset,
   TimerOff,
   User,
   UtensilsCrossed,
@@ -78,6 +96,13 @@ import motifs from "@/components/employee-portal/portal-motifs.module.css";
 import { leaveVisual, type GlossTone } from "@/lib/employees/leave-visuals";
 
 type TabId = "overview" | "attendance" | "leave" | "pay" | "requests";
+
+/** Prayer times and grace for a mosque employee, worked out on the server. */
+export type MosqueProfileData = {
+  schedule: PrayerSchedule;
+  /** Minutes before each prayer they're expected in. */
+  graceMinutes: number;
+};
 
 // Loaded on first use: only admins edit, and Requests is its own screen.
 const loadRequestsView = () =>
@@ -113,25 +138,18 @@ const mosquePrayerFields = [
 ] as const;
 
 function formatPrayerTime(value: unknown): string {
-  if (typeof value !== "string" || !value) return "-";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "-";
-  return parsed.toLocaleTimeString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Indian/Maldives",
-  });
+  return formatMosqueSignIn(value) ?? "-";
 }
 
 export function EmployeeDetailsDashboardView({
   employee: data,
   leaves = [],
-  councilAttendance = [],
   mosqueAttendance = [],
   recentCouncilAttendance = [],
   recentMosqueAttendance = [],
   initialTab = "overview",
   viewerIsEmployee = false,
+  mosque,
 }: {
   employee: EmployeeDoc | null;
   leaves?: EmployeeLeaveCalendarEntry[];
@@ -143,6 +161,8 @@ export function EmployeeDetailsDashboardView({
   initialTab?: TabId;
   /** Signed in to Employee Profile as this employee, not HR. */
   viewerIsEmployee?: boolean;
+  /** Set for mosque staff, whose days are five prayers rather than one sign-in. */
+  mosque?: MosqueProfileData;
 }) {
   const params = useParams();
   const router = useRouter();
@@ -214,13 +234,30 @@ export function EmployeeDetailsDashboardView({
       });
     }
 
+    // "Recent" covers this month and last week, so a week that started last
+    // month still has its first days.
     return buildAttendanceSummary({
       employeeId: id,
-      councilAttendance,
-      mosqueAttendance,
+      councilAttendance: recentCouncilAttendance,
+      mosqueAttendance: recentMosqueAttendance,
       leaves,
     });
-  }, [councilAttendance, id, leaves, mosqueAttendance]);
+  }, [id, leaves, recentCouncilAttendance, recentMosqueAttendance]);
+
+  const mosqueWeeks = useMemo(() => {
+    if (!mosque) return null;
+    const sources = {
+      mosqueAttendance: recentMosqueAttendance,
+      leaves,
+      schedule: mosque.schedule,
+      graceMinutes: mosque.graceMinutes,
+    };
+    return {
+      thisWeek: buildMosqueWeek(sources),
+      lastWeek: buildMosqueLastWeek(sources),
+      month: buildMosqueMonthTotals(sources),
+    };
+  }, [leaves, mosque, recentMosqueAttendance]);
 
   const lastWeekDays = useMemo(
     () => id
@@ -295,13 +332,19 @@ export function EmployeeDetailsDashboardView({
         className={styles.wrap}
         actions={
           <>
-            {/* HR who are also signed in as this employee get both. */}
+            {/* One bell. HR who are also signed in as this employee send the
+                leave form reminder from inside the notifications panel. */}
             {viewerIsEmployee ? (
-              <EmployeeNotificationsButton employeeId={id} onOpenRequests={() => setTab("requests")} />
+              <EmployeeNotificationsButton
+                employeeId={id}
+                onOpenRequests={() => setTab("requests")}
+                reminderEmployeeName={isAdmin ? employee.name : undefined}
+              />
+            ) : isAdmin ? (
+              <LeaveReminderButton employeeId={id} employeeName={employee.name} />
             ) : null}
             {isAdmin ? (
               <>
-                <LeaveReminderButton employeeId={id} employeeName={employee.name} />
                 <EmployeePortalHeaderButton label="Edit profile" onClick={() => setEditOpen(true)}>
                   <Edit3 />
                 </EmployeePortalHeaderButton>
@@ -319,6 +362,8 @@ export function EmployeeDetailsDashboardView({
             annualRemaining={annualRemaining}
             upcomingLeave={upcomingLeave}
             photoUrl={employeePhotoUrl(id, data?.photoKey)}
+            mosqueWeek={mosqueWeeks?.thisWeek}
+            mosqueMonth={mosqueWeeks?.month}
           />
         ) : null}
 
@@ -345,7 +390,15 @@ export function EmployeeDetailsDashboardView({
         </nav>
 
         <div className={styles.content}>
-          {tab === "overview" ? (
+          {tab === "overview" && mosqueWeeks ? (
+            <MosqueOverviewSection
+              employee={employee}
+              employeeId={id}
+              week={mosqueWeeks.thisWeek}
+              upcomingLeave={upcomingLeave}
+            />
+          ) : null}
+          {tab === "overview" && !mosqueWeeks ? (
             <OverviewSection
               employee={employee}
               employeeId={id}
@@ -353,7 +406,10 @@ export function EmployeeDetailsDashboardView({
               upcomingLeave={upcomingLeave}
             />
           ) : null}
-          {tab === "attendance" ? (
+          {tab === "attendance" && mosqueWeeks ? (
+            <MosqueAttendanceSection week={mosqueWeeks.thisWeek} lastWeek={mosqueWeeks.lastWeek} />
+          ) : null}
+          {tab === "attendance" && !mosqueWeeks ? (
             <AttendanceSection
               employee={employee}
               summary={attendanceSummary}
@@ -532,15 +588,23 @@ function ProfileHeader({
   annualRemaining,
   upcomingLeave,
   photoUrl,
+  mosqueWeek,
+  mosqueMonth,
 }: {
   employee: EmployeeDetailsView;
   summary: AttendanceSummary;
   annualRemaining: number;
   upcomingLeave: EmployeeLeaveCalendarEntry[];
   photoUrl?: string;
+  /** Mosque staff: the week prayer by prayer, for the Today pill. */
+  mosqueWeek?: MosqueWeekSummary;
+  /** Mosque staff: absent and late time this month, which replace the weekly stats. */
+  mosqueMonth?: MosqueMonthTotals;
 }) {
   const todayIso = maldivesTodayIso();
-  const today = todayStatus(summary.weekDays, todayIso);
+  const today = mosqueWeek
+    ? mosqueTodayStatus(mosqueWeek, todayIso)
+    : todayStatus(summary.weekDays, todayIso);
   const TodayIcon = today.icon;
   const lateDays = summary.weekDays.filter((day) => day.status === "late").length;
   const annualAllowance =
@@ -579,28 +643,60 @@ function ProfileHeader({
       </div>
 
       <div className={styles.stats}>
-        <MiniStat
-          icon={CheckCircle2}
-          tone="present"
-          value={String(summary.presentDays)}
-          unit={`/ ${WORK_WEEK_DAYS}`}
-          label="Present this week"
-          note={
-            <span className={styles.statDots} aria-hidden="true">
-              {summary.weekDays.map((day) => (
-                <span key={day.date} data-status={day.date > todayIso ? "upcoming" : day.status} />
-              ))}
-            </span>
-          }
-        />
-        <MiniStat
-          icon={TimerOff}
-          tone="late"
-          value={String(summary.lateMinutes)}
-          unit="min"
-          label="Late this week"
-          note={<span className={styles.statNote}>{lateDays} {lateDays === 1 ? "late day" : "late days"}</span>}
-        />
+        {mosqueMonth ? (
+          <>
+            <MiniStat
+              icon={CircleSlash}
+              tone="absent"
+              value={<DurationValue minutes={mosqueMonth.absentMinutes} />}
+              label="Absent this month"
+              note={
+                <span className={styles.statNote}>
+                  {mosqueMonth.missedPrayers} {mosqueMonth.missedPrayers === 1 ? "prayer absent" : "prayers absent"}
+                </span>
+              }
+            />
+            <MiniStat
+              icon={TimerOff}
+              tone="late"
+              value={String(mosqueMonth.lateDays)}
+              unit={mosqueMonth.lateDays === 1 ? "day" : "days"}
+              label="Days late this month"
+              note={
+                <span className={styles.statNote}>
+                  {mosqueMonth.lateMinutes < 60
+                    ? `${mosqueMonth.lateMinutes} min late`
+                    : `${Math.floor(mosqueMonth.lateMinutes / 60)}h ${String(mosqueMonth.lateMinutes % 60).padStart(2, "0")}m late`}
+                </span>
+              }
+            />
+          </>
+        ) : (
+          <>
+            <MiniStat
+              icon={CheckCircle2}
+              tone="present"
+              value={String(summary.presentDays)}
+              unit={`/ ${WORK_WEEK_DAYS}`}
+              label="Present this week"
+              note={
+                <span className={styles.statDots} aria-hidden="true">
+                  {summary.weekDays.map((day) => (
+                    <span key={day.date} data-status={day.date > todayIso ? "upcoming" : day.status} />
+                  ))}
+                </span>
+              }
+            />
+            <MiniStat
+              icon={TimerOff}
+              tone="late"
+              value={String(summary.lateMinutes)}
+              unit="min"
+              label="Late this week"
+              note={<span className={styles.statNote}>{lateDays} {lateDays === 1 ? "late day" : "late days"}</span>}
+            />
+          </>
+        )}
         <MiniStat
           icon={CalendarDays}
           tone="leave"
@@ -626,6 +722,25 @@ function ProfileHeader({
   );
 }
 
+/** "45 min" under an hour, otherwise "2h 05m". */
+function DurationValue({ minutes }: { minutes: number }) {
+  if (minutes < 60) {
+    return (
+      <>
+        {minutes}
+        <small>min</small>
+      </>
+    );
+  }
+  return (
+    <>
+      {Math.floor(minutes / 60)}
+      <small>h</small> {String(minutes % 60).padStart(2, "0")}
+      <small>m</small>
+    </>
+  );
+}
+
 function MiniStat({
   icon: Icon,
   tone,
@@ -637,7 +752,7 @@ function MiniStat({
 }: {
   icon: LucideIcon;
   tone: GlossTone;
-  value: string;
+  value: React.ReactNode;
   unit?: string;
   label: string;
   note?: React.ReactNode;
@@ -685,7 +800,23 @@ function OverviewSection({
 
   return (
     <div className={styles.overviewGrid}>
-      <Panel icon={IdCard} title="Identity">
+      <IdentityPanel employee={employee} todayIso={todayIso} />
+
+      <Panel icon={Clock3} title="This week">
+        <div className={styles.overviewWeek}>
+          <WeekStrip days={summary.weekDays} todayIso={todayIso} />
+
+          <UpcomingLeave upcomingLeave={upcomingLeave} />
+          <LeaveCalendarLink employeeId={employeeId} />
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function IdentityPanel({ employee, todayIso }: { employee: EmployeeDetailsView; todayIso: string }) {
+  return (
+    <Panel icon={IdCard} title="Identity">
         <div className={styles.identityList}>
           <IdentityRow
             icon={IdCard}
@@ -713,17 +844,7 @@ function OverviewSection({
             value={employee.address}
           />
         </div>
-      </Panel>
-
-      <Panel icon={Clock3} title="This week">
-        <div className={styles.overviewWeek}>
-          <WeekStrip days={summary.weekDays} todayIso={todayIso} />
-
-          <UpcomingLeave upcomingLeave={upcomingLeave} />
-          <LeaveCalendarLink employeeId={employeeId} />
-        </div>
-      </Panel>
-    </div>
+    </Panel>
   );
 }
 
@@ -1010,6 +1131,326 @@ function AttendanceDay({
   );
 }
 
+/* ---------------- Mosque staff: five prayers a day ---------------- */
+
+const PRAYER_ICONS: Record<MosquePrayerKey, LucideIcon> = {
+  fathis: Sunrise,
+  mendhuru: Sun,
+  asuru: CloudSun,
+  maqrib: Sunset,
+  isha: Moon,
+};
+
+const PRAYER_SLOT_TONE: Record<PrayerSlotStatus, GlossTone> = {
+  onTime: "present",
+  late: "late",
+  leave: "leave",
+  missed: "absent",
+  due: "pending",
+  upcoming: "pending",
+};
+
+const PRAYER_DAY_ICON: Record<PrayerDayStatus, LucideIcon> = {
+  present: CheckCircle2,
+  late: AlarmClock,
+  leave: CalendarDays,
+  absent: CircleSlash,
+  pending: Clock3,
+  upcoming: Clock3,
+};
+
+/** "4:41 AM" without the AM/PM, for the tight week grid. */
+function clockOnly(value: string | null): string {
+  return (value ?? "").replace(/\s?[AP]M$/i, "");
+}
+
+/** Today's prayers so far, and the next one, for the pill in the hero. */
+function mosqueTodayStatus(week: MosqueWeekSummary, todayIso: string): { tone: GlossTone; icon: LucideIcon; text: string } {
+  const today = week.days.find((day) => day.date === todayIso);
+  if (!today) return { tone: "neutral", icon: MoonStar, text: "No prayers today" };
+  if (today.status === "leave") return { tone: "leave", icon: CalendarDays, text: today.note };
+  const next = today.prayers.find((slot) => slot.status === "due" || slot.status === "upcoming");
+  const count = `${today.attended} of ${MOSQUE_PRAYERS.length}`;
+  const nextText = next
+    ? ` · ${next.status === "due" ? "Now" : "Next"} ${next.label}${next.scheduled ? ` ${next.scheduled}` : ""}`
+    : " prayers";
+  return {
+    tone: today.lateMinutes > 0 ? "late" : today.attended > 0 ? "present" : "pending",
+    icon: today.lateMinutes > 0 ? AlarmClock : today.attended > 0 ? CheckCircle2 : Clock3,
+    text: `${count}${nextText}`,
+  };
+}
+
+function prayerSlotBadge(slot: PrayerSlot): string {
+  switch (slot.status) {
+    case "onTime":
+      return `In ${slot.signInTime} · On time`;
+    case "late":
+      return `In ${slot.signInTime} · +${slot.lateMinutes}m`;
+    case "missed":
+      return "Absent";
+    case "due":
+      return "Not in yet";
+    case "upcoming":
+      return "Coming up";
+    case "leave":
+      return "On leave";
+  }
+}
+
+function MosqueOverviewSection({
+  employee,
+  employeeId,
+  week,
+  upcomingLeave,
+}: {
+  employee: EmployeeDetailsView;
+  employeeId: string;
+  week: MosqueWeekSummary;
+  upcomingLeave: EmployeeLeaveCalendarEntry[];
+}) {
+  const todayIso = maldivesTodayIso();
+  const today = week.days.find((day) => day.date === todayIso);
+
+  return (
+    <div className={styles.stack}>
+      {today ? (
+        <Panel
+          icon={MoonStar}
+          title="Today's prayers"
+          aside={today.status === "leave" ? today.note : `${today.attended} of ${MOSQUE_PRAYERS.length} signed in`}
+        >
+          <ol className={styles.prayerTiles}>
+            {today.prayers.map((slot) => (
+              <PrayerTile key={slot.key} slot={slot} />
+            ))}
+          </ol>
+        </Panel>
+      ) : null}
+
+      <div className={styles.overviewGrid}>
+        <IdentityPanel employee={employee} todayIso={todayIso} />
+
+        <Panel icon={Clock3} title="This week">
+          <div className={styles.overviewWeek}>
+            <PrayerWeekStrip days={week.days} todayIso={todayIso} />
+
+            <UpcomingLeave upcomingLeave={upcomingLeave} />
+            <LeaveCalendarLink employeeId={employeeId} />
+          </div>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+/** One prayer: when it is, when they should be in, and how it went. */
+function PrayerTile({ slot }: { slot: PrayerSlot }) {
+  const Icon = PRAYER_ICONS[slot.key];
+  const tone = PRAYER_SLOT_TONE[slot.status];
+  // Once they've signed in, that time is the big number; until then it's the prayer time.
+  const signedIn = slot.status === "onTime" || slot.status === "late";
+  const [time, meridiem] = ((signedIn ? slot.signInTime : slot.scheduled) ?? "").split(" ");
+  const detail = !slot.scheduled
+    ? "Prayer time unavailable"
+    : signedIn
+      ? `Prayer ${slot.scheduled} · be in by ${slot.expectedBy}`
+      : `Be in by ${slot.expectedBy}`;
+  const badge =
+    slot.status === "onTime"
+      ? "On time"
+      : slot.status === "late"
+        ? `+${slot.lateMinutes}m late`
+        : prayerSlotBadge(slot);
+
+  return (
+    <li className={styles.prayerTile} data-status={slot.status}>
+      <span className={cn(motifs.glossIcon, styles.prayerTileIcon)} data-tone={tone}>
+        <Icon />
+      </span>
+      <div className={styles.prayerTileText}>
+        <p className={styles.prayerTileName}>{slot.label}</p>
+        <p className={styles.prayerTileTime}>
+          <span className={styles.prayerTileTimeLabel}>{signedIn ? "Signed in" : "Prayer time"}</span>
+          {time || "—"}
+          {meridiem ? <small>{meridiem}</small> : null}
+        </p>
+        <p className={styles.prayerTileExpect}>{detail}</p>
+      </div>
+      <span className={styles.prayerTileBadge} data-status={slot.status}>
+        {badge}
+      </span>
+    </li>
+  );
+}
+
+/** Seven tiles, Sunday to Saturday, with how many prayers each day had. */
+function PrayerWeekStrip({ days, todayIso }: { days: PrayerDay[]; todayIso: string }) {
+  return (
+    <div
+      className={styles.weekStrip}
+      style={{ "--strip-days": MOSQUE_WEEK_DAYS } as React.CSSProperties}
+      aria-hidden="true"
+    >
+      {days.map((day) => {
+        const upcoming = day.status === "upcoming";
+        const StatusIcon = PRAYER_DAY_ICON[day.status];
+        return (
+          <div
+            key={day.date}
+            className={styles.weekStripDay}
+            data-status={day.status}
+            data-today={day.date === todayIso ? "" : undefined}
+          >
+            <span className={styles.weekStripTile}>
+              {upcoming ? day.label.split(" ")[1] ?? day.label : <StatusIcon />}
+            </span>
+            <small>{day.day.charAt(0)}</small>
+            <span className={styles.weekStripMeta}>
+              {upcoming
+                ? day.label.split(" ")[0]
+                : day.status === "leave"
+                  ? "Leave"
+                  : `${day.attended}/${MOSQUE_PRAYERS.length}`}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MosqueAttendanceSection({
+  week,
+  lastWeek,
+}: {
+  week: MosqueWeekSummary;
+  lastWeek: MosqueWeekSummary;
+}) {
+  return (
+    <div className={styles.stack}>
+      <Panel icon={Clock3} title="This week" aside={<PrayerWeekTotals week={week} />}>
+        <PrayerWeekGrid week={week} />
+      </Panel>
+      <Panel icon={CalendarDays} title="Last week" aside={<PrayerWeekTotals week={lastWeek} />}>
+        <PrayerWeekGrid week={lastWeek} />
+      </Panel>
+    </div>
+  );
+}
+
+function PrayerWeekTotals({ week }: { week: MosqueWeekSummary }) {
+  return (
+    <>
+      {week.attended} of {week.due} prayers
+      {week.lateMinutes > 0 ? ` · ${week.lateMinutes}m late` : ""}
+    </>
+  );
+}
+
+/**
+ * Days down the side, the five prayers across. Each cell is the sign-in time,
+ * colored by how it went; tap a day to see that day's prayer times.
+ */
+function PrayerWeekGrid({ week }: { week: MosqueWeekSummary }) {
+  const todayIso = maldivesTodayIso();
+
+  return (
+    <div className={styles.prayerTable}>
+      <div className={styles.prayerTableHead} aria-hidden="true">
+        <span />
+        {MOSQUE_PRAYERS.map((prayer) => {
+          const Icon = PRAYER_ICONS[prayer.key];
+          return (
+            <span key={prayer.key}>
+              <Icon />
+              {prayer.label}
+            </span>
+          );
+        })}
+      </div>
+
+      <ol className={styles.prayerRows}>
+        {week.days.map((day) => (
+          <li key={day.date}>
+            <details className={styles.prayerRow} data-today={day.date === todayIso ? "" : undefined}>
+              <summary className={styles.prayerRowSummary} aria-label={`${day.day} ${day.label}: ${day.note}`}>
+                <span className={styles.attendanceDate} data-status={day.status}>
+                  <small>{day.day}</small>
+                  <strong>{day.label.split(" ")[1] ?? day.label}</strong>
+                </span>
+                {day.status === "leave" ? (
+                  <span className={styles.prayerLeaveCell}>
+                    <CalendarDays />
+                    {day.note}
+                  </span>
+                ) : (
+                  day.prayers.map((slot) => <PrayerCell key={slot.key} slot={slot} />)
+                )}
+              </summary>
+
+              <div className={styles.prayerRowDetail}>
+                <div className={styles.prayerDetailHead}>
+                  <span>Prayer</span>
+                  <span>Time</span>
+                  <span>Be in by</span>
+                  <span>Signed in</span>
+                </div>
+                {day.prayers.map((slot) => (
+                  <div key={slot.key} className={styles.prayerDetailRow}>
+                    <span>{slot.label}</span>
+                    <span>{slot.scheduled ?? "—"}</span>
+                    <span>{slot.expectedBy ?? "—"}</span>
+                    <span data-status={slot.status}>
+                      {slot.signInTime
+                        ? `${slot.signInTime}${slot.lateMinutes > 0 ? ` (+${slot.lateMinutes}m)` : ""}`
+                        : slot.status === "missed"
+                          ? "Absent"
+                          : slot.status === "leave"
+                            ? "Leave"
+                            : "—"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function PrayerCell({ slot }: { slot: PrayerSlot }) {
+  const signedIn = slot.status === "onTime" || slot.status === "late";
+  const main = signedIn
+    ? clockOnly(slot.signInTime)
+    : slot.status === "missed"
+      ? "—"
+      : clockOnly(slot.scheduled) || "—";
+  const sub =
+    slot.status === "late"
+      ? `+${slot.lateMinutes}m`
+      : slot.status === "onTime"
+        ? "on time"
+        : slot.status === "missed"
+          ? "absent"
+          : slot.status === "due"
+            ? "due"
+            : "";
+
+  return (
+    <span
+      className={styles.prayerSlotCell}
+      data-status={slot.status}
+      title={`${slot.label}${slot.scheduled ? ` at ${slot.scheduled}` : ""}: ${prayerSlotBadge(slot)}`}
+    >
+      <strong>{main}</strong>
+      {sub ? <small>{sub}</small> : null}
+    </span>
+  );
+}
+
 /* ---------------- Leave ---------------- */
 
 function LeaveSection({
@@ -1291,10 +1732,13 @@ function CreditSchemeCard({ scheme }: { scheme: EmployeeDetailsView["creditSchem
 function Panel({
   icon: Icon,
   title,
+  aside,
   children,
 }: {
   icon: LucideIcon;
   title: string;
+  /** Small summary on the right of the title. */
+  aside?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -1306,6 +1750,7 @@ function Panel({
           </div>
           <h2 className={styles.panelTitle}>{title}</h2>
         </div>
+        {aside ? <span className={styles.panelAside}>{aside}</span> : null}
       </div>
       {children}
     </section>

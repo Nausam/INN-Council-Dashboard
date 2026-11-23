@@ -11,9 +11,20 @@ import {
 import type { EmployeeDoc } from "@/lib/firebase/types";
 import { getEmployeeProfileSessionId, requireEmployeeProfileAccess } from "@/lib/auth/employee-profile-session";
 import { monthFromSearchParam } from "@/lib/dates/page-params";
-import { lastWeekStartIso, maldivesTodayIso } from "@/lib/employees/details-dashboard";
+import {
+  isMosqueEmployee,
+  lastWeekStartIso,
+  maldivesTodayIso,
+  mosqueProfileDates,
+} from "@/lib/employees/details-dashboard";
+import { loadPrayerSchedule } from "@/lib/employees/prayer-schedule";
+import { graceMinutesForDesignation } from "@/lib/attendance-sync/employee-sync";
 import { employeePhotoUrl } from "@/lib/employees/photo";
-import { DetailsSkeleton, EmployeeDetailsDashboardView } from "./EmployeeDetailsDashboardView";
+import {
+  DetailsSkeleton,
+  EmployeeDetailsDashboardView,
+  type MosqueProfileData,
+} from "./EmployeeDetailsDashboardView";
 
 type TabId = "overview" | "attendance" | "leave" | "pay" | "requests";
 
@@ -45,11 +56,13 @@ async function DashboardWithRecords({
   records,
   initialTab,
   viewerIsEmployee,
+  mosque,
 }: {
   employee: EmployeeDoc;
   records: ReturnType<typeof loadDashboardRecords>;
   initialTab: TabId;
   viewerIsEmployee: boolean;
+  mosque?: MosqueProfileData;
 }) {
   return (
     <EmployeeDetailsDashboardView
@@ -57,6 +70,7 @@ async function DashboardWithRecords({
       {...await records}
       initialTab={initialTab}
       viewerIsEmployee={viewerIsEmployee}
+      mosque={mosque}
     />
   );
 }
@@ -88,6 +102,16 @@ export default async function EmployeeDetailsDashboardPage({
   const employee = await fetchEmployeeById(params.id).catch(() => null);
   if (!employee) return <EmployeeDetailsDashboardView employee={null} />;
 
+  // Mosque staff see each day's five prayers against the scheduled times.
+  const mosque = isMosqueEmployee(employee)
+    ? {
+        schedule: loadPrayerSchedule(mosqueProfileDates(maldivesTodayIso())),
+        graceMinutes: graceMinutesForDesignation(
+          typeof employee.designation === "string" ? employee.designation : undefined,
+        ),
+      }
+    : undefined;
+
   return (
     <Suspense
       fallback={
@@ -103,6 +127,7 @@ export default async function EmployeeDetailsDashboardPage({
         records={records}
         initialTab={initialTab}
         viewerIsEmployee={getEmployeeProfileSessionId() === params.id}
+        mosque={mosque}
       />
     </Suspense>
   );

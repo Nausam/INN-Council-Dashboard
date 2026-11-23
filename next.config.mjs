@@ -56,6 +56,8 @@ const nextConfig = {
       ],
       // match your API route file path precisely
       "app/api/innamaadhoo/route.ts": ["./data/salat.db"],
+      // The mosque employee profile reads prayer times on the server.
+      "/employees/details/**": ["./data/salat.db"],
     },
   },
 };
