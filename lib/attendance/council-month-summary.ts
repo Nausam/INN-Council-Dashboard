@@ -23,6 +23,8 @@ export type CouncilMonthRow = {
   daysAttended: number;
   lateMinutes: number;
   lateDays: number;
+  /** Each late day, oldest first. */
+  lateDates: Array<{ date: string; signInTime: string; minutes: number }>;
   leaveDays: number;
 };
 
@@ -106,6 +108,10 @@ export async function buildCouncilMonthSummary(start: string, end: string): Prom
     // Worked out from the sign-in with today's rule (08:31 is 1 minute late),
     // rather than trusting minutes saved under older rules.
     const late = attended.map((row) => computeCouncilMinutesLate(row.signInTime!, row.date));
+    const lateDates = attended
+      .map((row, index) => ({ date: row.date, signInTime: row.signInTime!, minutes: late[index] }))
+      .filter((day) => day.minutes > 0)
+      .sort((a, b) => a.date.localeCompare(b.date));
     return {
       employeeId: employee.$id,
       name: employee.name,
@@ -114,7 +120,8 @@ export async function buildCouncilMonthSummary(start: string, end: string): Prom
       tracked: tracked.has(employee.$id) || Boolean(employee.fixedSignInTime?.trim()),
       daysAttended: attended.length,
       lateMinutes: late.reduce((total, minutes) => total + minutes, 0),
-      lateDays: late.filter((minutes) => minutes > 0).length,
+      lateDays: lateDates.length,
+      lateDates,
       leaveDays: own.filter((row) => row.leaveType).length,
     };
   });

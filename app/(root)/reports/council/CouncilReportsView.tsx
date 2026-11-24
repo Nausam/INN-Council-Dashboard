@@ -4,12 +4,23 @@ import { AvatarGlow } from "@/components/design-system";
 import type { CouncilMonthSummary } from "@/lib/attendance/council-month-summary";
 import { cn } from "@/lib/utils";
 import { maldivesTodayIso } from "@/lib/employees/details-dashboard";
-import { Download, Loader2 } from "lucide-react";
+import { ChevronDown, Download, Loader2 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 
 function shortDate(iso: string): string {
   return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { day: "numeric", month: "short", timeZone: "UTC" });
+}
+
+function weekdayDate(iso: string): string {
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+}
+
+/** Sign-in time in Maldives time, e.g. "08:42". */
+function signInClock(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Indian/Maldives" });
 }
 
 /** "1 – 28 Oct 2026", "28 Sep – 3 Oct 2026" or across years in full. */
@@ -51,6 +62,7 @@ export function CouncilReportsView({ summary }: { summary: CouncilMonthSummary }
   const pathname = usePathname();
   const [pending, startTransition] = useTransition();
   const [section, setSection] = useState("All");
+  const [openLate, setOpenLate] = useState<string | null>(null);
   const [from, setFrom] = useState(summary.start);
   const [to, setTo] = useState(summary.end);
   const quickRanges = useMemo(presets, []);
@@ -81,9 +93,19 @@ export function CouncilReportsView({ summary }: { summary: CouncilMonthSummary }
   const title = rangeTitle(summary.start, summary.end);
 
   const downloadCSV = () => {
-    const header = ["Name", "Designation", "Section", "Days attended", "Working days", "Late minutes", "Late days", "Leave days"];
+    const header = ["Name", "Designation", "Section", "Days attended", "Working days", "Late minutes", "Late days", "Leave days", "Late dates"];
     const lines = rows.map((row) =>
-      [row.name, row.designation, row.section, row.daysAttended, summary.workingDays, row.lateMinutes, row.lateDays, row.leaveDays]
+      [
+        row.name,
+        row.designation,
+        row.section,
+        row.daysAttended,
+        summary.workingDays,
+        row.lateMinutes,
+        row.lateDays,
+        row.leaveDays,
+        row.lateDates.map((day) => `${day.date} (${day.minutes} min)`).join("; "),
+      ]
         .map((value) => `"${String(value).replace(/"/g, '""')}"`)
         .join(","),
     );
@@ -237,6 +259,7 @@ export function CouncilReportsView({ summary }: { summary: CouncilMonthSummary }
           <ol className="divide-y divide-[#f0f3f1]">
             {rows.map((row, index) => {
               const share = summary.workingDays ? Math.min(1, row.daysAttended / summary.workingDays) : 0;
+              const lateOpen = openLate === row.employeeId && row.lateDates.length > 0;
               return (
                 <li
                   key={row.employeeId}
@@ -273,9 +296,31 @@ export function CouncilReportsView({ summary }: { summary: CouncilMonthSummary }
                     </span>
                     <span className="ml-1 text-xs font-bold text-[#93a29b]">min</span>
                     {row.lateDays ? (
-                      <p className="text-[11px] font-semibold text-[#93a29b]">on {row.lateDays} {row.lateDays === 1 ? "day" : "days"}</p>
+                      <button
+                        type="button"
+                        onClick={() => setOpenLate(lateOpen ? null : row.employeeId)}
+                        aria-expanded={lateOpen}
+                        className="ml-auto mt-1 flex w-fit items-center gap-0.5 rounded-full text-[11px] font-bold text-[#b4643c] underline decoration-[#f0c9b3] decoration-dotted underline-offset-2 transition hover:text-[#8f4a28]"
+                      >
+                        on {row.lateDays} {row.lateDays === 1 ? "day" : "days"}
+                        <ChevronDown className={cn("h-3 w-3 transition", lateOpen && "rotate-180")} />
+                      </button>
                     ) : null}
                   </div>
+                  {lateOpen ? (
+                    <div className="col-span-full rounded-2xl bg-[#fff8f3] px-4 py-3 sm:col-start-2">
+                      <p className="mb-2 text-[11px] font-extrabold uppercase tracking-wide text-[#b4643c]">Late on</p>
+                      <ul className="flex flex-wrap gap-2">
+                        {row.lateDates.map((day) => (
+                          <li key={day.date} className="rounded-xl border border-[#f6dccd] bg-white px-3 py-1.5 text-xs shadow-sm">
+                            <span className="font-black text-[#1c2d2e]">{weekdayDate(day.date)}</span>
+                            <span className="ml-2 font-semibold tabular-nums text-[#84918e]">{signInClock(day.signInTime)}</span>
+                            <span className="ml-2 font-black tabular-nums text-[#b4643c]">{day.minutes} min</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
                 </li>
               );
             })}
