@@ -36,6 +36,10 @@ function testPrayerClassification() {
   assert.equal(classifyPunchMinute(4 * 60 + 20, times), "fathisSignInTime");
   assert.equal(classifyPunchMinute(12 * 60 + 10, times), "mendhuruSignInTime");
   assert.equal(classifyPunchMinute(23 * 60, times, "19:40"), null);
+  // A lateness-exempt prayer takes any punch in its window, however late.
+  const exemptIsha = new Set(["ishaSignInTime"] as const);
+  assert.equal(classifyPunchMinute(23 * 60, times, "19:40", exemptIsha), "ishaSignInTime");
+  assert.equal(classifyPunchMinute(17 * 60 + 30, times, null, exemptIsha), "maqribSignInTime");
 }
 
 function testLateness() {

@@ -141,6 +141,11 @@ export async function reconcileMosqueAttendanceDate(
       etimeCode: employee.attendanceSync?.etime?.employeeCode,
     });
 
+    // A prayer the employee is never late for counts any punch in its window,
+    // however long after the prayer time.
+    const exemptPrayers = new Set(
+      MOSQUE_PRAYERS.filter((prayer) => isLatenessExempt(employee.name, prayer, date)),
+    );
     const classified = prayerTimes
       ? punches.map((punch) => {
           const { localMinutes } = utcToMaldivesParts(punch.timestampUtc);
@@ -149,6 +154,7 @@ export async function reconcileMosqueAttendanceDate(
             localMinutes,
             prayerTimes,
             previousIsha,
+            exemptPrayers,
           )?.prayer ?? null;
           return {
             punchLogId: punch.$id,

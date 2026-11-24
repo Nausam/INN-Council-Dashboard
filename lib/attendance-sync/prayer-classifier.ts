@@ -79,10 +79,17 @@ function isWithinInterval(minute: number, lower: number, upper: number): boolean
   return minute >= lower || minute < upper;
 }
 
+/**
+ * The prayer a punch at `localMinutes` counts for, or null. A punch more than
+ * MAX_PRAYER_DISTANCE_MINUTES from its prayer doesn't count, except for
+ * `noDistanceLimit` prayers (lateness-exempt ones), which take any punch in
+ * their window.
+ */
 export function classifyPunchMinute(
   localMinutes: number,
   prayerTimes: PrayerTimesByKey,
   previousDayIshaTime?: string | null,
+  noDistanceLimit?: ReadonlySet<MosquePrayer>,
 ): MosquePrayer | null {
   const schedule = buildPrayerSchedule(prayerTimes, previousDayIshaTime);
 
@@ -91,6 +98,7 @@ export function classifyPunchMinute(
       continue;
     }
 
+    if (noDistanceLimit?.has(entry.prayer)) return entry.prayer;
     const distance = circularDistanceMinutes(localMinutes, entry.scheduledMinutes);
     if (distance > MAX_PRAYER_DISTANCE_MINUTES) return null;
     return entry.prayer;
@@ -104,8 +112,9 @@ export function classifyPunch(
   localMinutes: number,
   prayerTimes: PrayerTimesByKey,
   previousDayIshaTime?: string | null,
+  noDistanceLimit?: ReadonlySet<MosquePrayer>,
 ): ClassifiedPunch | null {
-  const prayer = classifyPunchMinute(localMinutes, prayerTimes, previousDayIshaTime);
+  const prayer = classifyPunchMinute(localMinutes, prayerTimes, previousDayIshaTime, noDistanceLimit);
   if (!prayer) return null;
 
   const schedule = buildPrayerSchedule(prayerTimes, previousDayIshaTime);

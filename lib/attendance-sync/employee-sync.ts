@@ -185,7 +185,11 @@ export function buildSourceEmployeeMaps(
   };
 }
 
-/** Prayers an employee is never counted late for, from a given date on. */
+/**
+ * Prayers an employee is never counted late for, from a given date on. These
+ * also accept a punch anywhere in the prayer's window, not just within the
+ * usual 90 minutes of the prayer time.
+ */
 const LATENESS_EXEMPTIONS: Array<{ name: string; prayer: MosquePrayer; from: string }> = [
   { name: "Hawwa Luiza", prayer: "ishaSignInTime", from: "2026-10-16" },
 ];
