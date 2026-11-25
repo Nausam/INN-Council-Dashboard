@@ -1,17 +1,51 @@
 import {
   computeSalarySlipsForPeriod,
+  paysPrayerAttendanceBenefit,
   type SalarySlipComputed,
 } from "@/lib/salary-slips/compute-slip";
 import {
   fetchAllEmployees,
   fetchAttendanceForPayPeriod,
   fetchEmployeeById,
+  fetchMosqueAttendanceForEmployeeRange,
+  fetchMosqueAttendanceForPeriod,
   fetchPayPeriodHolidayDates,
 } from "@/lib/firebase/hr";
-import { formatPayPeriodRange } from "@/lib/salary-slips/pay-period";
+import type { EmployeeDoc, MosqueAttendanceDoc } from "@/lib/firebase/types";
+import {
+  formatPayPeriodRange,
+  getPayPeriodBounds,
+} from "@/lib/salary-slips/pay-period";
 import { hasEmployeeProfileAccess } from "@/lib/auth/employee-profile-session";
 import { getSessionAuthProfile } from "@/lib/auth/session-profile";
 import { NextRequest, NextResponse } from "next/server";
+
+function dayAfterIso(iso: string): string {
+  const date = new Date(`${iso}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Mosque attendance for the pay period, read only when someone on the slip
+ * is paid the attendance benefit per prayer.
+ */
+async function fetchPrayerBenefitAttendance(
+  employees: EmployeeDoc[],
+  periodLabel: string,
+): Promise<MosqueAttendanceDoc[]> {
+  const bounds = getPayPeriodBounds(periodLabel);
+  const perPrayer = employees.filter(paysPrayerAttendanceBenefit);
+  if (!bounds || perPrayer.length === 0) return [];
+  if (employees.length === 1) {
+    return fetchMosqueAttendanceForEmployeeRange(
+      perPrayer[0].$id,
+      bounds.startIso,
+      dayAfterIso(bounds.endIso),
+    );
+  }
+  return fetchMosqueAttendanceForPeriod(bounds.startIso, bounds.endIso);
+}
 
 export async function GET(request: NextRequest) {
   const period = request.nextUrl.searchParams.get("period");
@@ -39,12 +73,14 @@ export async function GET(request: NextRequest) {
       fetchAttendanceForPayPeriod(trimmed),
       fetchPayPeriodHolidayDates(trimmed),
     ]);
+    const mosqueAttendance = await fetchPrayerBenefitAttendance(employees, trimmed);
 
     const slips: SalarySlipComputed[] = computeSalarySlipsForPeriod(
       employees,
       trimmed,
       attendance,
       holidayDates,
+      mosqueAttendance,
     );
 
     if (employeeId && slips.length === 0) {

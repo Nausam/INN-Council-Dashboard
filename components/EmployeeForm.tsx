@@ -34,6 +34,15 @@ import {
 import { employeeFormDataForFirestore } from "@/lib/employees/form-payload";
 import { isDhivehiText } from "@/lib/leave/dhivehi-text";
 import { computeRetirementPension } from "@/lib/employees/retirement-pension";
+import {
+  isCouncillorEmployee,
+  isMosqueEmployee,
+} from "@/lib/employees/details-dashboard";
+import {
+  PRAYER_ATTENDANCE_BENEFIT_FIELDS,
+  PRAYER_ATTENDANCE_BENEFIT_KEYS,
+  type PrayerAttendanceBenefitKey,
+} from "@/lib/employees/prayer-attendance-benefit";
 import { cn } from "@/lib/utils";
 import { useParams, useRouter } from "next/navigation";
 import React, { useState } from "react";
@@ -47,10 +56,16 @@ import {
   DollarSign,
   FileText,
   Fingerprint,
+  HandHeart,
   Heart,
   Clock,
   Home,
   Landmark,
+  CloudSun,
+  Moon,
+  Sun,
+  Sunrise,
+  Sunset,
   UtensilsCrossed,
   MapPin,
   Phone,
@@ -94,7 +109,16 @@ export type EmployeeFormData = {
   retirementPensionApplies: boolean;
   retirementPension: number;
   jobAllowance: number;
+  /** Councillors only. */
+  serviceAllowance: number;
   attendanceBenefit: number;
+  /** Mosque staff: MVR per attended prayer. */
+  fathisAttendanceBenefit: number;
+  mendhuruAttendanceBenefit: number;
+  hukuruAttendanceBenefit: number;
+  asuruAttendanceBenefit: number;
+  maqribAttendanceBenefit: number;
+  ishaAttendanceBenefit: number;
   temporaryZvAllowance: number;
   ramazanAllowance: number;
   livingAllowance: number;
@@ -118,7 +142,9 @@ type SalaryFieldKey =
   | "basicSalary"
   | "retirementPension"
   | "jobAllowance"
+  | "serviceAllowance"
   | "attendanceBenefit"
+  | PrayerAttendanceBenefitKey
   | "temporaryZvAllowance"
   | "ramazanAllowance"
   | "livingAllowance"
@@ -128,7 +154,9 @@ type SalaryFieldKey =
 const SALARY_NUMERIC_FIELDS: SalaryFieldKey[] = [
   "basicSalary",
   "jobAllowance",
+  "serviceAllowance",
   "attendanceBenefit",
+  ...PRAYER_ATTENDANCE_BENEFIT_KEYS,
   "temporaryZvAllowance",
   "ramazanAllowance",
   "livingAllowance",
@@ -140,7 +168,14 @@ const defaultSalaryFields: Record<SalaryFieldKey, number> = {
   basicSalary: 0,
   retirementPension: 0,
   jobAllowance: 0,
+  serviceAllowance: 0,
   attendanceBenefit: 0,
+  fathisAttendanceBenefit: 0,
+  mendhuruAttendanceBenefit: 0,
+  hukuruAttendanceBenefit: 0,
+  asuruAttendanceBenefit: 0,
+  maqribAttendanceBenefit: 0,
+  ishaAttendanceBenefit: 0,
   temporaryZvAllowance: 0,
   ramazanAllowance: 0,
   livingAllowance: 0,
@@ -182,7 +217,14 @@ function buildInitialFormData(
       initialData?.retirementPensionApplies ?? true,
     ),
     jobAllowance: initialData?.jobAllowance ?? 0,
+    serviceAllowance: initialData?.serviceAllowance ?? 0,
     attendanceBenefit: initialData?.attendanceBenefit ?? 0,
+    fathisAttendanceBenefit: initialData?.fathisAttendanceBenefit ?? 0,
+    mendhuruAttendanceBenefit: initialData?.mendhuruAttendanceBenefit ?? 0,
+    hukuruAttendanceBenefit: initialData?.hukuruAttendanceBenefit ?? 0,
+    asuruAttendanceBenefit: initialData?.asuruAttendanceBenefit ?? 0,
+    maqribAttendanceBenefit: initialData?.maqribAttendanceBenefit ?? 0,
+    ishaAttendanceBenefit: initialData?.ishaAttendanceBenefit ?? 0,
     temporaryZvAllowance: initialData?.temporaryZvAllowance ?? 0,
     ramazanAllowance: initialData?.ramazanAllowance ?? 0,
     livingAllowance: initialData?.livingAllowance ?? 0,
@@ -205,6 +247,7 @@ const SALARY_FIELD_CONFIG: {
     computed: true,
   },
   { id: "jobAllowance", label: "Job Allowance", icon: Briefcase },
+  { id: "serviceAllowance", label: "Service Allowance", icon: HandHeart },
   { id: "attendanceBenefit", label: "Attendance Benefit (per day)", icon: Clock },
   {
     id: "temporaryZvAllowance",
@@ -216,6 +259,15 @@ const SALARY_FIELD_CONFIG: {
   { id: "foodAllowance", label: "Food Allowance", icon: UtensilsCrossed },
   { id: "phoneAllowance", label: "Phone Allowance", icon: Phone },
 ];
+
+const PRAYER_BENEFIT_ICONS: Record<PrayerAttendanceBenefitKey, LucideIcon> = {
+  fathisAttendanceBenefit: Sunrise,
+  mendhuruAttendanceBenefit: Sun,
+  hukuruAttendanceBenefit: Landmark,
+  asuruAttendanceBenefit: CloudSun,
+  maqribAttendanceBenefit: Sunset,
+  ishaAttendanceBenefit: Moon,
+};
 
 interface EmployeeFormProps {
   initialData?: Partial<EmployeeFormData>;
@@ -261,6 +313,9 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
   const router = useRouter();
   const isEdit = Boolean(employeeId);
   const isSubmitting = isLoadingProp ?? loading;
+  // Mosque staff earn the attendance benefit per prayer instead of per day.
+  const isMosque = isMosqueEmployee(formData);
+  const isCouncillor = isCouncillorEmployee(formData);
   const { invalidateEmployees } = useQueryInvalidation();
 
   const handleInputChange = (
@@ -595,10 +650,16 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
           <FormSection
             icon={Wallet}
             title="Salary & Allowances"
-            description="Salary components in MVR; attendance and ZV allowances are per day"
+            description={
+              isMosque
+                ? "Salary components in MVR; attendance benefit is per prayer and ZV allowance is per day"
+                : "Salary components in MVR; attendance and ZV allowances are per day"
+            }
           >
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {SALARY_FIELD_CONFIG.map(({ id, label, icon: Icon, computed }) => {
+                if (id === "attendanceBenefit" && isMosque) return null;
+                if (id === "serviceAllowance" && !isCouncillor) return null;
                 if (id === "retirementPension") {
                   return (
                     <RetirementPensionField
@@ -625,6 +686,34 @@ const EmployeeForm: React.FC<EmployeeFormProps> = ({
                 );
               })}
             </div>
+
+            {isMosque && (
+              <div className="mt-6 border-t border-slate-100 pt-6">
+                <h3 className={cn(typography.caption, "mb-1 text-slate-700")}>
+                  Attendance Benefit (per prayer)
+                </h3>
+                <p className="mb-4 text-xs text-slate-500">
+                  MVR paid for each prayer attended; Friday&apos;s Mendhuru is paid at the Hukuru rate
+                </p>
+                <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-6">
+                  {PRAYER_ATTENDANCE_BENEFIT_FIELDS.map(({ key, prayer }) => {
+                    const Icon = PRAYER_BENEFIT_ICONS[key];
+                    return (
+                      <NumberField
+                        key={key}
+                        id={key}
+                        label={prayer}
+                        value={formData[key]}
+                        onChange={handleInputChange}
+                        icon={<Icon className="h-4 w-4" />}
+                        required={false}
+                        step="0.01"
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </FormSection>
 
           <FormSection

@@ -50,7 +50,14 @@ type EmployeeDoc = {
   retirementPension?: number;
   retirementPensionApplies?: boolean;
   jobAllowance?: number;
+  serviceAllowance?: number;
   attendanceBenefit?: number;
+  fathisAttendanceBenefit?: number;
+  mendhuruAttendanceBenefit?: number;
+  hukuruAttendanceBenefit?: number;
+  asuruAttendanceBenefit?: number;
+  maqribAttendanceBenefit?: number;
+  ishaAttendanceBenefit?: number;
   temporaryZvAllowance?: number;
   ramazanAllowance?: number;
   livingAllowance?: number;
@@ -71,7 +78,14 @@ function salaryFieldsFromDoc(r: EmployeeDoc) {
       retirementPensionApplies,
     ),
     jobAllowance: num(r.jobAllowance),
+    serviceAllowance: num(r.serviceAllowance),
     attendanceBenefit: num(r.attendanceBenefit),
+    fathisAttendanceBenefit: num(r.fathisAttendanceBenefit),
+    mendhuruAttendanceBenefit: num(r.mendhuruAttendanceBenefit),
+    hukuruAttendanceBenefit: num(r.hukuruAttendanceBenefit),
+    asuruAttendanceBenefit: num(r.asuruAttendanceBenefit),
+    maqribAttendanceBenefit: num(r.maqribAttendanceBenefit),
+    ishaAttendanceBenefit: num(r.ishaAttendanceBenefit),
     temporaryZvAllowance: num(r.temporaryZvAllowance),
     ramazanAllowance: num(r.ramazanAllowance),
     livingAllowance: num(r.livingAllowance),

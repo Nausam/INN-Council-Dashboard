@@ -141,8 +141,18 @@ export type EmployeeDoc = LegacyDocument & {
   /** When false, pension deduction is not applied (defaults to true). */
   retirementPensionApplies?: boolean;
   jobAllowance?: number;
+  /** Councillors only: MVR per month. */
+  serviceAllowance?: number;
   /** MVR per working day */
   attendanceBenefit?: number;
+  /** Mosque staff: MVR per attended prayer, one rate per prayer. */
+  fathisAttendanceBenefit?: number;
+  mendhuruAttendanceBenefit?: number;
+  /** Friday's Mendhuru. */
+  hukuruAttendanceBenefit?: number;
+  asuruAttendanceBenefit?: number;
+  maqribAttendanceBenefit?: number;
+  ishaAttendanceBenefit?: number;
   /** MVR per working day */
   temporaryZvAllowance?: number;
   ramazanAllowance?: number;

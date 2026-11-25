@@ -1,4 +1,10 @@
 import { parseCreditSchemesFromDoc } from "@/lib/employees/credit-schemes";
+import { isMosqueEmployee } from "@/lib/employees/details-dashboard";
+import {
+  computePrayerAttendanceBenefit,
+  hasPrayerAttendanceBenefit,
+  prayerAttendanceBenefitRates,
+} from "@/lib/employees/prayer-attendance-benefit";
 import { recordCardLabelForEmployee } from "@/lib/employees/record-card-label";
 import {
   computeRetirementPension,
@@ -12,12 +18,17 @@ import { formatJoinedDate, formatPeriodTitle } from "@/lib/salary-slips/format";
 import {
   countAttendanceBenefitEligibleDaysInPeriod,
   getPayPeriodBounds,
+  isAttendanceBenefitEligibleDay,
   isOnAttendanceLeave,
   parsePayPeriodBoundsAsDates,
   qualifiesForAttendanceBenefit,
   resolveAttendanceRowDate,
 } from "@/lib/salary-slips/pay-period";
-import type { AttendanceDoc, EmployeeDoc } from "@/lib/firebase/types";
+import type {
+  AttendanceDoc,
+  EmployeeDoc,
+  MosqueAttendanceDoc,
+} from "@/lib/firebase/types";
 
 export type SalarySlipLine = {
   key: string;
@@ -53,6 +64,8 @@ export type SalarySlipComputed = {
     eligibleBenefitDaysInPeriod: number;
     totalMinutesLate: number;
     absentDays: number;
+    /** Mosque staff paid per prayer: prayers that earned the attendance benefit. */
+    benefitPrayers?: number;
   };
 };
 
@@ -277,7 +290,9 @@ function summarizeAttendance(
       ) {
         benefitPresentDays += 1;
       }
-    } else {
+    } else if (isAttendanceBenefitEligibleDay(rowDate, holidayDates)) {
+      // Sheets exist for every day; only a missed working day is an absence,
+      // not a Friday, Saturday or public holiday.
       absentDays += 1;
     }
   }
@@ -295,6 +310,27 @@ function dailyRate(basicSalary: number): number {
   return basicSalary / WORKING_DAYS_PER_MONTH;
 }
 
+/** Whether this employee's attendance benefit is paid per prayer from mosque attendance. */
+export function paysPrayerAttendanceBenefit(employee: EmployeeDoc): boolean {
+  return (
+    isMosqueEmployee(employee) &&
+    hasPrayerAttendanceBenefit(prayerAttendanceBenefitRates(employee))
+  );
+}
+
+function mosqueRowsInPeriod(
+  employeeId: string,
+  rows: MosqueAttendanceDoc[],
+  periodLabel: string,
+): MosqueAttendanceDoc[] {
+  const bounds = getPayPeriodBounds(periodLabel);
+  return rows.filter((row) => {
+    if (row.employeeId !== employeeId) return false;
+    const date = (row.date ?? "").slice(0, 10);
+    return !bounds || (date >= bounds.startIso && date <= bounds.endIso);
+  });
+}
+
 /** Basic salary ÷ 30 days ÷ working hours per day ÷ 60 minutes. */
 function lateMinuteRate(basicSalary: number): number {
   return (
@@ -308,6 +344,7 @@ export function computeSalarySlip(
   attendanceRows: AttendanceDoc[],
   holidayDates: ReadonlySet<string> = new Set(),
   temporaryZvAllowanceOverride?: number,
+  mosqueAttendanceRows: MosqueAttendanceDoc[] = [],
 ): SalarySlipComputed {
   const basicSalary = round2(num(employee.basicSalary));
   const livingAllowance = round2(num(employee.livingAllowance));
@@ -315,6 +352,7 @@ export function computeSalarySlip(
   const ramazanAllowance = round2(num(employee.ramazanAllowance));
   const phoneAllowance = round2(num(employee.phoneAllowance));
   const jobAllowance = round2(num(employee.jobAllowance));
+  const serviceAllowance = round2(num(employee.serviceAllowance));
   const attendanceBenefitRate = round2(num(employee.attendanceBenefit));
   const zvAllowanceRate = round2(num(employee.temporaryZvAllowance));
 
@@ -354,9 +392,16 @@ export function computeSalarySlip(
     retirementPensionAppliesFromDoc(employee.retirementPensionApplies),
   );
 
-  const attendanceBenefit = round2(
-    attendanceBenefitRate * summary.benefitPresentDays,
-  );
+  // Mosque staff with per-prayer rates earn the benefit per signed-in prayer.
+  const prayerBenefit = paysPrayerAttendanceBenefit(employee)
+    ? computePrayerAttendanceBenefit(
+        prayerAttendanceBenefitRates(employee),
+        mosqueRowsInPeriod(employee.$id, mosqueAttendanceRows, periodLabel),
+      )
+    : null;
+  const attendanceBenefit = prayerBenefit
+    ? round2(prayerBenefit.amount)
+    : round2(attendanceBenefitRate * summary.benefitPresentDays);
   const zvAllowance =
     typeof temporaryZvAllowanceOverride === "number"
       ? round2(temporaryZvAllowanceOverride)
@@ -395,15 +440,19 @@ export function computeSalarySlip(
     zv: zvAllowance,
     phone: phoneAllowance,
     job: round2(Math.max(0, jobAllowance - jobAllowanceLateFine)),
+    service: serviceAllowance,
     attendanceBenefit,
   };
 
-  const allowances: SalarySlipLine[] = ALLOWANCE_SLIP_LINES.map((line) => ({
-    key: line.key,
-    labelEn: line.en,
-    labelDv: line.dv,
-    amount: round2(allowanceAmounts[line.key]),
-  }));
+  const allowances: SalarySlipLine[] = ALLOWANCE_SLIP_LINES
+    // Only councillors get a service allowance; keep the row off everyone else's slip.
+    .filter((line) => line.key !== "service" || serviceAllowance > 0)
+    .map((line) => ({
+      key: line.key,
+      labelEn: line.en,
+      labelDv: line.dv,
+      amount: round2(allowanceAmounts[line.key]),
+    }));
 
   const totalAllowances = round2(
     allowances.reduce((sum, line) => sum + line.amount, 0),
@@ -434,7 +483,9 @@ export function computeSalarySlip(
     totalAllowances,
     overtime,
     netIncome,
-    attendanceSummary: summary,
+    attendanceSummary: prayerBenefit
+      ? { ...summary, benefitPrayers: prayerBenefit.prayers }
+      : summary,
   };
 }
 
@@ -443,6 +494,7 @@ export function computeSalarySlipsForPeriod(
   periodLabel: string,
   attendanceRows: AttendanceDoc[],
   holidayDates: string[] = [],
+  mosqueAttendanceRows: MosqueAttendanceDoc[] = [],
 ): SalarySlipComputed[] {
   const holidaySet = new Set(holidayDates);
   const temporaryZvAllowances = computeTemporaryZvAllowances(
@@ -458,6 +510,7 @@ export function computeSalarySlipsForPeriod(
         attendanceRows,
         holidaySet,
         temporaryZvAllowances.get(employee.$id) ?? 0,
+        mosqueAttendanceRows,
       ),
     )
     .sort((a, b) => a.staff.name.localeCompare(b.staff.name));

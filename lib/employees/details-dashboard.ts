@@ -78,7 +78,14 @@ const PAY_FIELDS = [
   ["basicSalary", "Basic Salary"],
   ["retirementPension", "Retirement Pension"],
   ["jobAllowance", "Job Allowance"],
+  ["serviceAllowance", "Service Allowance"],
   ["attendanceBenefit", "Attendance Benefit"],
+  ["fathisAttendanceBenefit", "Fathis Attendance Benefit"],
+  ["mendhuruAttendanceBenefit", "Mendhuru Attendance Benefit"],
+  ["hukuruAttendanceBenefit", "Hukuru Attendance Benefit"],
+  ["asuruAttendanceBenefit", "Asuru Attendance Benefit"],
+  ["maqribAttendanceBenefit", "Maqrib Attendance Benefit"],
+  ["ishaAttendanceBenefit", "Isha Attendance Benefit"],
   ["temporaryZvAllowance", "Temporary ZV Allowance"],
   ["ramazanAllowance", "Ramazan Allowance"],
   ["livingAllowance", "Living Allowance"],
@@ -545,6 +552,11 @@ export function mosqueProfileDates(todayIso: string): string[] {
 
 export function isMosqueEmployee(employee: { section?: unknown }): boolean {
   return typeof employee.section === "string" && employee.section.trim().toLowerCase() === "mosque";
+}
+
+/** Councillors are paid a monthly service allowance. */
+export function isCouncillorEmployee(employee: { section?: unknown }): boolean {
+  return typeof employee.section === "string" && employee.section.trim().toLowerCase() === "councillor";
 }
 
 /** A prayer not signed in counts as this many minutes absent, as in the mosque reports. */

@@ -104,6 +104,11 @@ export const ALLOWANCE_SLIP_LINES = [
     dv: "ޖޮބް އެލަވަންސް",
   },
   {
+    key: "service" as const,
+    en: "Service Allowance",
+    dv: "ޚިދުމަތުގެ އިނާޔަތް",
+  },
+  {
     key: "attendanceBenefit" as const,
     en: "Attendance Benefit",
     dv: "ހާޒިރީ އިނާޔަތް",
