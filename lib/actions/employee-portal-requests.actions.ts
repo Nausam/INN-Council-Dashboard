@@ -9,17 +9,20 @@ import {
   fetchEmployeeById,
 } from "@/lib/firebase/hr";
 import type { OvertimeRequest } from "@/lib/firebase/types";
+import {
+  MAX_OVERTIME_MINUTES,
+  MAX_OVERTIME_RANGES,
+  rangeMinutes,
+  rangesOverlap,
+  sortRanges,
+  totalRangeMinutes,
+  type OvertimeTimeRange,
+} from "@/lib/overtime/time-ranges";
 
 function validDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const parsed = new Date(`${value}T00:00:00.000Z`);
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
-}
-
-function minutesFromTime(value: string): number | null {
-  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) return null;
-  const [hours, minutes] = value.split(":").map(Number);
-  return hours * 60 + minutes;
 }
 
 async function employeeForRequest(employeeId: string) {
@@ -31,25 +34,35 @@ async function employeeForRequest(employeeId: string) {
 
 function validatedOvertime(input: {
   workDate: string;
-  startTime: string;
-  endTime: string;
+  timeRanges: OvertimeTimeRange[];
   details: string;
 }) {
   const workDate = String(input.workDate ?? "");
-  const startTime = String(input.startTime ?? "");
-  const endTime = String(input.endTime ?? "");
   const details = String(input.details ?? "").trim();
-  const start = minutesFromTime(startTime);
-  const end = minutesFromTime(endTime);
-  if (!validDate(workDate) || start === null || end === null || start === end) {
+  const raw = Array.isArray(input.timeRanges) ? input.timeRanges : [];
+  if (!validDate(workDate) || raw.length < 1 || raw.length > MAX_OVERTIME_RANGES) {
     throw new Error("Invalid overtime date or time");
   }
-  const durationMinutes = (end - start + 1_440) % 1_440;
-  if (durationMinutes < 1 || durationMinutes > 16 * 60) {
+  const timeRanges = sortRanges(raw.map((range) => ({
+    startTime: String(range?.startTime ?? ""),
+    endTime: String(range?.endTime ?? ""),
+  })));
+  if (timeRanges.some((range) => !rangeMinutes(range))) throw new Error("Invalid overtime time");
+  if (rangesOverlap(timeRanges)) throw new Error("Overtime times overlap");
+  const durationMinutes = totalRangeMinutes(timeRanges) ?? 0;
+  if (durationMinutes < 1 || durationMinutes > MAX_OVERTIME_MINUTES) {
     throw new Error("Invalid overtime duration");
   }
   if (details.length < 2 || details.length > 500) throw new Error("Invalid details");
-  return { workDate, startTime, endTime, details, durationMinutes };
+  return {
+    workDate,
+    // The first start and last end, for views that show a single span.
+    startTime: timeRanges[0].startTime,
+    endTime: timeRanges[timeRanges.length - 1].endTime,
+    timeRanges,
+    details,
+    durationMinutes,
+  };
 }
 
 /** An employee may edit a pending OT request only when it is theirs alone. */
@@ -66,20 +79,13 @@ function isOwnPendingOvertime(request: OvertimeRequest | undefined, employeeId: 
 export async function submitEmployeeOvertimeRequest(input: {
   employeeId: string;
   workDate: string;
-  startTime: string;
-  endTime: string;
+  timeRanges: OvertimeTimeRange[];
   details: string;
 }): Promise<void> {
   const employeeId = String(input.employeeId ?? "").trim();
   const employee = await employeeForRequest(employeeId);
-  const { workDate, startTime, endTime, details, durationMinutes } = validatedOvertime(input);
-
   await createOvertimeRequest({
-    workDate,
-    details,
-    startTime,
-    endTime,
-    durationMinutes,
+    ...validatedOvertime(input),
     employees: [
       {
         employeeId,
@@ -99,8 +105,7 @@ export async function updateEmployeeOvertimeRequest(input: {
   employeeId: string;
   requestId: string;
   workDate: string;
-  startTime: string;
-  endTime: string;
+  timeRanges: OvertimeTimeRange[];
   details: string;
 }): Promise<{ ok: true } | { ok: false; code: "not_editable" }> {
   const employeeId = String(input.employeeId ?? "").trim();

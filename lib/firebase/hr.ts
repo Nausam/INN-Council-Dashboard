@@ -1585,6 +1585,7 @@ export async function createOvertimeRequest(data: {
   details: string;
   startTime: string;
   endTime: string;
+  timeRanges?: { startTime: string; endTime: string }[];
   durationMinutes: number;
   employees: OvertimeRequestEmployee[];
 }): Promise<OvertimeRequest> {

@@ -94,6 +94,7 @@ export function OvertimeRequestsPanel() {
             details={request.details}
             startTime={request.startTime}
             endTime={request.endTime}
+            timeRanges={request.timeRanges}
             durationMinutes={request.durationMinutes}
             employees={request.employees ?? []}
             status={request.approvalStatus as "Approved" | "Rejected" | "Pending"}

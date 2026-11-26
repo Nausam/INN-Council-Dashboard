@@ -2,6 +2,7 @@
 
 import type { OvertimeRequestEmployee } from "@/lib/firebase/types";
 import { formatCouncilTimeDisplay } from "@/components/design-system";
+import { overtimeRangesOf } from "@/lib/overtime/time-ranges";
 import { Trash2 } from "lucide-react";
 import React from "react";
 
@@ -11,6 +12,8 @@ interface AdminOvertimeRequestCardProps {
   details: string;
   startTime: string;
   endTime: string;
+  /** Every stretch worked; falls back to the single start and end. */
+  timeRanges?: { startTime: string; endTime: string }[];
   durationMinutes: number;
   employees: OvertimeRequestEmployee[];
   status: "Approved" | "Rejected" | "Pending";
@@ -42,6 +45,7 @@ const AdminOvertimeRequestCard: React.FC<AdminOvertimeRequestCardProps> = ({
   details,
   startTime,
   endTime,
+  timeRanges,
   durationMinutes,
   employees,
   status,
@@ -51,6 +55,7 @@ const AdminOvertimeRequestCard: React.FC<AdminOvertimeRequestCardProps> = ({
   onReject,
   onDelete,
 }) => {
+  const ranges = overtimeRangesOf({ startTime, endTime, timeRanges });
   const employeeSummary =
     employees.length === 1
       ? employees[0]?.name
@@ -115,16 +120,29 @@ const AdminOvertimeRequestCard: React.FC<AdminOvertimeRequestCardProps> = ({
 
       <div className="mt-6 space-y-2 text-sm">
         <div className="flex justify-between gap-4">
-          <p className="text-gray-700">
-            <span className="font-medium text-gray-900">Start:</span>
-            <br />
-            {formatCouncilTimeDisplay(startTime)}
-          </p>
-          <p className="text-gray-700">
-            <span className="font-medium text-gray-900">End:</span>
-            <br />
-            {formatCouncilTimeDisplay(endTime)}
-          </p>
+          {ranges.length > 1 ? (
+            <div className="text-gray-700">
+              <span className="font-medium text-gray-900">Times:</span>
+              {ranges.map((range, index) => (
+                <p key={index}>
+                  {formatCouncilTimeDisplay(range.startTime)} – {formatCouncilTimeDisplay(range.endTime)}
+                </p>
+              ))}
+            </div>
+          ) : (
+            <>
+              <p className="text-gray-700">
+                <span className="font-medium text-gray-900">Start:</span>
+                <br />
+                {formatCouncilTimeDisplay(startTime)}
+              </p>
+              <p className="text-gray-700">
+                <span className="font-medium text-gray-900">End:</span>
+                <br />
+                {formatCouncilTimeDisplay(endTime)}
+              </p>
+            </>
+          )}
           <p className="text-gray-700">
             <span className="font-medium text-gray-900">Duration:</span>
             <br />

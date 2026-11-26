@@ -188,7 +188,9 @@ function ApprovalCard({
     ? `${dateLabel(request.startDate)}${request.endDate && request.endDate !== request.startDate ? ` – ${dateLabel(request.endDate)}` : ""}`
     : `Submitted ${dateLabel(request.submittedAt)}`;
   const extent = request.kind === "ot"
-    ? request.startTime && request.endTime ? `${request.startTime} – ${request.endTime}` : null
+    ? request.timeRanges?.length
+      ? request.timeRanges.map((range) => `${range.startTime} – ${range.endTime}`).join(", ")
+      : null
     : request.totalDays ? `${request.totalDays} ${request.totalDays === 1 ? "day" : "days"}` : null;
 
   const decide = async (status: "Approved" | "Rejected") => {

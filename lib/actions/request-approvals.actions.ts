@@ -1,5 +1,6 @@
 "use server";
 
+import { overtimeRangesOf, type OvertimeTimeRange } from "@/lib/overtime/time-ranges";
 import { getRequestApprover } from "@/lib/auth/request-approvers";
 import { COLLECTIONS, getFirestoreDb } from "@/lib/firebase/admin";
 import type { OvertimeRequest } from "@/lib/firebase/types";
@@ -32,6 +33,7 @@ export type ApprovalRequest = {
   totalDays?: number;
   startTime?: string;
   endTime?: string;
+  timeRanges?: OvertimeTimeRange[];
   reason?: string;
   /** Supervisor whose signature goes on the leave form (leave requests only). */
   signerKey?: LeaveSupervisorKey;
@@ -126,6 +128,7 @@ function overtimeRequest(doc: DocSnap, viewerId: string): ApprovalRequest {
     endDate: request.workDate,
     startTime: request.startTime,
     endTime: request.endTime,
+    timeRanges: overtimeRangesOf(request),
     reason: request.details,
     reviewer: request.actionBy,
     reviewedAt: status === "Pending" ? undefined : isoDateTime(request.updatedAt),

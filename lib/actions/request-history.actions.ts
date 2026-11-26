@@ -1,5 +1,6 @@
 "use server";
 
+import { overtimeRangesOf, type OvertimeTimeRange } from "@/lib/overtime/time-ranges";
 import { getSessionAuthProfile } from "@/lib/auth/session-profile";
 import { getEmployeeProfileSessionId } from "@/lib/auth/employee-profile-session";
 import { COLLECTIONS, getFirestoreDb } from "@/lib/firebase/admin";
@@ -29,6 +30,7 @@ export type RequestHistoryEntry = {
   editable?: boolean;
   startTime?: string;
   endTime?: string;
+  timeRanges?: OvertimeTimeRange[];
   takeoverEmployeeId?: string;
   /** Certificate Salaam: link to the uploaded medical certificate. */
   certificateUrl?: string;
@@ -124,6 +126,7 @@ export async function listEmployeeRequestHistory(employeeId: string): Promise<Re
       editable: status === "Pending" && request.employees.length === 1,
       startTime: request.startTime,
       endTime: request.endTime,
+      timeRanges: overtimeRangesOf(request),
     }];
   });
   return [...family, ...annual, ...overtime]

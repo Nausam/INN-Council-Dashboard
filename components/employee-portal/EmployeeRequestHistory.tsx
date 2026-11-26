@@ -151,8 +151,7 @@ export function EmployeeRequestHistory({ employeeId, revision }: { employeeId: s
     endDate: editing.endDate ?? editing.startDate ?? "",
     reason: editing.reason ?? "",
     takeoverEmployeeId: editing.takeoverEmployeeId,
-    startTime: editing.startTime,
-    endTime: editing.endTime,
+    timeRanges: editing.timeRanges,
     certificateUrl: editing.certificateUrl,
   } : undefined, [editing]);
   const closeEdit = (open: boolean) => { if (!open) setEditing(null); };

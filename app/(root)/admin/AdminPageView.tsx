@@ -198,6 +198,7 @@ export function AdminPageView({
                 details={req.details}
                 startTime={req.startTime}
                 endTime={req.endTime}
+                timeRanges={req.timeRanges}
                 durationMinutes={req.durationMinutes}
                 employees={req.employees ?? []}
                 status={

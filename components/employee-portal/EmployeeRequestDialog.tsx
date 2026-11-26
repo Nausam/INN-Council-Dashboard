@@ -15,13 +15,21 @@ import { parseLeaveDateRange } from "@/lib/leave/date-range";
 import { isDhivehiText } from "@/lib/leave/dhivehi-text";
 import { maldivesDateTime } from "@/lib/dates/maldives";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Check, Clock, Loader2 } from "lucide-react";
+import { Check, Clock, Loader2, Plus, X } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import styles from "@/components/Leave/family-leave-request.module.css";
 import motifs from "./portal-motifs.module.css";
 import { LeaveRangePreview } from "./LeaveRangePreview";
 import { REQUEST_VISUALS } from "@/lib/employees/request-visuals";
 import { cn } from "@/lib/utils";
+import {
+  MAX_OVERTIME_MINUTES,
+  MAX_OVERTIME_RANGES,
+  rangeMinutes,
+  rangesOverlap,
+  totalRangeMinutes,
+  type OvertimeTimeRange,
+} from "@/lib/overtime/time-ranges";
 
 type Mode = "annual" | "ot";
 
@@ -32,26 +40,11 @@ export type EmployeeRequestEdit = {
   endDate?: string;
   reason?: string;
   takeoverEmployeeId?: string;
-  startTime?: string;
-  endTime?: string;
+  timeRanges?: OvertimeTimeRange[];
 };
 
 const MAX_TEXT_LENGTH = 500;
-const MAX_OVERTIME_MINUTES = 16 * 60;
-
-function minutesFromTime(value: string): number | null {
-  const match = /^(\d{2}):(\d{2})$/.exec(value);
-  if (!match) return null;
-  return Number(match[1]) * 60 + Number(match[2]);
-}
-
-/** Overtime minutes between two HH:MM times; an earlier end runs past midnight. */
-function overtimeMinutes(startTime: string, endTime: string): number | null {
-  const start = minutesFromTime(startTime);
-  const end = minutesFromTime(endTime);
-  if (start === null || end === null) return null;
-  return (end - start + 1_440) % 1_440;
-}
+const EMPTY_RANGE: OvertimeTimeRange = { startTime: "", endTime: "" };
 
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
 const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
@@ -181,16 +174,20 @@ export function EmployeeRequestDialog({
   const [takeoverEmployeeId, setTakeoverEmployeeId] = useState("");
   const [employees, setEmployees] = useState<AnnualLeaveEmployeeOption[]>([]);
   const [workDate, setWorkDate] = useState("");
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
+  const [timeRanges, setTimeRanges] = useState<OvertimeTimeRange[]>([EMPTY_RANGE]);
   const [details, setDetails] = useState("");
   const [pending, setPending] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
 
   const editing = Boolean(editRequest);
-  const otMinutes = overtimeMinutes(startTime, endTime);
-  const otOvernight = otMinutes !== null && endTime < startTime;
+  // Counts the ranges filled in so far, so the total shows while adding more.
+  const otMinutes = timeRanges.reduce((sum, range) => sum + (rangeMinutes(range) ?? 0), 0);
+  const otOvernight = timeRanges.some((range) => rangeMinutes(range) && range.endTime < range.startTime);
+
+  function changeRange(index: number, field: keyof OvertimeTimeRange, value: string) {
+    setTimeRanges((current) => current.map((range, i) => i === index ? { ...range, [field]: value } : range));
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -199,8 +196,7 @@ export function EmployeeRequestDialog({
     setAnnualReason(mode === "annual" ? editRequest?.reason ?? "" : "");
     setTakeoverEmployeeId(editRequest?.takeoverEmployeeId ?? "");
     setWorkDate(editRequest?.startDate ?? maldivesDateTime().date);
-    setStartTime(editRequest?.startTime ?? "");
-    setEndTime(editRequest?.endTime ?? "");
+    setTimeRanges(editRequest?.timeRanges?.length ? editRequest.timeRanges : [EMPTY_RANGE]);
     setDetails(mode === "ot" ? editRequest?.reason ?? "" : "");
     setSuccess(false);
     setError("");
@@ -248,10 +244,11 @@ export function EmployeeRequestDialog({
       return null;
     }
     // Matches the server: an end time earlier than the start runs past midnight.
-    const duration = overtimeMinutes(startTime, endTime) ?? 0;
-    if (!workDate || duration < 1 || duration > MAX_OVERTIME_MINUTES) {
+    const duration = totalRangeMinutes(timeRanges) ?? 0;
+    if (!workDate || timeRanges.some((range) => !rangeMinutes(range)) || duration > MAX_OVERTIME_MINUTES) {
       return "ފެށި ގަޑިއާއި ނިމުނު ގަޑި ރަނގަޅަށް ހޮވާ. 16 ގަޑިއިރަށްވުރެ ދިގު ނުކުރައްވާ.";
     }
+    if (rangesOverlap(timeRanges)) return "ގަޑިތައް އެއްގަޑިއެއްގައި ނުޖެހޭނެ.";
     if (!isDhivehiText(details, MAX_TEXT_LENGTH)) return "ކުރި މަސައްކަތް ދިވެހިން ލިޔުއްވާ.";
     return null;
   }
@@ -281,8 +278,7 @@ export function EmployeeRequestDialog({
             employeeId,
             requestId: editRequest.id,
             workDate,
-            startTime,
-            endTime,
+            timeRanges,
             details,
           });
         if (!result.ok) {
@@ -301,8 +297,7 @@ export function EmployeeRequestDialog({
         await submitEmployeeOvertimeRequest({
           employeeId,
           workDate,
-          startTime,
-          endTime,
+          timeRanges,
           details,
         });
       }
@@ -429,16 +424,49 @@ export function EmployeeRequestDialog({
                   />
                 </div>
 
-                <div className={styles.row}>
-                  <div className={styles.field}>
-                    <label htmlFor="overtime-start-time">ފެށި ގަޑި</label>
-                    <TimeField24 id="overtime-start-time" value={startTime} onChange={setStartTime} />
+                {timeRanges.map((range, index) => (
+                  <div key={index} className={styles.otRange}>
+                    <div className={styles.row}>
+                      <div className={styles.field}>
+                        <label htmlFor={`overtime-start-time-${index}`}>ފެށި ގަޑި</label>
+                        <TimeField24
+                          id={`overtime-start-time-${index}`}
+                          value={range.startTime}
+                          onChange={(value) => changeRange(index, "startTime", value)}
+                        />
+                      </div>
+                      <div className={styles.field}>
+                        <label htmlFor={`overtime-end-time-${index}`}>ނިމުނު ގަޑި</label>
+                        <TimeField24
+                          id={`overtime-end-time-${index}`}
+                          value={range.endTime}
+                          onChange={(value) => changeRange(index, "endTime", value)}
+                        />
+                      </div>
+                    </div>
+                    {timeRanges.length > 1 ? (
+                      <button
+                        type="button"
+                        className={styles.otRangeRemove}
+                        aria-label="މި ގަޑި ފޮހެލާ"
+                        onClick={() => setTimeRanges((current) => current.filter((_, i) => i !== index))}
+                      >
+                        <X aria-hidden="true" />
+                      </button>
+                    ) : null}
                   </div>
-                  <div className={styles.field}>
-                    <label htmlFor="overtime-end-time">ނިމުނު ގަޑި</label>
-                    <TimeField24 id="overtime-end-time" value={endTime} onChange={setEndTime} />
-                  </div>
-                </div>
+                ))}
+
+                {timeRanges.length < MAX_OVERTIME_RANGES ? (
+                  <button
+                    type="button"
+                    className={styles.otRangeAdd}
+                    onClick={() => setTimeRanges((current) => [...current, EMPTY_RANGE])}
+                  >
+                    <Plus aria-hidden="true" />
+                    އިތުރު ގަޑިއެއް
+                  </button>
+                ) : null}
 
                 {otMinutes ? (
                   <div

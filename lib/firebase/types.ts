@@ -34,6 +34,9 @@ export type OvertimeRequest = LegacyDocument & {
   details: string;
   startTime: string;
   endTime: string;
+  /** Each stretch worked that day; absent on single-range requests made before ranges existed. */
+  timeRanges?: { startTime: string; endTime: string }[];
+  /** Sum of every range. */
   durationMinutes: number;
   employees: OvertimeRequestEmployee[];
   /** employees[].employeeId, for array-contains lookups. */
