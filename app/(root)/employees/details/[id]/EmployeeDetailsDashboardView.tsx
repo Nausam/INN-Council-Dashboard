@@ -85,7 +85,17 @@ import {
   WalletCards,
   type LucideIcon,
 } from "lucide-react";
-import { salarySlipsByRecordQueryOptions } from "@/hooks/queries";
+import {
+  salarySlipsByRecordQueryOptions,
+  useGeneratedSlipForEmployeeQuery,
+} from "@/hooks/queries";
+import type { SalarySlipComputed } from "@/lib/salary-slips/compute-slip";
+import { formatMvr } from "@/lib/salary-slips/format";
+import {
+  formatPayPeriodRange,
+  getPayPeriodBounds,
+  latestCompletedPayPeriod,
+} from "@/lib/salary-slips/pay-period";
 import { queryKeys } from "@/lib/query/keys";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
@@ -95,6 +105,7 @@ import { useEffect, useMemo, useState } from "react";
 import styles from "./employee-details.module.css";
 import motifs from "@/components/employee-portal/portal-motifs.module.css";
 import { leaveVisual, type GlossTone } from "@/lib/employees/leave-visuals";
+import { PRAYER_ATTENDANCE_BENEFIT_KEYS } from "@/lib/employees/prayer-attendance-benefit";
 
 type TabId = "overview" | "attendance" | "leave" | "pay" | "requests";
 
@@ -426,6 +437,7 @@ export function EmployeeDetailsDashboardView({
             <PaySection
               employee={employee}
               employeeId={id}
+              isMosque={Boolean(mosqueWeeks)}
             />
           ) : null}
         </div>
@@ -1601,14 +1613,56 @@ function durationLabel(months: number): string {
   ].filter(Boolean).join(" ") || "under a month";
 }
 
+function isPrayerBenefitKey(key: string): boolean {
+  return (PRAYER_ATTENDANCE_BENEFIT_KEYS as string[]).includes(key);
+}
+
+/** "Fathis Attendance Benefit" → "Fathis". */
+function prayerName(label: string): string {
+  return label.replace(/\s*Attendance Benefit$/, "");
+}
+
+/** Mosque staff's per-prayer attendance benefit rates as one compact card. */
+function PrayerBenefitCard({ items }: { items: EmployeeDetailsView["payItems"] }) {
+  return (
+    <div className={styles.payPrayerCard}>
+      <div className={styles.payPrayerHead}>
+        <span className={cn(motifs.glossIcon, styles.payItemIcon)} data-tone="annual">
+          <CalendarCheck />
+        </span>
+        <span className={styles.payItemName}>
+          Attendance Benefit
+          <small>MVR per prayer attended</small>
+        </span>
+      </div>
+      <div className={styles.payPrayerGrid}>
+        {items.map((item) => {
+          const Icon = payVisual(item.key).icon;
+          const friday = item.key === "hukuruAttendanceBenefit";
+          return (
+            <div key={item.key} className={styles.payPrayerTile} title={friday ? "Friday Mendhuru" : undefined}>
+              <Icon />
+              <span>{prayerName(item.label)}{friday ? " \u00b7 Fri" : ""}</span>
+              <strong>{formatMoney(item.value).replace(/^MVR\s*/, "")}</strong>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function PaySection({
   employee,
   employeeId,
+  isMosque,
 }: {
   employee: EmployeeDetailsView;
   employeeId: string;
+  isMosque: boolean;
 }) {
-  // Net pay is hidden for now; the card links straight to the salary slips.
+  const prayerItems = employee.payItems.filter((item) => isPrayerBenefitKey(item.key));
+  const firstPrayerKey = prayerItems[0]?.key;
   return (
     <div className={styles.stack}>
       <Link href={`/employees/details/${employeeId}/salary-slips`} prefetch className={styles.featureLink}>
@@ -1626,10 +1680,18 @@ function PaySection({
         </span>
       </Link>
 
+      <CurrentPayPanel employeeId={employeeId} isMosque={isMosque} />
+
       <Panel icon={WalletCards} title="Pay breakdown">
         {employee.payItems.length > 0 ? (
           <div className={styles.payItems}>
             {employee.payItems.map((item) => {
+              // Per-prayer rates share one card, drawn where the first of them falls.
+              if (isPrayerBenefitKey(item.key)) {
+                return item.key === firstPrayerKey ? (
+                  <PrayerBenefitCard key="prayer-benefit" items={prayerItems} />
+                ) : null;
+              }
               const visual = payVisual(item.key);
               const Icon = visual.icon;
               return (
@@ -1664,6 +1726,133 @@ function PaySection({
         </Panel>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Pay for the latest pay period that has ended (16th to 15th), worked out from
+ * attendance with the same calculation as the salary slip: net pay, the three
+ * totals and every line that isn't zero. A month shows from the 16th.
+ */
+function CurrentPayPanel({ employeeId, isMosque }: { employeeId: string; isMosque: boolean }) {
+  const period = latestCompletedPayPeriod(maldivesTodayIso());
+  const { data: slip, isPending, isError } = useGeneratedSlipForEmployeeQuery(period, employeeId);
+  const monthTitle = new Date(`${period}-01T12:00:00`).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+
+  return (
+    <Panel icon={Banknote} title="Latest pay" aside={monthTitle}>
+      {isPending ? (
+        <div className="space-y-3">
+          <div className="h-28 animate-pulse rounded-[22px] bg-slate-100" />
+          <div className="h-16 animate-pulse rounded-2xl bg-slate-100" />
+        </div>
+      ) : slip ? (
+        <CurrentPayDetails slip={slip} isMosque={isMosque} />
+      ) : (
+        <p className={styles.payEmpty}>
+          {isError ? "Couldn’t load your pay. Try again shortly." : `No pay for ${monthTitle} yet.`}
+        </p>
+      )}
+    </Panel>
+  );
+}
+
+function CurrentPayDetails({
+  slip,
+  isMosque,
+}: {
+  slip: SalarySlipComputed;
+  isMosque: boolean;
+}) {
+  const summary = slip.attendanceSummary;
+  const deductions = slip.deductions.filter((line) => line.amount > 0);
+  const allowances = slip.allowances.filter((line) => line.amount > 0);
+  const bounds = getPayPeriodBounds(slip.periodLabel);
+  // Attended out of the whole pay period: every prayer for mosque staff, every
+  // working day for everyone else. Orange only when something was missed, not for leave.
+  const attendance = isMosque
+    ? summary.attendedPrayers !== undefined && summary.periodPrayers !== undefined
+      ? {
+          done: summary.attendedPrayers,
+          total: summary.periodPrayers,
+          missed: (summary.missedPrayers ?? 0) > 0,
+          unit: "prayers",
+        }
+      : null
+    : {
+        done: summary.benefitPresentDays,
+        total: summary.eligibleBenefitDaysInPeriod,
+        missed: summary.absentDays > 0,
+        unit: "days",
+      };
+  const shortDate = (iso: string) =>
+    new Date(`${iso}T12:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+
+  return (
+    <>
+      <div className={styles.payNet}>
+        <p className={cn(styles.eyebrow, styles.payNetLabel)}>
+          Net pay
+        </p>
+        <p className={styles.payNetAmount}>
+          <small>MVR</small>
+          {formatMvr(slip.netIncome)}
+        </p>
+        <div className={styles.payNetChips}>
+          <span className={styles.payNetChip}>
+            <CalendarDays />
+            {bounds
+              ? `${shortDate(bounds.startIso)} – ${shortDate(bounds.endIso)}`
+              : formatPayPeriodRange(slip.periodLabel)}
+          </span>
+          {attendance ? (
+            <span
+              className={styles.payNetChip}
+              data-tone={attendance.missed ? "absent" : undefined}
+              title={`${attendance.done} of ${attendance.total} ${attendance.unit} in the pay period attended`}
+            >
+              {isMosque ? <MoonStar /> : <CheckCircle2 />}
+              {attendance.done}/{attendance.total} {attendance.unit}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      <div className={styles.payTotals}>
+        <div>
+          <small>Basic</small>
+          <strong>{formatMvr(slip.basicSalary)}</strong>
+        </div>
+        <div data-tone="minus">
+          <small>Deductions</small>
+          <strong>{formatMvr(slip.totalDeductions)}</strong>
+        </div>
+        <div data-tone="plus">
+          <small>Allowances</small>
+          <strong>{formatMvr(slip.totalAllowances)}</strong>
+        </div>
+      </div>
+
+      {deductions.length + allowances.length > 0 ? (
+        <div className={styles.payLines}>
+          {deductions.map((line) => (
+            <div key={`d-${line.key}`} className={styles.payLine} data-tone="minus">
+              <span>{line.labelEn}</span>
+              <span>{`−${formatMvr(line.amount)}`}</span>
+            </div>
+          ))}
+          {allowances.map((line) => (
+            <div key={`a-${line.key}`} className={styles.payLine} data-tone="plus">
+              <span>{line.labelEn}</span>
+              <span>{`+${formatMvr(line.amount)}`}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </>
   );
 }
 

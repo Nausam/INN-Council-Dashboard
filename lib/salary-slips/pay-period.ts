@@ -71,6 +71,16 @@ export function getPayPeriodBounds(periodLabel: string): PayPeriodBounds | null 
   return { startIso, endIso };
 }
 
+/**
+ * The latest pay period that has finished on `todayIso` (YYYY-MM-DD). A period
+ * ends on the 15th, so from the 16th it's this month's, before that last month's.
+ */
+export function latestCompletedPayPeriod(todayIso: string): string {
+  const [year, month, day] = todayIso.slice(0, 10).split("-").map(Number);
+  if (day > 15) return `${year}-${String(month).padStart(2, "0")}`;
+  return month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, "0")}`;
+}
+
 export function listPayPeriodDateEntries(periodLabel: string): PayPeriodDateEntry[] {
   const bounds = getPayPeriodBounds(periodLabel);
   if (!bounds) return [];

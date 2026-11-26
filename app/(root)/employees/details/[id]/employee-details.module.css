@@ -184,7 +184,36 @@
 .payItemName small { color: #8a8792; font-size: .68rem; font-weight: 650; }
 .payItemAmount { display: flex; align-items: baseline; gap: .25rem; flex: none; padding-left: .5rem; font-size: 1rem; font-weight: 850; font-variant-numeric: tabular-nums; }
 .payItemAmount small { color: #8a8792; font-size: .58rem; font-weight: 800; }
+/* Mosque staff: the six per-prayer rates on one card instead of six rows. */
+.payPrayerCard { min-width: 0; padding: .75rem; border: 1px solid #f4f1f7; border-radius: 20px; background: #faf9fd; }
+.payPrayerHead { display: flex; align-items: center; gap: .85rem; }
+.payPrayerGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; margin-top: .7rem; }
+.payPrayerTile { display: grid; justify-items: center; gap: .15rem; min-width: 0; padding: .55rem .3rem .5rem; border: 1px solid #f0ecf5; border-radius: 14px; background: #fff; text-align: center; }
+.payPrayerTile :global(svg) { width: 15px; height: 15px; color: #7d64c9; }
+.payPrayerTile span { max-width: 100%; overflow: hidden; color: #6d6875; font-size: .62rem; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+.payPrayerTile strong { font-size: .92rem; font-weight: 850; font-variant-numeric: tabular-nums; }
+@media (min-width: 640px) { .payPrayerGrid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
 .payEmpty { padding: 1rem; border: 1.5px dashed #e6e1ec; border-radius: 20px; color: #8a8792; font-size: .82rem; font-weight: 700; text-align: center; }
+
+/* This month's pay: net pay on a pastel card, the three totals, then each line. */
+.payNet { padding: 1.1rem 1.2rem; border: 1px solid #fff; border-radius: 22px; background: linear-gradient(115deg, #dff7ea, #eef1ff 58%, #f6ebff); box-shadow: 0 10px 26px rgba(67,53,82,.07); }
+.payNetLabel { color: #3f6b55; }
+.payNetAmount { display: flex; align-items: baseline; gap: .35rem; margin-top: .35rem; font-size: clamp(1.9rem, 7vw, 2.5rem); font-weight: 900; letter-spacing: -.045em; line-height: 1; font-variant-numeric: tabular-nums; }
+.payNetAmount small { color: #5d6b64; font-size: .78rem; font-weight: 850; letter-spacing: 0; }
+.payNetChips { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .75rem; }
+.payNetChip { display: inline-flex; align-items: center; gap: .3rem; padding: .3rem .6rem; border: 1px solid #fff; border-radius: 999px; background: rgba(255,255,255,.72); color: #4f4b57; font-size: .66rem; font-weight: 800; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.payNetChip :global(svg) { width: 12px; height: 12px; color: #3f6b55; }
+.payNetChip[data-tone="absent"], .payNetChip[data-tone="absent"] :global(svg) { color: #c2410c; }
+.payTotals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; margin-top: .75rem; }
+.payTotals > div { display: grid; gap: .2rem; min-width: 0; padding: .65rem .6rem; border: 1px solid #f4f1f7; border-radius: 16px; background: #faf9fd; }
+.payTotals small { color: #8a8792; font-size: .56rem; font-weight: 850; letter-spacing: .07em; text-transform: uppercase; }
+.payTotals strong { font-size: clamp(.74rem, 3.4vw, .86rem); font-weight: 850; letter-spacing: -.02em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.payTotals [data-tone="minus"] strong, .payLine[data-tone="minus"] span:last-child { color: #c2410c; }
+.payTotals [data-tone="plus"] strong, .payLine[data-tone="plus"] span:last-child { color: #15803d; }
+.payLines { display: grid; margin-top: .75rem; padding: .2rem .9rem; border: 1px solid #f4f1f7; border-radius: 18px; background: #faf9fd; }
+.payLine { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; padding: .6rem 0; color: #3d3b45; font-size: .78rem; font-weight: 700; }
+.payLine + .payLine { border-top: 1px dashed #ebe6f0; }
+.payLine span:last-child { flex: none; font-weight: 850; font-variant-numeric: tabular-nums; }
 
 /* Credit schemes: start and end as calendar pages joined by how far along it is. */
 .schemes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }

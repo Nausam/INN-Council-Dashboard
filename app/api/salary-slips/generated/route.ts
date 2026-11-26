@@ -1,10 +1,10 @@
 import {
   computeSalarySlipsForPeriod,
-  paysPrayerAttendanceBenefit,
   type SalarySlipComputed,
 } from "@/lib/salary-slips/compute-slip";
 import {
   fetchAllEmployees,
+  fetchAttendanceForEmployeeRange,
   fetchAttendanceForPayPeriod,
   fetchEmployeeById,
   fetchMosqueAttendanceForEmployeeRange,
@@ -12,6 +12,7 @@ import {
   fetchPayPeriodHolidayDates,
 } from "@/lib/firebase/hr";
 import type { EmployeeDoc, MosqueAttendanceDoc } from "@/lib/firebase/types";
+import { isMosqueEmployee } from "@/lib/employees/details-dashboard";
 import {
   formatPayPeriodRange,
   getPayPeriodBounds,
@@ -27,19 +28,19 @@ function dayAfterIso(iso: string): string {
 }
 
 /**
- * Mosque attendance for the pay period, read only when someone on the slip
- * is paid the attendance benefit per prayer.
+ * Mosque attendance for the pay period, read only when a mosque employee is on
+ * the slip: it gives their per-prayer benefit and their late minutes.
  */
-async function fetchPrayerBenefitAttendance(
+async function fetchMosqueSlipAttendance(
   employees: EmployeeDoc[],
   periodLabel: string,
 ): Promise<MosqueAttendanceDoc[]> {
   const bounds = getPayPeriodBounds(periodLabel);
-  const perPrayer = employees.filter(paysPrayerAttendanceBenefit);
-  if (!bounds || perPrayer.length === 0) return [];
+  const mosqueStaff = employees.filter(isMosqueEmployee);
+  if (!bounds || mosqueStaff.length === 0) return [];
   if (employees.length === 1) {
     return fetchMosqueAttendanceForEmployeeRange(
-      perPrayer[0].$id,
+      mosqueStaff[0].$id,
       bounds.startIso,
       dayAfterIso(bounds.endIso),
     );
@@ -68,12 +69,16 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // One employee's slip only uses their own rows, so read just those.
+    const bounds = getPayPeriodBounds(trimmed);
     const [employees, attendance, holidayDates] = await Promise.all([
       employeeId ? fetchEmployeeById(employeeId).then((employee) => [employee]) : fetchAllEmployees(),
-      fetchAttendanceForPayPeriod(trimmed),
+      employeeId && bounds
+        ? fetchAttendanceForEmployeeRange(employeeId, bounds.startIso, dayAfterIso(bounds.endIso))
+        : fetchAttendanceForPayPeriod(trimmed),
       fetchPayPeriodHolidayDates(trimmed),
     ]);
-    const mosqueAttendance = await fetchPrayerBenefitAttendance(employees, trimmed);
+    const mosqueAttendance = await fetchMosqueSlipAttendance(employees, trimmed);
 
     const slips: SalarySlipComputed[] = computeSalarySlipsForPeriod(
       employees,

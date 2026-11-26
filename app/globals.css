@@ -356,6 +356,16 @@ html.pdf-export .notice-page {
   margin: 0 auto;
 }
 
+/*
+ * html2canvas finds where text sits by measuring a 1px probe image placed after
+ * sample text. Tailwind's base style makes every img a block, which drops the
+ * probe onto its own line, so every PDF drew its text a few pixels too low.
+ * Keep just that probe inline. It matches only html2canvas's own image.
+ */
+img[src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"] {
+  display: inline;
+}
+
 /* Extra statement pages that only appear in the downloaded PDF */
 .pdf-only {
   display: none;

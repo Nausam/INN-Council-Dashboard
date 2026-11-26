@@ -75,6 +75,47 @@ function rowsByDate(rows: MosqueAttendanceDoc[]): MosqueAttendanceDoc[] {
   return Array.from(byDate.values());
 }
 
+/** A missed prayer counts as this many late minutes, as in the mosque reports. */
+export const MISSED_PRAYER_MINUTES = 60;
+
+export type MosqueLatenessResult = {
+  /** Late minutes plus MISSED_PRAYER_MINUTES for each missed prayer. */
+  minutes: number;
+  missedPrayers: number;
+  /** Prayers signed in for, on the same days. */
+  attendedPrayers: number;
+};
+
+/**
+ * Same rule as the mosque monthly late/absent report: a signed-in prayer adds
+ * its late minutes, a missed one adds an hour, and leave days count nothing.
+ * `rows` must already be limited to this employee and the dates to count.
+ */
+export function computeMosqueLateness(rows: MosqueAttendanceDoc[]): MosqueLatenessResult {
+  let minutes = 0;
+  let missedPrayers = 0;
+  let attendedPrayers = 0;
+  for (const row of rowsByDate(rows)) {
+    if (isOnLeave(row)) continue;
+    for (const [signIn, late] of [
+      [row.fathisSignInTime, row.fathisMinutesLate],
+      [row.mendhuruSignInTime, row.mendhuruMinutesLate],
+      [row.asuruSignInTime, row.asuruMinutesLate],
+      [row.maqribSignInTime, row.maqribMinutesLate],
+      [row.ishaSignInTime, row.ishaMinutesLate],
+    ] as const) {
+      if (signedIn(signIn)) {
+        minutes += typeof late === "number" && Number.isFinite(late) && late > 0 ? late : 0;
+        attendedPrayers += 1;
+      } else {
+        minutes += MISSED_PRAYER_MINUTES;
+        missedPrayers += 1;
+      }
+    }
+  }
+  return { minutes, missedPrayers, attendedPrayers };
+}
+
 export type PrayerAttendanceBenefitResult = {
   amount: number;
   /** Prayers that earned the benefit. */

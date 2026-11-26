@@ -1,6 +1,7 @@
 import { parseCreditSchemesFromDoc } from "@/lib/employees/credit-schemes";
-import { isMosqueEmployee } from "@/lib/employees/details-dashboard";
+import { isMosqueEmployee, maldivesTodayIso } from "@/lib/employees/details-dashboard";
 import {
+  computeMosqueLateness,
   computePrayerAttendanceBenefit,
   hasPrayerAttendanceBenefit,
   prayerAttendanceBenefitRates,
@@ -19,6 +20,7 @@ import {
   countAttendanceBenefitEligibleDaysInPeriod,
   getPayPeriodBounds,
   isAttendanceBenefitEligibleDay,
+  listPayPeriodDateEntries,
   isOnAttendanceLeave,
   parsePayPeriodBoundsAsDates,
   qualifiesForAttendanceBenefit,
@@ -66,10 +68,17 @@ export type SalarySlipComputed = {
     absentDays: number;
     /** Mosque staff paid per prayer: prayers that earned the attendance benefit. */
     benefitPrayers?: number;
+    /** Mosque staff: prayers missed, each counted as an hour late. */
+    missedPrayers?: number;
+    /** Mosque staff: prayers signed in for, outside leave. */
+    attendedPrayers?: number;
+    /** Mosque staff: five prayers for every day of the period up to yesterday. */
+    periodPrayers?: number;
   };
 };
 
 const COUNCIL_OFFICE = "INNAMADHOO COUNCIL";
+const MOSQUE_PRAYERS_PER_DAY = 5;
 const COUNCIL_EXECUTIVE_DESIGNATION = "council executive";
 const ASSISTANT_COUNCIL_EXECUTIVE_DESIGNATION = "a. council executive";
 const ANNUAL_LEAVE = "annualLeave";
@@ -77,7 +86,15 @@ const ANNUAL_LEAVE = "annualLeave";
 const WORKING_DAYS_PER_MONTH = 26;
 /** Calendar days used to derive per-minute late deduction from basic salary. */
 const SALARY_CALENDAR_DAYS = 30;
+/**
+ * Hours a day used for the late fine on basic salary, as in the council's
+ * salary sheet: mosque staff 5, councillors and the WDC 5.5, everyone else 8.
+ * The job allowance's late fine always uses 8.
+ */
 const WORKING_HOURS_PER_DAY = 8;
+const MOSQUE_LATE_HOURS_PER_DAY = 5;
+const COUNCILLOR_LATE_HOURS_PER_DAY = 5.5;
+const COUNCILLOR_SECTIONS = new Set(["councillor", "wdc"]);
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -331,11 +348,37 @@ function mosqueRowsInPeriod(
   });
 }
 
-/** Basic salary ÷ 30 days ÷ working hours per day ÷ 60 minutes. */
-function lateMinuteRate(basicSalary: number): number {
-  return (
-    basicSalary / SALARY_CALENDAR_DAYS / WORKING_HOURS_PER_DAY / 60
-  );
+/**
+ * Mosque staff sign in per prayer, so their lateness comes from mosque
+ * attendance. Today and later are left out, since their prayers may still be ahead.
+ */
+function mosqueLateness(
+  employee: EmployeeDoc,
+  rows: MosqueAttendanceDoc[],
+  periodLabel: string,
+) {
+  if (!isMosqueEmployee(employee)) return null;
+  const todayIso = maldivesTodayIso();
+  const pastDays = listPayPeriodDateEntries(periodLabel).filter((entry) => entry.iso < todayIso).length;
+  return {
+    ...computeMosqueLateness(
+      mosqueRowsInPeriod(employee.$id, rows, periodLabel).filter(
+        (row) => (row.date ?? "").slice(0, 10) < todayIso,
+      ),
+    ),
+    periodPrayers: pastDays * MOSQUE_PRAYERS_PER_DAY,
+  };
+}
+
+function basicLateHoursPerDay(employee: EmployeeDoc): number {
+  if (isMosqueEmployee(employee)) return MOSQUE_LATE_HOURS_PER_DAY;
+  const section = typeof employee.section === "string" ? employee.section.trim().toLowerCase() : "";
+  return COUNCILLOR_SECTIONS.has(section) ? COUNCILLOR_LATE_HOURS_PER_DAY : WORKING_HOURS_PER_DAY;
+}
+
+/** Amount ÷ 30 days ÷ hours per day ÷ 60 minutes. */
+function lateMinuteRate(amount: number, hoursPerDay = WORKING_HOURS_PER_DAY): number {
+  return amount / SALARY_CALENDAR_DAYS / hoursPerDay / 60;
 }
 
 export function computeSalarySlip(
@@ -369,12 +412,14 @@ export function computeSalarySlip(
     periodLabel,
     holidayDates,
   );
+  const mosqueLate = mosqueLateness(employee, mosqueAttendanceRows, periodLabel);
+  const totalMinutesLate =
+    summary.totalMinutesLate + (mosqueLate ? mosqueLate.minutes : 0);
   const basicLateFine = round2(
-    summary.totalMinutesLate * lateMinuteRate(basicSalary),
+    totalMinutesLate * lateMinuteRate(basicSalary, basicLateHoursPerDay(employee)),
   );
-  const jobAllowanceLateFine = round2(
-    summary.totalMinutesLate * lateMinuteRate(jobAllowance),
-  );
+  // Left unrounded so the job allowance rounds once, as on the salary sheet.
+  const jobAllowanceLateFine = totalMinutesLate * lateMinuteRate(jobAllowance);
   const lateFine = basicLateFine;
   const basicAbsentDaysFine = round2(summary.absentDays * dailyRate(basicSalary));
   const jobAllowanceAbsentDaysFine = round2(
@@ -483,9 +528,18 @@ export function computeSalarySlip(
     totalAllowances,
     overtime,
     netIncome,
-    attendanceSummary: prayerBenefit
-      ? { ...summary, benefitPrayers: prayerBenefit.prayers }
-      : summary,
+    attendanceSummary: {
+      ...summary,
+      totalMinutesLate,
+      ...(prayerBenefit ? { benefitPrayers: prayerBenefit.prayers } : {}),
+      ...(mosqueLate
+        ? {
+            missedPrayers: mosqueLate.missedPrayers,
+            attendedPrayers: mosqueLate.attendedPrayers,
+            periodPrayers: mosqueLate.periodPrayers,
+          }
+        : {}),
+    },
   };
 }
 

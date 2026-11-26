@@ -473,7 +473,9 @@
 /* ----- PDF export (html2pdf) — mirror the print layout so the slip fills one A4 page on screen capture ----- */
 .slip-pdf-export {
   width: 794px;
-  height: 1123px; /* A4 @ 96dpi */
+  /* A4 is 1122.5px tall @ 96dpi and html2pdf rounds each page down, so a full
+     1123px slip spilled a sliver onto a blank second page. Stay just under. */
+  height: 1120px;
   background: #fff;
   display: flex;
 }

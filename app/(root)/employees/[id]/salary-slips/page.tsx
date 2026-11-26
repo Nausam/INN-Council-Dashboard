@@ -11,8 +11,10 @@ import {
   useGeneratedSlipForEmployeeQuery,
   useSalarySlipsByRecordQuery,
 } from "@/hooks/queries";
+import { maldivesTodayIso } from "@/lib/employees/details-dashboard";
 import { employeePhotoUrl } from "@/lib/employees/photo";
 import { formatMvr } from "@/lib/salary-slips/format";
+import { formatPayPeriodRange, latestCompletedPayPeriod } from "@/lib/salary-slips/pay-period";
 import { cn } from "@/lib/utils";
 import {
   CalendarDays,
@@ -57,21 +59,6 @@ const MONTH_NAMES = [
 
 const HISTORY_PAGE_SIZE = 6;
 
-/**
- * The slip generated from attendance (net pay, allowances, deductions and the
- * View / Download PDF buttons) is hidden for now. Set to true to bring it back;
- * until then "This month" only shows an uploaded slip.
- */
-const SHOW_GENERATED_SLIP = false;
-
-function pad(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-function monthKey(date: Date): string {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
-}
-
 function formatPeriodDisplay(periodLabel: string): string {
   const m = periodLabel.match(/^(\d{4})-(\d{2})$/);
   if (!m) return periodLabel;
@@ -102,12 +89,10 @@ export default function EmployeeSalarySlipsPage() {
   const params = useParams();
   const id = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
-  const now = new Date();
-  const currentPeriod = monthKey(now);
-  const currentMonthTitle = now.toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-  });
+  // The pinned slip is for the latest pay period that has ended (16th to 15th),
+  // so a month's slip appears from the 16th.
+  const currentPeriod = latestCompletedPayPeriod(maldivesTodayIso());
+  const currentMonthTitle = formatPeriodDisplay(currentPeriod);
 
   const [busy, setBusy] = useState<"view" | "download" | null>(null);
   const [historyPage, setHistoryPage] = useState(0);
@@ -120,7 +105,7 @@ export default function EmployeeSalarySlipsPage() {
   );
 
   const { data: slip = null, isPending: slipPending } =
-    useGeneratedSlipForEmployeeQuery(currentPeriod, id, { enabled: SHOW_GENERATED_SLIP });
+    useGeneratedSlipForEmployeeQuery(currentPeriod, id);
   const { data: uploadedData, isPending: uploadedPending } =
     useSalarySlipsByRecordQuery(recordCard);
   // The slip list can only be fetched once the employee's record card is known.
@@ -158,7 +143,8 @@ export default function EmployeeSalarySlipsPage() {
       a.presentDays > 0 ||
       a.absentDays > 0 ||
       a.totalMinutesLate > 0 ||
-      a.benefitPresentDays > 0
+      a.benefitPresentDays > 0 ||
+      (a.benefitPrayers ?? 0) > 0
     );
   }, [slip]);
 
@@ -233,7 +219,9 @@ export default function EmployeeSalarySlipsPage() {
 
   const photoUrl = employee ? employeePhotoUrl(id, employee.photoKey) : undefined;
   const [currentYear] = currentPeriod.split("-");
-  const showGeneratedSlip = SHOW_GENERATED_SLIP && Boolean(slip && hasAttendance);
+  // An uploaded PDF is the official slip; the one worked out from attendance
+  // shows when none has been uploaded for the period.
+  const showGeneratedSlip = uploadedCurrent.length === 0 && Boolean(slip && hasAttendance);
   const latestPeriod = uploadedCurrent.length || showGeneratedSlip ? currentPeriod : history[0]?.periodLabel;
 
   // Group the visible page of history by year for the year dividers.
@@ -314,11 +302,12 @@ export default function EmployeeSalarySlipsPage() {
           <div className={styles.monthHead}>
             <div className={cn(motifs.calendarPage, styles.monthPage)} data-tone="present" aria-hidden="true">
               <span className={motifs.calendarPageTop}>{currentYear}</span>
-              <strong>{MONTH_NAMES[now.getMonth()]?.slice(0, 3)}</strong>
+              <strong>{currentMonthTitle.slice(0, 3)}</strong>
             </div>
             <div className="min-w-0">
-              <span className={styles.thisMonthTag}>This month</span>
+              <span className={styles.thisMonthTag}>Latest pay period</span>
               <h2 className={styles.panelTitle}>{currentMonthTitle}</h2>
+              <p className={styles.historyFile}>{formatPayPeriodRange(currentPeriod)}</p>
             </div>
           </div>
 
@@ -335,7 +324,7 @@ export default function EmployeeSalarySlipsPage() {
             </div>
           ) : null}
 
-          {SHOW_GENERATED_SLIP && slipPending ? (
+          {!slipsLoading && uploadedCurrent.length === 0 && slipPending ? (
             <div className="space-y-3">
               <div className="h-24 animate-pulse rounded-3xl bg-slate-100" />
               <div className="h-11 animate-pulse rounded-full bg-slate-100" />
