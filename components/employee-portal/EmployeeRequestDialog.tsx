@@ -215,7 +215,7 @@ export function EmployeeRequestDialog({
     return () => { active = false; };
   }, [open, mode, employeeId]);
 
-  // Council staff don't spend annual leave on weekends or holidays, so the server counts the days.
+  // Annual leave skips Fridays, Saturdays and holidays, so the server counts the days.
   useEffect(() => {
     setLeaveDays(null);
     if (!open || mode !== "annual") return;

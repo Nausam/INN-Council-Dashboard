@@ -54,8 +54,8 @@ function personFromEmployee(employee: Awaited<ReturnType<typeof fetchEmployeeByI
 }
 
 /**
- * Days of annual leave a range spends: council staff skip Fridays, Saturdays
- * and holiday-calendar dates; mosque staff count every day.
+ * Days of annual leave a range spends: Fridays, Saturdays and
+ * holiday-calendar dates are skipped.
  */
 async function annualLeaveDays(
   employee: Awaited<ReturnType<typeof fetchEmployeeById>>,

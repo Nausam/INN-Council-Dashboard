@@ -43,11 +43,9 @@ function isMosqueEmployee(employee: EmployeeDoc): boolean {
   return employee.section?.trim().toLowerCase() === "mosque";
 }
 
-/** Council staff are off on Fridays, Saturdays and calendar holidays; mosque staff work every day. */
-export async function leaveDatesFor(employee: EmployeeDoc, startDate: string, endDate: string) {
+/** Leave never spends Fridays, Saturdays or calendar holidays, for council and mosque staff alike. */
+export async function leaveDatesFor(_employee: EmployeeDoc, startDate: string, endDate: string) {
   const dates = enumerateIsoDates(startDate, endDate);
-  if (isMosqueEmployee(employee)) return dates;
-
   const months = Array.from(new Set(dates.map((date) => date.slice(0, 7))));
   const calendars = await Promise.all(months.map((month) => fetchHolidayCalendar(month)));
   const holidays = new Set(calendars.flatMap((calendar) => calendar?.holidayDates ?? []));
